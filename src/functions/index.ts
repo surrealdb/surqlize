@@ -5,6 +5,8 @@ import {
 	type BoolType,
 	type LiteralType,
 	type NumberType,
+	type ObjectType,
+	type ObjectTypeInner,
 	type OptionType,
 	type StringType,
 	type UnionType,
@@ -13,8 +15,9 @@ import {
 import {
 	type IntoWorkable,
 	type Workable,
+	type WorkableContext,
+	__ctx,
 	__display,
-	__orm,
 	__type,
 	intoWorkable,
 } from "../utils";
@@ -28,41 +31,41 @@ const functions: BaseFunctions = {
 	any: {
 		// Basic Comparison
 		eq<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "=", this, v);
+			return comparingFilter(this[__ctx], "=", this, v);
 		},
 
 		ne<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "!=", this, v);
+			return comparingFilter(this[__ctx], "!=", this, v);
 		},
 
 		ex<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "==", this, v);
+			return comparingFilter(this[__ctx], "==", this, v);
 		},
 
 		// Fuzzy Matching
 		fy<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "~", this, v);
+			return comparingFilter(this[__ctx], "~", this, v);
 		},
 
 		nf<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "!~", this, v);
+			return comparingFilter(this[__ctx], "!~", this, v);
 		},
 
 		// Greater/Less
 		gt<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], ">", this, v);
+			return comparingFilter(this[__ctx], ">", this, v);
 		},
 
 		gte<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], ">=", this, v);
+			return comparingFilter(this[__ctx], ">=", this, v);
 		},
 
 		lt<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "<", this, v);
+			return comparingFilter(this[__ctx], "<", this, v);
 		},
 
 		lte<T extends AbstractType>(this: Workable<T>, v: IntoWorkable<T>) {
-			return comparingFilter(this[__orm], "<=", this, v);
+			return comparingFilter(this[__ctx], "<=", this, v);
 		},
 
 		// Inside
@@ -70,38 +73,38 @@ const functions: BaseFunctions = {
 			this: Workable<T>,
 			v: IntoWorkable<ArrayType<T>>,
 		) {
-			return comparingFilter(this[__orm], "IN", this, v);
+			return comparingFilter(this[__ctx], "IN", this, v);
 		},
 
 		notInside<T extends AbstractType>(
 			this: Workable<T>,
 			v: IntoWorkable<ArrayType<T>>,
 		) {
-			return comparingFilter(this[__orm], "NOT IN", this, v);
+			return comparingFilter(this[__ctx], "NOT IN", this, v);
 		},
 
 		// Joining
 
 		or(this: Workable, ...params: Workable[]) {
-			return joiningFilter(this[__orm], "OR", this, ...params);
+			return joiningFilter(this[__ctx], "OR", this, ...params);
 		},
 
 		and(this: Workable, ...params: Workable[]) {
-			return joiningFilter(this[__orm], "AND", this, ...params);
+			return joiningFilter(this[__ctx], "AND", this, ...params);
 		},
 
 		// Prefix
 
 		not(this: Workable) {
-			return prefixedFilter(this[__orm], "!", this);
+			return prefixedFilter(this[__ctx], "!", this);
 		},
 
 		falseish(this: Workable) {
-			return prefixedFilter(this[__orm], "!", this);
+			return prefixedFilter(this[__ctx], "!", this);
 		},
 
 		trueish(this: Workable) {
-			return prefixedFilter(this[__orm], "!!", this);
+			return prefixedFilter(this[__ctx], "!!", this);
 		},
 	},
 	array: {
@@ -118,30 +121,44 @@ const functions: BaseFunctions = {
 		at,
 
 		len(this: Workable<ArrayType>) {
-			return databaseFunction(this[__orm], t.number(), "array::len", this);
+			return databaseFunction(this[__ctx], t.number(), "array::len", this);
 		},
 	},
 	string: {
 		startsWith(this: Workable<StringType>, v: IntoWorkable<StringType>) {
-			const val = intoWorkable(this[__orm], t.string(), v);
-			return databaseFunction(this[__orm], t.bool(), "string::starts_with", this, val);
+			const val = intoWorkable(this[__ctx], t.string(), v);
+			return databaseFunction(
+				this[__ctx],
+				t.bool(),
+				"string::starts_with",
+				this,
+				val,
+			);
 		},
 		endsWith(this: Workable<StringType>, v: IntoWorkable<StringType>) {
-			const val = intoWorkable(this[__orm], t.string(), v);
-			return databaseFunction(this[__orm], t.bool(), "string::ends_with", this, val);
+			const val = intoWorkable(this[__ctx], t.string(), v);
+			return databaseFunction(
+				this[__ctx],
+				t.bool(),
+				"string::ends_with",
+				this,
+				val,
+			);
 		},
 		len(this: Workable<StringType>) {
-			return databaseFunction(this[__orm], t.number(), "string::len", this);
+			return databaseFunction(this[__ctx], t.number(), "string::len", this);
 		},
 		join(
 			this: Workable<StringType>,
 			separator: IntoWorkable<StringType>,
 			...others: [IntoWorkable<StringType>, ...IntoWorkable<StringType>[]]
 		) {
-			const sep = intoWorkable(this[__orm], t.string(), separator);
-			const workables = others.map((p) => intoWorkable(this[__orm], t.string(), p));
+			const sep = intoWorkable(this[__ctx], t.string(), separator);
+			const workables = others.map((p) =>
+				intoWorkable(this[__ctx], t.string(), p),
+			);
 			return databaseFunction(
-				this[__orm],
+				this[__ctx],
 				t.string(),
 				"string::join",
 				sep,
@@ -156,16 +173,34 @@ const functions: BaseFunctions = {
 			cb: (arg: Actionable<T>) => Workable<R>,
 		) {
 			const inner = actionable({
-				[__orm]: this[__orm],
+				[__ctx]: this[__ctx],
 				[__type]: this[__type].schema,
 				[__display]: this[__display],
 			});
 			const res = cb(inner);
 			return actionable({
-				[__orm]: this[__orm],
+				[__ctx]: this[__ctx],
 				[__type]: t.option(res[__type]),
-				[__display](utils) {
-					return `(${this[__display](utils)}?${res[__display](utils)})`;
+				[__display](ctx) {
+					return `(${this[__display](ctx)}?${res[__display](ctx)})`;
+				},
+			});
+		},
+	},
+	object: {
+		extend<T extends ObjectTypeInner, R extends ObjectTypeInner>(
+			this: Workable<ObjectType<T>>,
+			cb: (arg: Actionable<ObjectType<T>>) => Workable<ObjectType<R>>,
+		): Actionable<ObjectType<T & R>> {
+			const inner = actionable(this);
+			const res = cb(inner);
+			const merged = { ...this[__type].schema, ...res[__type].schema };
+
+			return actionable({
+				[__ctx]: this[__ctx],
+				[__type]: t.object(merged),
+				[__display](ctx) {
+					return `(${this[__display](ctx)}, ${res[__display](ctx)})`;
 				},
 			});
 		},
@@ -195,16 +230,16 @@ export function getFunctions<T extends AbstractType>(
 }
 
 function databaseFunction<T extends AbstractType>(
-	orm: Orm,
+	ctx: WorkableContext,
 	type: T,
 	fn: string,
 	...params: Workable[]
 ): Actionable<T> {
 	return actionable({
-		[__orm]: orm,
+		[__ctx]: ctx,
 		[__type]: type,
-		[__display](utils) {
-			const vars = params.map((p) => p[__display](utils)).join(", ");
+		[__display](ctx) {
+			const vars = params.map((p) => p[__display](ctx)).join(", ");
 			return `${fn}(${vars})`;
 		},
 	});
@@ -221,7 +256,7 @@ function contains<T extends AbstractType>(
 	v: IntoWorkable<T>,
 ): Actionable<BoolType>;
 function contains(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "CONTAINS", this, v);
+	return comparingFilter(this[__ctx], "CONTAINS", this, v);
 }
 
 function containsNot<T extends AbstractType[]>(
@@ -233,7 +268,7 @@ function containsNot<T extends AbstractType>(
 	v: IntoWorkable<T>,
 ): Actionable<BoolType>;
 function containsNot(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "CONTAINSNOT", this, v);
+	return comparingFilter(this[__ctx], "CONTAINSNOT", this, v);
 }
 
 function containsAll<T extends AbstractType[]>(
@@ -245,7 +280,7 @@ function containsAll<T extends AbstractType>(
 	v: IntoWorkable<ArrayType<T>>,
 ): Actionable<BoolType>;
 function containsAll(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "CONTAINSALL", this, v);
+	return comparingFilter(this[__ctx], "CONTAINSALL", this, v);
 }
 
 function containsAny<T extends AbstractType[]>(
@@ -257,7 +292,7 @@ function containsAny<T extends AbstractType>(
 	v: IntoWorkable<ArrayType<T>>,
 ): Actionable<BoolType>;
 function containsAny(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "CONTAINSANY", this, v);
+	return comparingFilter(this[__ctx], "CONTAINSANY", this, v);
 }
 
 function containsNone<T extends AbstractType[]>(
@@ -269,7 +304,7 @@ function containsNone<T extends AbstractType>(
 	v: IntoWorkable<ArrayType<T>>,
 ): Actionable<BoolType>;
 function containsNone(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "CONTAINSNONE", this, v);
+	return comparingFilter(this[__ctx], "CONTAINSNONE", this, v);
 }
 
 function allInside<T extends AbstractType[]>(
@@ -281,7 +316,7 @@ function allInside<T extends AbstractType>(
 	v: IntoWorkable<ArrayType<T>>,
 ): Actionable<BoolType>;
 function allInside(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "ALLINSIDE", this, v);
+	return comparingFilter(this[__ctx], "ALLINSIDE", this, v);
 }
 
 function anyInside<T extends AbstractType[]>(
@@ -293,7 +328,7 @@ function anyInside<T extends AbstractType>(
 	v: IntoWorkable<ArrayType<T>>,
 ): Actionable<BoolType>;
 function anyInside(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "ANYINSIDE", this, v);
+	return comparingFilter(this[__ctx], "ANYINSIDE", this, v);
 }
 
 function noneInside<T extends AbstractType[]>(
@@ -305,7 +340,7 @@ function noneInside<T extends AbstractType>(
 	v: IntoWorkable<ArrayType<T>>,
 ): Actionable<BoolType>;
 function noneInside(this: Workable, v: IntoWorkable) {
-	return comparingFilter(this[__orm], "NONEINSIDE", this, v);
+	return comparingFilter(this[__ctx], "NONEINSIDE", this, v);
 }
 
 function at<T extends AbstractType[], N extends number>(
@@ -313,8 +348,8 @@ function at<T extends AbstractType[], N extends number>(
 	n: IntoWorkable<LiteralType<N>>,
 ): Actionable<At<T, N>>;
 function at(this: Workable, n: IntoWorkable<NumberType>) {
-	const v = intoWorkable(this[__orm], t.number(), n);
-	return databaseFunction(this[__orm], this[__type], "array::at", this, v);
+	const v = intoWorkable(this[__ctx], t.number(), n);
+	return databaseFunction(this[__ctx], this[__type], "array::at", this, v);
 }
 
 interface BaseFunctions {
@@ -497,5 +532,12 @@ interface BaseFunctions {
 			this: Workable<OptionType<T>>,
 			cb: (arg: Actionable<T>) => Workable<R>,
 		): Actionable<OptionType<R>>;
+	};
+
+	object: {
+		extend<T extends ObjectTypeInner, R extends ObjectTypeInner>(
+			this: Workable<ObjectType<T>>,
+			cb: (arg: Actionable<ObjectType<T>>) => Workable<ObjectType<R>>,
+		): Actionable<ObjectType<T & R>>;
 	};
 }

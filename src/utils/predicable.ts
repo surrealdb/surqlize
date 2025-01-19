@@ -4,8 +4,8 @@ import {
 	ObjectType,
 	StringType,
 } from "../types";
-import type { DisplayUtils } from "./display";
-import { type Workable, __display, __type } from "./workable";
+import type { DisplayContext } from "./display";
+import { type Workable, __display, __type, isWorkable } from "./workable";
 
 export type PredicableObject = { [key: string]: Predicable };
 
@@ -38,7 +38,7 @@ export function predicableIntoWorkable<T extends Predicable>(
 		throw new Error("Invalid Predicable value: must be an object");
 	}
 
-	if ((value as Workable)[__type] !== undefined) {
+	if (isWorkable(value)) {
 		return value as unknown as PredicableIntoWorkable<T>;
 	}
 
@@ -55,9 +55,9 @@ export function predicableIntoWorkable<T extends Predicable>(
 
 	return {
 		[__type]: new ObjectType(fieldTypes),
-		[__display]: (utils: DisplayUtils) => {
+		[__display]: (ctx: DisplayContext) => {
 			const innerDisplays = Object.entries(converted).map(
-				([key, val]) => `${key}: ${val[__display](utils)}`,
+				([key, val]) => `${key}: ${val[__display](ctx)}`,
 			);
 			return `{ ${innerDisplays.join(", ")} }`;
 		},

@@ -4,23 +4,27 @@ export function createVariableStore() {
 		const num = Object.keys(variables).length;
 		const name = `_v${num}`;
 		variables[name] = value;
-		return name;
+		return `$${name}`;
 	};
 
 	return [variables, v] as const;
 }
 
-export function createDisplayUtils(upstream: Partial<DisplayUtils> = {}) {
-	const [variables, v] = createVariableStore();
+export function displayContext(upstream?: Partial<DisplayContext>) {
+	const [variables, v] =
+		upstream?.var && upstream.variables
+			? [upstream.variables, upstream.var]
+			: createVariableStore();
 
 	return {
 		var: v,
 		variables,
-		...upstream,
-	} satisfies DisplayUtils;
+		contextId: upstream?.contextId ?? Symbol(),
+	} satisfies DisplayContext;
 }
 
-export type DisplayUtils = {
+export type DisplayContext = {
 	var: (value: unknown) => string;
 	variables: Record<string, unknown>;
+	contextId: symbol;
 };

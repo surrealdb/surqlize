@@ -1,11 +1,12 @@
 import type { Orm } from "../schema";
 import { type AbstractType, type BoolType, t } from "../types";
 import {
-	type DisplayUtils,
+	type DisplayContext,
 	type IntoWorkable,
 	type Workable,
+	type WorkableContext,
+	__ctx,
 	__display,
-	__orm,
 	__type,
 	intoWorkable,
 } from "../utils";
@@ -46,45 +47,45 @@ export const ComparisonKind = t.union([
 ]);
 
 export function joiningFilter(
-	orm: Orm,
+	ctx: WorkableContext,
 	kind: t.infer<typeof JoiningKind>,
 	...params: Workable[]
 ): Actionable<BoolType> {
 	return actionable({
-		[__orm]: orm,
+		[__ctx]: ctx,
 		[__type]: t.bool(),
-		[__display](utils) {
-			return params.map((p) => p[__display](utils)).join(` ${kind} `);
+		[__display](ctx) {
+			return params.map((p) => p[__display](ctx)).join(` ${kind} `);
 		},
 	});
 }
 
 export function prefixedFilter(
-	orm: Orm,
+	ctx: WorkableContext,
 	kind: t.infer<typeof PrefixKind>,
 	workable: Workable,
 ): Actionable<BoolType> {
 	return actionable({
-		[__orm]: orm,
+		[__ctx]: ctx,
 		[__type]: t.bool(),
-		[__display](utils) {
-			return `${kind}${workable[__display](utils)}`;
+		[__display](ctx) {
+			return `${kind}${workable[__display](ctx)}`;
 		},
 	});
 }
 
 export function comparingFilter<T extends AbstractType>(
-	orm: Orm,
+	ctx: WorkableContext,
 	kind: t.infer<typeof ComparisonKind>,
 	l: Workable<T>,
 	_r: IntoWorkable<T>,
 ): Actionable<BoolType> {
-	const r = intoWorkable(orm, l[__type], _r);
+	const r = intoWorkable(ctx, l[__type], _r);
 	return actionable({
-		[__orm]: orm,
+		[__ctx]: ctx,
 		[__type]: t.bool(),
-		[__display](utils) {
-			return `${l[__display](utils)} ${kind} ${r[__display](utils)}`;
+		[__display](ctx) {
+			return `${l[__display](ctx)} ${kind} ${r[__display](ctx)}`;
 		},
 	});
 }

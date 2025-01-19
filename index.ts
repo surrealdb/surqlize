@@ -1,13 +1,5 @@
 import Surreal, { RecordId } from "surrealdb";
-import {
-	__display,
-	__type,
-	createDisplayUtils,
-	edge,
-	orm,
-	t,
-	table,
-} from "./src";
+import { __display, __type, displayContext, edge, orm, t, table } from "./src";
 
 const user = table("user", {
 	name: t.object({
@@ -30,15 +22,26 @@ const user = table("user", {
 	opt: t.option(t.string()),
 });
 
-const db = orm(new Surreal(), user);
+const post = table("post", {
+	title: t.string(),
+	body: t.string(),
+	author: t.record("user"),
+	created: t.date(),
+	updated: t.date(),
+});
 
-const utils = createDisplayUtils();
-const usersQuery = db.select("user").return((user) => ({
-	name: user.name.first.join(" ", user.name.last),
-	email: user.email,
+const db = orm(new Surreal(), user, post);
+
+const ctx = displayContext();
+const query = db.select("post").return((post) => ({
+	title: post.title,
+	author: db.select(post.author).return((user) => ({
+		name: user.name.first,
+		bla: user.id.eq(new RecordId("user", "123")),
+	})),
 }));
 
-type a = t.infer<typeof usersQuery>;
+type a = t.infer<typeof query>;
 
-console.log(usersQuery[__display](utils));
-console.log(utils.variables);
+console.log(query[__display](ctx));
+console.log(ctx.variables);

@@ -1,12 +1,13 @@
 import type { Orm } from "../schema";
 import type { AbstractType } from "../types";
 import {
-	type DisplayUtils,
+	type DisplayContext,
 	type Workable,
+	type WorkableContext,
+	__ctx,
 	__display,
-	__orm,
 	__type,
-	createDisplayUtils,
+	displayContext,
 } from "../utils";
 
 export abstract class Query<
@@ -14,8 +15,8 @@ export abstract class Query<
 	T extends AbstractType = AbstractType,
 > implements Workable<T>
 {
-	abstract [__orm]: O;
-	abstract [__display](utils: DisplayUtils): string;
+	abstract [__ctx]: WorkableContext<O>;
+	abstract [__display](ctx: DisplayContext): string;
 	abstract [__type]: T;
 
 	type = undefined as unknown as T["infer"];
@@ -32,8 +33,11 @@ export abstract class Query<
 	}
 
 	toString(): string {
-		const utils = createDisplayUtils();
-		return this[__display](utils);
+		const ctx = displayContext();
+		return this[__display]({
+			...ctx,
+			contextId: this[__ctx].id,
+		});
 	}
 
 	[Symbol.toStringTag] = "Query";
@@ -75,11 +79,11 @@ export abstract class Query<
 	}
 
 	async execute() {
-		const utils = createDisplayUtils();
-		const query = this[__display](utils);
-		const [result] = await this[__orm].surreal.query<[this["type"]]>(
+		const ctx = displayContext();
+		const query = this[__display](ctx);
+		const [result] = await this[__ctx].orm.surreal.query<[this["type"]]>(
 			query,
-			utils.variables,
+			ctx.variables,
 		);
 		return this.parse(result);
 	}

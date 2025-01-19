@@ -6,6 +6,7 @@ export abstract class AbstractType<T = unknown> {
 	abstract readonly expected: string | [string, string, ...string[]];
 
 	infer = undefined as unknown as T;
+	accept = undefined as unknown as T;
 	abstract validate(value: unknown): value is T;
 
 	parse(value: unknown): T {
@@ -133,9 +134,9 @@ export class OptionType<T extends AbstractType> extends AbstractType<
 	}
 }
 
-export class RecordType<Tb extends string | undefined> extends AbstractType<
-	RecordId<Tb extends string ? Tb : string>
-> {
+export class RecordType<
+	Tb extends string | undefined = undefined,
+> extends AbstractType<RecordId<Tb extends string ? Tb : string>> {
 	name = "record" as const;
 	get expected() {
 		if (this.tb === undefined) return "RecordId";
@@ -157,8 +158,9 @@ export class RecordType<Tb extends string | undefined> extends AbstractType<
 	}
 }
 
+export type ObjectTypeInner = Record<string, AbstractType>;
 export class ObjectType<
-	T extends Record<string, AbstractType> = Record<string, AbstractType>,
+	T extends ObjectTypeInner = ObjectTypeInner,
 > extends AbstractType<
 	{
 		[K in keyof T]: T[K]["infer"];
