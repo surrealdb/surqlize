@@ -1,0 +1,20 @@
+{
+	"name": "orm",
+	"module": "index.ts",
+	"type": "module",
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5.0.0"
+	},
+	"dependencies": {
+		"surrealdb": "^1.1.0"
+	},
+	"scripts": {
+		"qc": "biome check .",
+		"qa": "biome check . --apply",
+		"qau": "biome check . --apply-unsafe"
+	}
+}
