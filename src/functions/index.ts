@@ -32,41 +32,68 @@ export const __path: unique symbol = Symbol("path");
 const functions: BaseFunctions = {
 	any: {
 		// Basic Comparison
-		eq<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		eq<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "=", this, v);
 		},
 
-		ne<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		ne<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "!=", this, v);
 		},
 
-		ex<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		ex<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "==", this, v);
 		},
 
 		// Fuzzy Matching
-		fy<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		fy<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "~", this, v);
 		},
 
-		nf<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		nf<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "!~", this, v);
 		},
 
 		// Greater/Less
-		gt<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		gt<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], ">", this, v);
 		},
 
-		gte<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		gte<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], ">=", this, v);
 		},
 
-		lt<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		lt<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "<", this, v);
 		},
 
-		lte<C extends WorkableContext, T extends AbstractType>(this: Workable<C, T>, v: IntoWorkable<C, T>) {
+		lte<C extends WorkableContext, T extends AbstractType>(
+			this: Workable<C, T>,
+			v: IntoWorkable<C, T>,
+		) {
 			return comparingFilter(this[__ctx], "<=", this, v);
 		},
 
@@ -91,7 +118,10 @@ const functions: BaseFunctions = {
 			return joiningFilter(this[__ctx], "OR", this, ...params);
 		},
 
-		and<C extends WorkableContext>(this: Workable<C>, ...params: Workable<C>[]) {
+		and<C extends WorkableContext>(
+			this: Workable<C>,
+			...params: Workable<C>[]
+		) {
 			return joiningFilter(this[__ctx], "AND", this, ...params);
 		},
 
@@ -127,7 +157,10 @@ const functions: BaseFunctions = {
 		},
 	},
 	string: {
-		startsWith<C extends WorkableContext>(this: Workable<C, StringType>, v: IntoWorkable<C, StringType>) {
+		startsWith<C extends WorkableContext>(
+			this: Workable<C, StringType>,
+			v: IntoWorkable<C, StringType>,
+		) {
 			const val = intoWorkable(this[__ctx], t.string(), v);
 			return databaseFunction(
 				this[__ctx],
@@ -137,7 +170,10 @@ const functions: BaseFunctions = {
 				val,
 			);
 		},
-		endsWith<C extends WorkableContext>(this: Workable<C, StringType>, v: IntoWorkable<C, StringType>) {
+		endsWith<C extends WorkableContext>(
+			this: Workable<C, StringType>,
+			v: IntoWorkable<C, StringType>,
+		) {
 			const val = intoWorkable(this[__ctx], t.string(), v);
 			return databaseFunction(
 				this[__ctx],
@@ -170,7 +206,11 @@ const functions: BaseFunctions = {
 		},
 	},
 	option: {
-		map<C extends WorkableContext, T extends AbstractType, R extends AbstractType>(
+		map<
+			C extends WorkableContext,
+			T extends AbstractType,
+			R extends AbstractType,
+		>(
 			this: Workable<C, OptionType<T>>,
 			cb: (arg: Actionable<C, T>) => Workable<C, R>,
 		) {
@@ -190,7 +230,11 @@ const functions: BaseFunctions = {
 		},
 	},
 	object: {
-		extend<C extends WorkableContext, T extends ObjectTypeInner, R extends ObjectTypeInner>(
+		extend<
+			C extends WorkableContext,
+			T extends ObjectTypeInner,
+			R extends ObjectTypeInner,
+		>(
 			this: Workable<C, ObjectType<T>>,
 			cb: (arg: Actionable<C, ObjectType<T>>) => Workable<C, ObjectType<R>>,
 		): Actionable<C, ObjectType<T & R>> {
@@ -208,16 +252,26 @@ const functions: BaseFunctions = {
 		},
 	},
 	record: {
-		select<O extends Orm, C extends WorkableContext<O>, Tb extends keyof O["tables"] & string>(this: Workable<C, RecordType<Tb>>) {
+		select<
+			O extends Orm,
+			C extends WorkableContext<O>,
+			Tb extends keyof O["tables"] & string,
+		>(this: Workable<C, RecordType<Tb>>) {
 			return this[__ctx].orm.select(this);
-		}
+		},
 	},
 };
 
-export type GetFunctions<C extends WorkableContext, T extends AbstractType> = BaseFunctions["any"] &
+export type GetFunctions<
+	C extends WorkableContext,
+	T extends AbstractType,
+> = BaseFunctions["any"] &
 	(T["name"] extends keyof BaseFunctions
 		? BaseFunctions[T["name"]]
-		: Record<string, (...args: IntoWorkable<C>[]) => Actionable<C, AbstractType>>);
+		: Record<
+				string,
+				(...args: IntoWorkable<C>[]) => Actionable<C, AbstractType>
+			>);
 
 export function getFunctions<C extends WorkableContext, T extends AbstractType>(
 	workable: Workable<C, T>,
@@ -229,7 +283,7 @@ export function getFunctions<C extends WorkableContext, T extends AbstractType>(
 	}
 
 	for (const key in fnc) {
-		fnc[key as "eq"] = fnc[key as "eq"].bind(workable) as (typeof fnc)['eq'];
+		fnc[key as "eq"] = fnc[key as "eq"].bind(workable) as (typeof fnc)["eq"];
 	}
 
 	return fnc as GetFunctions<C, T>;
@@ -261,7 +315,10 @@ function contains<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, T>,
 ): Actionable<C, BoolType>;
-function contains<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function contains<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "CONTAINS", this, v);
 }
 
@@ -273,7 +330,10 @@ function containsNot<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, T>,
 ): Actionable<C, BoolType>;
-function containsNot<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function containsNot<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "CONTAINSNOT", this, v);
 }
 
@@ -285,7 +345,10 @@ function containsAll<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, ArrayType<T>>,
 ): Actionable<C, BoolType>;
-function containsAll<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function containsAll<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "CONTAINSALL", this, v);
 }
 
@@ -297,7 +360,10 @@ function containsAny<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, ArrayType<T>>,
 ): Actionable<C, BoolType>;
-function containsAny<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function containsAny<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "CONTAINSANY", this, v);
 }
 
@@ -309,7 +375,10 @@ function containsNone<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, ArrayType<T>>,
 ): Actionable<C, BoolType>;
-function containsNone<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function containsNone<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "CONTAINSNONE", this, v);
 }
 
@@ -321,7 +390,10 @@ function allInside<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, ArrayType<T>>,
 ): Actionable<C, BoolType>;
-function allInside<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function allInside<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "ALLINSIDE", this, v);
 }
 
@@ -333,7 +405,10 @@ function anyInside<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, ArrayType<T>>,
 ): Actionable<C, BoolType>;
-function anyInside<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function anyInside<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "ANYINSIDE", this, v);
 }
 
@@ -345,15 +420,25 @@ function noneInside<C extends WorkableContext, T extends AbstractType<C>>(
 	this: Workable<C, ArrayType<T>>,
 	v: IntoWorkable<C, ArrayType<T>>,
 ): Actionable<C, BoolType>;
-function noneInside<C extends WorkableContext>(this: Workable<C>, v: IntoWorkable<C>) {
+function noneInside<C extends WorkableContext>(
+	this: Workable<C>,
+	v: IntoWorkable<C>,
+) {
 	return comparingFilter(this[__ctx], "NONEINSIDE", this, v);
 }
 
-function at<C extends WorkableContext, T extends AbstractType[], N extends number>(
+function at<
+	C extends WorkableContext,
+	T extends AbstractType[],
+	N extends number,
+>(
 	this: Workable<C, ArrayType<T>>,
 	n: IntoWorkable<C, LiteralType<N>>,
 ): Actionable<C, At<T, N>>;
-function at<C extends WorkableContext>(this: Workable, n: IntoWorkable<C, NumberType>) {
+function at<C extends WorkableContext>(
+	this: Workable,
+	n: IntoWorkable<C, NumberType>,
+) {
 	const v = intoWorkable(this[__ctx], t.number(), n);
 	return databaseFunction(this[__ctx], this[__type], "array::at", this, v);
 }
@@ -413,13 +498,23 @@ interface BaseFunctions {
 		): Actionable<C, BoolType>;
 
 		// Joining
-		or<C extends WorkableContext>(this: Workable<C>, ...params: Workable<C>[]): Actionable<C, BoolType>;
-		and<C extends WorkableContext>(this: Workable<C>, ...params: Workable<C>[]): Actionable<C, BoolType>;
+		or<C extends WorkableContext>(
+			this: Workable<C>,
+			...params: Workable<C>[]
+		): Actionable<C, BoolType>;
+		and<C extends WorkableContext>(
+			this: Workable<C>,
+			...params: Workable<C>[]
+		): Actionable<C, BoolType>;
 
 		// Prefix
 		not<C extends WorkableContext>(this: Workable<C>): Actionable<C, BoolType>;
-		falseish<C extends WorkableContext>(this: Workable<C>): Actionable<C, BoolType>;
-		trueish<C extends WorkableContext>(this: Workable<C>): Actionable<C, BoolType>;
+		falseish<C extends WorkableContext>(
+			this: Workable<C>,
+		): Actionable<C, BoolType>;
+		trueish<C extends WorkableContext>(
+			this: Workable<C>,
+		): Actionable<C, BoolType>;
 	};
 
 	array: {
@@ -496,7 +591,11 @@ interface BaseFunctions {
 			v: IntoWorkable<C, ArrayType<T>>,
 		): Actionable<C, BoolType>;
 
-		at<C extends WorkableContext, T extends AbstractType<C>[], N extends number>(
+		at<
+			C extends WorkableContext,
+			T extends AbstractType<C>[],
+			N extends number,
+		>(
 			this: Workable<C, ArrayType<T>>,
 			n: IntoWorkable<C, LiteralType<N>>,
 		): Actionable<C, At<T, N>>;
@@ -513,7 +612,9 @@ interface BaseFunctions {
 			n: IntoWorkable<C, NumberType>,
 		): Actionable<C, OptionType<T>>;
 
-		len<C extends WorkableContext>(this: Workable<C, ArrayType>): Actionable<C, NumberType>;
+		len<C extends WorkableContext>(
+			this: Workable<C, ArrayType>,
+		): Actionable<C, NumberType>;
 	};
 
 	string: {
@@ -525,7 +626,9 @@ interface BaseFunctions {
 			this: Workable<C, StringType>,
 			v: IntoWorkable<C, StringType>,
 		): Actionable<C, BoolType>;
-		len<C extends WorkableContext>(this: Workable<C, StringType>): Actionable<C, NumberType>;
+		len<C extends WorkableContext>(
+			this: Workable<C, StringType>,
+		): Actionable<C, NumberType>;
 		join<C extends WorkableContext>(
 			this: Workable<C, StringType>,
 			separator: IntoWorkable<C, StringType>,
@@ -534,22 +637,32 @@ interface BaseFunctions {
 	};
 
 	option: {
-		map<C extends WorkableContext, T extends AbstractType<C>, R extends AbstractType<C>>(
+		map<
+			C extends WorkableContext,
+			T extends AbstractType<C>,
+			R extends AbstractType<C>,
+		>(
 			this: Workable<C, OptionType<T>>,
 			cb: (arg: Actionable<C, T>) => Workable<C, R>,
 		): Actionable<C, OptionType<R>>;
 	};
 
 	object: {
-		extend<C extends WorkableContext, T extends ObjectTypeInner, R extends ObjectTypeInner>(
+		extend<
+			C extends WorkableContext,
+			T extends ObjectTypeInner,
+			R extends ObjectTypeInner,
+		>(
 			this: Workable<C, ObjectType<T>>,
 			cb: (arg: Actionable<C, ObjectType<T>>) => Workable<C, ObjectType<R>>,
 		): Actionable<C, ObjectType<T & R>>;
 	};
 
 	record: {
-		select<O extends Orm, C extends WorkableContext<O>, Tb extends keyof O["tables"] & string>(
-			this: Workable<C, RecordType<Tb>>,
-		): SelectOneQuery<O, C, Tb>;
+		select<
+			O extends Orm,
+			C extends WorkableContext<O>,
+			Tb extends keyof O["tables"] & string,
+		>(this: Workable<C, RecordType<Tb>>): SelectOneQuery<O, C, Tb>;
 	};
 }

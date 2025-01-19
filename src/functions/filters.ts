@@ -74,7 +74,10 @@ export function prefixedFilter<C extends WorkableContext>(
 	});
 }
 
-export function comparingFilter<C extends WorkableContext, T extends AbstractType>(
+export function comparingFilter<
+	C extends WorkableContext,
+	T extends AbstractType,
+>(
 	ctx: C,
 	kind: t.infer<typeof ComparisonKind>,
 	l: Workable<C, T>,

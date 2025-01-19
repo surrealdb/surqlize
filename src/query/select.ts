@@ -72,7 +72,9 @@ export class SelectQuery<
 		}) as Actionable<C, E>;
 
 		const predicable = cb(tb);
-		const workable = predicableIntoWorkable<C, P>(predicable) as unknown as Workable<C, R>;
+		const workable = predicableIntoWorkable<C, P>(
+			predicable,
+		) as unknown as Workable<C, R>;
 		const entry = sanitizeWorkable(workable);
 
 		(this as unknown as SelectQuery<O, C, T, R>)._entry = entry;

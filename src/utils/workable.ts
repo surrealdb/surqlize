@@ -6,7 +6,10 @@ export const __display: unique symbol = Symbol("display");
 export const __type: unique symbol = Symbol("type");
 export const __ctx: unique symbol = Symbol("ctx");
 
-export type Workable<C extends WorkableContext = WorkableContext, T extends AbstractType = AbstractType> = {
+export type Workable<
+	C extends WorkableContext = WorkableContext,
+	T extends AbstractType = AbstractType,
+> = {
 	[__display]: (ctx: DisplayContext) => string;
 	[__type]: T;
 	[__ctx]: C;
@@ -17,9 +20,10 @@ export type WorkableContext<O extends Orm = Orm> = {
 	id: symbol;
 };
 
-export type IntoWorkable<C extends WorkableContext, T extends AbstractType = AbstractType> =
-	| T["infer"]
-	| Workable<C, T>;
+export type IntoWorkable<
+	C extends WorkableContext,
+	T extends AbstractType = AbstractType,
+> = T["infer"] | Workable<C, T>;
 
 export function intoWorkable<C extends WorkableContext, T extends AbstractType>(
 	ctx: C,
@@ -52,9 +56,10 @@ export function workableGet(workable: Workable, key: string | number) {
 	};
 }
 
-export function sanitizeWorkable<C extends WorkableContext, T extends AbstractType>(
-	workable: Workable<C, T>,
-): Workable<C, T> {
+export function sanitizeWorkable<
+	C extends WorkableContext,
+	T extends AbstractType,
+>(workable: Workable<C, T>): Workable<C, T> {
 	return {
 		[__ctx]: workable[__ctx],
 		[__display]: workable[__display],
@@ -62,7 +67,9 @@ export function sanitizeWorkable<C extends WorkableContext, T extends AbstractTy
 	};
 }
 
-export function isWorkable<C extends WorkableContext>(value: unknown): value is Workable<C> {
+export function isWorkable<C extends WorkableContext>(
+	value: unknown,
+): value is Workable<C> {
 	return (
 		typeof value === "object" &&
 		value !== null &&

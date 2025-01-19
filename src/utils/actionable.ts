@@ -1,10 +1,17 @@
 import { type GetFunctions, getFunctions } from "../functions";
 import type { AbstractType, ArrayType, ObjectType, StringType } from "../types";
-import { type Workable, type WorkableContext, __type, intoWorkable, workableGet } from "./workable";
+import {
+	type Workable,
+	type WorkableContext,
+	__type,
+	intoWorkable,
+	workableGet,
+} from "./workable";
 
-export type ActionableProps<C extends WorkableContext, T extends AbstractType> = T extends ObjectType<
-	infer O
->
+export type ActionableProps<
+	C extends WorkableContext,
+	T extends AbstractType,
+> = T extends ObjectType<infer O>
 	? { [K in keyof O]: Actionable<C, O[K]> }
 	: T extends ArrayType<infer A>
 		? A extends AbstractType
@@ -20,13 +27,15 @@ export type ActionableProps<C extends WorkableContext, T extends AbstractType> =
 				: never
 		: unknown;
 
-export type Actionable<C extends WorkableContext, T extends AbstractType> = ActionableProps<C, T> &
-	Workable<C, T> &
-	GetFunctions<C, T>;
+export type Actionable<
+	C extends WorkableContext,
+	T extends AbstractType,
+> = ActionableProps<C, T> & Workable<C, T> & GetFunctions<C, T>;
 
-export function actionable<C extends WorkableContext = WorkableContext, T extends AbstractType = StringType>(
-	workable: Workable<C, T>,
-): Actionable<C, T> {
+export function actionable<
+	C extends WorkableContext = WorkableContext,
+	T extends AbstractType = StringType,
+>(workable: Workable<C, T>): Actionable<C, T> {
 	const functions = getFunctions(workable);
 
 	return new Proxy(functions, {
