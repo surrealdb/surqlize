@@ -11,11 +11,11 @@ import {
 } from "../utils";
 
 export abstract class Query<
-	O extends Orm,
+	C extends WorkableContext = WorkableContext,
 	T extends AbstractType = AbstractType,
-> implements Workable<T>
+> implements Workable<C, T>
 {
-	abstract [__ctx]: WorkableContext<O>;
+	abstract [__ctx]: C;
 	abstract [__display](ctx: DisplayContext): string;
 	abstract [__type]: T;
 

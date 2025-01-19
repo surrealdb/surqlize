@@ -1,5 +1,5 @@
 {
-	"name": "orm",
+	"name": "surqlize",
 	"module": "index.ts",
 	"type": "module",
 	"devDependencies": {

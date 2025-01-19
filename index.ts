@@ -35,9 +35,9 @@ const db = orm(new Surreal(), user, post);
 const ctx = displayContext();
 const query = db.select("post").return((post) => ({
 	title: post.title,
-	author: db.select(post.author).return((user) => ({
-		name: user.name.first,
-		bla: user.id.eq(new RecordId("user", "123")),
+	author: post.author.select().return((author) => ({
+		name: author.name,
+		age: author.age,
 	})),
 }));
 

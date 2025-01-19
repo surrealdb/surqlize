@@ -5,49 +5,47 @@ import {
 	StringType,
 } from "../types";
 import type { DisplayContext } from "./display";
-import { type Workable, __display, __type, isWorkable } from "./workable";
+import { type Workable, type WorkableContext, __display, __type, isWorkable } from "./workable";
 
-export type PredicableObject = { [key: string]: Predicable };
+export type PredicableObject<C extends WorkableContext> = { [key: string]: Predicable<C> };
 
-export type Predicable = Workable | PredicableObject;
+export type Predicable<C extends WorkableContext> = Workable<C> | PredicableObject<C>;
 
-export type PredicableIntoType<T extends Predicable> = T extends Workable<
+export type PredicableIntoType<C extends WorkableContext, T extends Predicable<C>> = T extends Workable<
+	C,
 	infer U
 >
 	? U
-	: T extends PredicableObject
-		? ObjectType<{ [K in keyof T]: PredicableIntoType<T[K]> }>
+	: T extends PredicableObject<C>
+		? ObjectType<{ [K in keyof T]: PredicableIntoType<C, T[K]> }>
 		: never;
 
-export type PredicableIntoWorkable<T extends Predicable> = T extends Workable<
-	infer U
+export type PredicableIntoWorkable<C extends WorkableContext, P extends Predicable<C>> = P extends Workable<
+	C,
+	infer T
 >
-	? Workable<U>
-	: T extends PredicableObject
-		? {
-				[K in keyof T]: T[K] extends Predicable
-					? PredicableIntoWorkable<T[K]>
-					: never;
-			}
+	? Workable<C, T>
+	: P extends PredicableObject<C>
+		? Workable<C, PredicableIntoType<C, P>>
 		: never;
 
-export function predicableIntoWorkable<T extends Predicable>(
+export function predicableIntoWorkable<C extends WorkableContext, T extends Predicable<C>>(
 	value: T,
-): PredicableIntoWorkable<T> {
+): PredicableIntoWorkable<C, T> {
 	if (typeof value !== "object" || value === null) {
 		throw new Error("Invalid Predicable value: must be an object");
 	}
 
 	if (isWorkable(value)) {
-		return value as unknown as PredicableIntoWorkable<T>;
+		return value as unknown as PredicableIntoWorkable<C, T>;
 	}
 
 	const converted = Object.fromEntries(
 		Object.entries(value).map(([key, val]) => [
 			key,
-			predicableIntoWorkable(val as Predicable),
+			predicableIntoWorkable(val as Predicable<C>),
 		]),
-	) as Record<string, Workable>;
+	) as Record<string, Workable<C>>;
 
 	const fieldTypes = Object.fromEntries(
 		Object.entries(converted).map(([key, val]) => [key, val[__type]]),
@@ -61,5 +59,5 @@ export function predicableIntoWorkable<T extends Predicable>(
 			);
 			return `{ ${innerDisplays.join(", ")} }`;
 		},
-	} as PredicableIntoWorkable<T>;
+	} as PredicableIntoWorkable<C, T>;
 }

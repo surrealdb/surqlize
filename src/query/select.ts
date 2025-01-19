@@ -28,14 +28,15 @@ import { Query } from "./abstract.ts";
 
 export class SelectQuery<
 	O extends Orm,
+	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<O, ArrayType<E>> {
-	readonly [__ctx]: WorkableContext<O>;
+> extends Query<C, ArrayType<E>> {
+	readonly [__ctx]: C;
 	private _start?: number;
 	private _limit?: number;
-	private _filter?: Workable;
-	private _entry?: Workable<E>;
+	private _filter?: Workable<C>;
+	private _entry?: Workable<C, E>;
 
 	constructor(
 		orm: O,
@@ -45,7 +46,7 @@ export class SelectQuery<
 		this[__ctx] = {
 			orm,
 			id: Symbol(),
-		};
+		} as C;
 	}
 
 	get entry(): E {
@@ -58,9 +59,9 @@ export class SelectQuery<
 	}
 
 	return<
-		P extends Predicable,
-		R extends PredicableIntoType<P> = PredicableIntoType<P>,
-	>(cb: (tb: Actionable<E>) => P): SelectQuery<O, T, R> {
+		P extends Predicable<C>,
+		R extends PredicableIntoType<C, P> = PredicableIntoType<C, P>,
+	>(cb: (tb: Actionable<C, E>) => P): SelectQuery<O, C, T, R> {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: this.entry,
@@ -68,15 +69,17 @@ export class SelectQuery<
 				console.log(contextId, this[__ctx].id);
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
-		}) as Actionable<E>;
+		}) as Actionable<C, E>;
 
-		(this as unknown as SelectQuery<O, T, R>)._entry = sanitizeWorkable(
-			predicableIntoWorkable(cb(tb)) as Workable<R>,
-		);
-		return this as unknown as SelectQuery<O, T, R>;
+		const predicable = cb(tb);
+		const workable = predicableIntoWorkable<C, P>(predicable) as unknown as Workable<C, R>;
+		const entry = sanitizeWorkable(workable);
+
+		(this as unknown as SelectQuery<O, C, T, R>)._entry = entry;
+		return this as unknown as SelectQuery<O, C, T, R>;
 	}
 
-	filter(cb: (tb: Actionable<O["tables"][T]["schema"]>) => Workable) {
+	filter(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: this[__ctx].orm.tables[this.tb].schema,
@@ -84,7 +87,7 @@ export class SelectQuery<
 				console.log(contextId, this[__ctx].id);
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
-		}) as Actionable<O["tables"][T]["schema"]>;
+		}) as Actionable<C, O["tables"][T]["schema"]>;
 
 		this._filter = sanitizeWorkable(cb(tb));
 		return this;
@@ -127,22 +130,23 @@ export class SelectQuery<
 
 export class SelectOneQuery<
 	O extends Orm,
+	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<O, UnionType<(E | NoneType)[]>> {
-	readonly [__ctx]: WorkableContext<O>;
-	private _entry?: Workable<E>;
+> extends Query<C, UnionType<(E | NoneType)[]>> {
+	readonly [__ctx]: C;
+	private _entry?: Workable<C, E>;
 	private tb: T;
 
 	constructor(
 		orm: O,
-		readonly subject: RecordId<T> | Workable<RecordType<T>>,
+		readonly subject: RecordId<T> | Workable<C, RecordType<T>>,
 	) {
 		super();
 		this[__ctx] = {
 			orm,
 			id: Symbol(),
-		};
+		} as C;
 
 		if (isWorkable(subject)) {
 			this.tb = subject[__type].tb;
@@ -178,9 +182,9 @@ export class SelectOneQuery<
 	}
 
 	return<
-		P extends Predicable,
-		R extends PredicableIntoType<P> = PredicableIntoType<P>,
-	>(cb: (tb: Actionable<E>) => P): SelectOneQuery<O, T, R> {
+		P extends Predicable<C>,
+		R extends PredicableIntoType<C, P> = PredicableIntoType<C, P>,
+	>(cb: (tb: Actionable<C, E>) => P): SelectOneQuery<O, C, T, R> {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: this.entry,
@@ -188,12 +192,12 @@ export class SelectOneQuery<
 				console.log(contextId, this[__ctx].id);
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
-		}) as Actionable<E>;
+		}) as Actionable<C, E>;
 
-		(this as unknown as SelectOneQuery<O, T, R>)._entry = sanitizeWorkable(
-			predicableIntoWorkable(cb(tb)) as Workable<R>,
+		(this as unknown as SelectOneQuery<O, C, T, R>)._entry = sanitizeWorkable(
+			predicableIntoWorkable(cb(tb)) as unknown as Workable<C, R>,
 		);
-		return this as unknown as SelectOneQuery<O, T, R>;
+		return this as unknown as SelectOneQuery<O, C, T, R>;
 	}
 }
 

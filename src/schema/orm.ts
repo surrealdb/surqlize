@@ -2,7 +2,7 @@ import type Surreal from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
 import { SelectOneQuery, SelectQuery } from "../query/select";
 import type { RecordType } from "../types";
-import { type Workable, isWorkable } from "../utils";
+import { type Workable, type WorkableContext, isWorkable } from "../utils";
 import type { TableSchema } from "./table";
 
 export type MappedTables<T extends TableSchema[]> = {
@@ -16,30 +16,31 @@ export class Orm<T extends TableSchema[] = TableSchema[]> {
 	) {}
 
 	// Multi
-	select<Tb extends keyof this["tables"] & string>(
+	select<C extends WorkableContext<this>, Tb extends keyof this["tables"] & string>(
 		tb: Tb,
-	): SelectQuery<this, Tb>;
+	): SelectQuery<this, C, Tb>;
 
 	// Single
-	select<Tb extends keyof this["tables"] & string>(
+	select<C extends WorkableContext<this>, Tb extends keyof this["tables"] & string>(
 		rid: RecordId<Tb>,
-	): SelectOneQuery<this, Tb>;
-	select<Tb extends keyof this["tables"] & string>(
-		rid: Workable<RecordType<Tb>>,
-	): SelectOneQuery<this, Tb>;
-	select<Tb extends keyof this["tables"] & string>(
+	): SelectOneQuery<this, C, Tb>;
+	select<C extends WorkableContext<this>, Tb extends keyof this["tables"] & string>(
+		rid: Workable<C, RecordType<Tb>>,
+	): SelectOneQuery<this, C, Tb>;
+	select<C extends WorkableContext<this>, Tb extends keyof this["tables"] & string>(
 		tb: Tb,
 		id: RecordIdValue,
-	): SelectOneQuery<this, Tb>;
+	): SelectOneQuery<this, C, Tb>;
 
-	select<Tb extends keyof this["tables"] & string>(
-		tb: Tb | RecordId<Tb> | Workable<RecordType<Tb>>,
+	// Method
+	select<C extends WorkableContext<this>, Tb extends keyof this["tables"] & string>(
+		tb: Tb | RecordId<Tb> | Workable<C, RecordType<Tb>>,
 		id?: RecordIdValue,
 	) {
 		if (tb instanceof RecordId) return new SelectOneQuery(this, tb);
-		if (isWorkable(tb)) return new SelectOneQuery(this, tb);
-		if (id === undefined) return new SelectQuery(this, tb);
-		return new SelectOneQuery(this, new RecordId(tb, id));
+		if (isWorkable(tb)) return new SelectOneQuery(this, tb as Workable<C, RecordType<Tb>>);
+		if (id === undefined) return new SelectQuery(this, tb as Tb);
+		return new SelectOneQuery(this, new RecordId(tb as Tb, id));
 	}
 }
 

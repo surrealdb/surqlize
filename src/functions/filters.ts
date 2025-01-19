@@ -46,11 +46,11 @@ export const ComparisonKind = t.union([
 	t.literal("INTERSECTS"),
 ]);
 
-export function joiningFilter(
-	ctx: WorkableContext,
+export function joiningFilter<C extends WorkableContext>(
+	ctx: C,
 	kind: t.infer<typeof JoiningKind>,
-	...params: Workable[]
-): Actionable<BoolType> {
+	...params: Workable<C>[]
+): Actionable<C, BoolType> {
 	return actionable({
 		[__ctx]: ctx,
 		[__type]: t.bool(),
@@ -60,11 +60,11 @@ export function joiningFilter(
 	});
 }
 
-export function prefixedFilter(
-	ctx: WorkableContext,
+export function prefixedFilter<C extends WorkableContext>(
+	ctx: C,
 	kind: t.infer<typeof PrefixKind>,
-	workable: Workable,
-): Actionable<BoolType> {
+	workable: Workable<C>,
+): Actionable<C, BoolType> {
 	return actionable({
 		[__ctx]: ctx,
 		[__type]: t.bool(),
@@ -74,12 +74,12 @@ export function prefixedFilter(
 	});
 }
 
-export function comparingFilter<T extends AbstractType>(
-	ctx: WorkableContext,
+export function comparingFilter<C extends WorkableContext, T extends AbstractType>(
+	ctx: C,
 	kind: t.infer<typeof ComparisonKind>,
-	l: Workable<T>,
-	_r: IntoWorkable<T>,
-): Actionable<BoolType> {
+	l: Workable<C, T>,
+	_r: IntoWorkable<C, T>,
+): Actionable<C, BoolType> {
 	const r = intoWorkable(ctx, l[__type], _r);
 	return actionable({
 		[__ctx]: ctx,
