@@ -1,4 +1,9 @@
-import { type AbstractType, type RecordType, t } from "../types";
+import {
+	type AbstractType,
+	type ObjectType,
+	type RecordType,
+	t,
+} from "../types";
 import { TableSchema } from "./table";
 
 export type EdgeFields = Record<
@@ -6,44 +11,72 @@ export type EdgeFields = Record<
 	AbstractType
 >;
 
+type GetEdgeSchemaType<
+	From extends string,
+	Tb extends string,
+	To extends string,
+	Fd extends EdgeFields,
+> = ObjectType<
+	Fd & {
+		id: RecordType<Tb>;
+		in: RecordType<From>;
+		out: RecordType<To>;
+	}
+>;
+
+type GetEdgeInferType<
+	From extends string,
+	Tb extends string,
+	To extends string,
+	Fd extends EdgeFields,
+> = GetEdgeSchemaType<From, Tb, To, Fd>["infer"];
+
 export class EdgeSchema<
 	From extends string = string,
 	Tb extends string = string,
 	To extends string = string,
 	Fd extends EdgeFields = EdgeFields,
-> extends TableSchema<Tb, Fd> {
+> {
 	constructor(
 		public readonly from: From,
-		tb: Tb,
+		public readonly tb: Tb,
 		public readonly to: To,
-		_fields: Fd,
-	) {
-		super(tb, _fields);
-	}
+		public readonly _fields: Fd,
+	) {}
 
 	get fields(): Fd & {
-		in: RecordType<From>;
 		id: RecordType<Tb>;
+		in: RecordType<From>;
 		out: RecordType<To>;
 	} & {} {
 		return {
 			...this._fields,
-			in: t.record(this.from as string),
 			id: t.record(this.tb as string),
+			in: t.record(this.from as string),
 			out: t.record(this.to as string),
 		} as Fd & {
-			in: RecordType<From>;
 			id: RecordType<Tb>;
+			in: RecordType<From>;
 			out: RecordType<To>;
 		} & {};
+	}
+
+	type = undefined as unknown as GetEdgeInferType<From, Tb, To, Fd>;
+
+	get schema(): GetEdgeSchemaType<From, Tb, To, Fd> {
+		return t.object(this.fields);
+	}
+
+	validate(value: unknown): value is GetEdgeInferType<From, Tb, To, Fd> {
+		return this.schema.validate(value);
 	}
 }
 
 export function edge<
-	From extends string = string,
-	Tb extends string = string,
-	To extends string = string,
-	Fd extends EdgeFields = EdgeFields,
+	From extends string,
+	Tb extends string,
+	To extends string,
+	Fd extends Record<Exclude<string, "id" | "in" | "out">, AbstractType>,
 >(
 	from: From extends string ? From : never,
 	tb: Tb extends string ? Tb : never,

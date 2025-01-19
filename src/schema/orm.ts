@@ -3,16 +3,23 @@ import { RecordId, type RecordIdValue } from "surrealdb";
 import { SelectOneQuery, SelectQuery } from "../query/select";
 import type { RecordType } from "../types";
 import { type Workable, type WorkableContext, isWorkable } from "../utils";
+import type { EdgeSchema } from "./edge";
+import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
 import type { TableSchema } from "./table";
 
-export type MappedTables<T extends TableSchema[]> = {
-	[K in T[number]["tb"]]: Extract<T[number], TableSchema<K>>;
+export type AnyTable<Tb extends string = string> =
+	| TableSchema<Tb>
+	| EdgeSchema<string, Tb>;
+
+export type MappedTables<T extends AnyTable[]> = {
+	[K in T[number]["tb"]]: Extract<T[number], AnyTable<K>>;
 } & {};
 
-export class Orm<T extends TableSchema[] = TableSchema[]> {
+export class Orm<T extends AnyTable[] = AnyTable[]> {
 	constructor(
 		public readonly surreal: Surreal,
 		public readonly tables: MappedTables<T>,
+		public readonly lookup: CreateSchemaLookup<T>,
 	) {}
 
 	// Multi
@@ -48,15 +55,17 @@ export class Orm<T extends TableSchema[] = TableSchema[]> {
 	}
 }
 
-export function orm<T extends TableSchema[]>(surreal: Surreal, ...tables: T) {
+export function orm<T extends AnyTable[]>(surreal: Surreal, ...tables: T) {
 	const mapped = tables.reduce<MappedTables<T>>(
 		(acc, table) => {
 			const key = table.tb as T[number]["tb"];
-			acc[key] = table as Extract<T[number], TableSchema<typeof table.tb>>;
+			acc[key] = table as Extract<T[number], AnyTable<typeof table.tb>>;
 			return acc;
 		},
 		{} as MappedTables<T>,
 	);
 
-	return new Orm(surreal, mapped);
+	const lookup = createLookupFromSchemas(tables);
+
+	return new Orm(surreal, mapped, lookup);
 }

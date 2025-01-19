@@ -259,6 +259,26 @@ const functions: BaseFunctions = {
 		>(this: Workable<C, RecordType<Tb>>) {
 			return this[__ctx].orm.select(this);
 		},
+
+		to<
+			C extends WorkableContext,
+			Tb extends keyof C["orm"]["tables"] & string,
+			To extends C["orm"]["lookup"]["to"][Tb] extends readonly (infer E)[]
+				? E
+				: never,
+		>(this: Workable<C, RecordType<Tb>>, to: To) {
+			return to;
+		},
+
+		from<
+			C extends WorkableContext,
+			Tb extends keyof C["orm"]["tables"] & string,
+			From extends C["orm"]["lookup"]["from"][Tb] extends readonly (infer E)[]
+				? E
+				: never,
+		>(this: Workable<C, RecordType<Tb>>, from: From) {
+			return from;
+		},
 	},
 };
 
@@ -660,9 +680,24 @@ interface BaseFunctions {
 
 	record: {
 		select<
-			O extends Orm,
-			C extends WorkableContext<O>,
-			Tb extends keyof O["tables"] & string,
-		>(this: Workable<C, RecordType<Tb>>): SelectOneQuery<O, C, Tb>;
+			C extends WorkableContext,
+			Tb extends keyof C["orm"]["tables"] & string,
+		>(this: Workable<C, RecordType<Tb>>): SelectOneQuery<C["orm"], C, Tb>;
+
+		to<
+			C extends WorkableContext,
+			Tb extends keyof C["orm"]["tables"] & string,
+			To extends C["orm"]["lookup"]["to"][Tb] extends readonly (infer E)[]
+				? E
+				: never,
+		>(this: Workable<C, RecordType<Tb>>, to: To): To;
+
+		from<
+			C extends WorkableContext,
+			Tb extends keyof C["orm"]["tables"] & string,
+			From extends C["orm"]["lookup"]["from"][Tb] extends readonly (infer E)[]
+				? E
+				: never,
+		>(this: Workable<C, RecordType<Tb>>, from: From): From;
 	};
 }

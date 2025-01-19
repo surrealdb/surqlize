@@ -22,6 +22,11 @@ const user = table("user", {
 	opt: t.option(t.string()),
 });
 
+const authored = edge("user", "authored", "post", {
+	created: t.date(),
+	updated: t.date(),
+});
+
 const post = table("post", {
 	title: t.string(),
 	body: t.string(),
@@ -30,7 +35,7 @@ const post = table("post", {
 	updated: t.date(),
 });
 
-const db = orm(new Surreal(), user, post);
+const db = orm(new Surreal(), user, authored, post);
 
 const ctx = displayContext();
 const query = db.select("post").return((post) => ({
@@ -40,6 +45,13 @@ const query = db.select("post").return((post) => ({
 		age: author.age,
 	})),
 }));
+
+db.select("authored").return((user) => {
+	const a = user.id.from("user");
+	return user;
+});
+
+db.lookup.to;
 
 type a = t.infer<typeof query>;
 
