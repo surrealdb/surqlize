@@ -1,9 +1,11 @@
+import type { Orm } from "../schema";
 import { type AbstractType, type BoolType, t } from "../types";
 import {
 	type DisplayUtils,
 	type IntoWorkable,
 	type Workable,
 	__display,
+	__orm,
 	__type,
 	intoWorkable,
 } from "../utils";
@@ -44,10 +46,12 @@ export const ComparisonKind = t.union([
 ]);
 
 export function joiningFilter(
+	orm: Orm,
 	kind: t.infer<typeof JoiningKind>,
 	...params: Workable[]
 ): Actionable<BoolType> {
 	return actionable({
+		[__orm]: orm,
 		[__type]: t.bool(),
 		[__display](utils) {
 			return params.map((p) => p[__display](utils)).join(` ${kind} `);
@@ -56,10 +60,12 @@ export function joiningFilter(
 }
 
 export function prefixedFilter(
+	orm: Orm,
 	kind: t.infer<typeof PrefixKind>,
 	workable: Workable,
 ): Actionable<BoolType> {
 	return actionable({
+		[__orm]: orm,
 		[__type]: t.bool(),
 		[__display](utils) {
 			return `${kind}${workable[__display](utils)}`;
@@ -68,12 +74,14 @@ export function prefixedFilter(
 }
 
 export function comparingFilter<T extends AbstractType>(
+	orm: Orm,
 	kind: t.infer<typeof ComparisonKind>,
 	l: Workable<T>,
 	_r: IntoWorkable<T>,
 ): Actionable<BoolType> {
-	const r = intoWorkable(l[__type], _r);
+	const r = intoWorkable(orm, l[__type], _r);
 	return actionable({
+		[__orm]: orm,
 		[__type]: t.bool(),
 		[__display](utils) {
 			return `${l[__display](utils)} ${kind} ${r[__display](utils)}`;

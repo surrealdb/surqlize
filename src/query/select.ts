@@ -17,6 +17,7 @@ import {
 import {
 	type Workable,
 	__display,
+	__orm,
 	__type,
 	sanitizeWorkable,
 } from "../utils/workable.ts";
@@ -27,20 +28,22 @@ export class SelectQuery<
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
 > extends Query<O, ArrayType<E>> {
+	readonly [__orm]: O;
 	private _start?: number;
 	private _limit?: number;
 	private _filter?: Workable;
 	private _entry?: Workable<E>;
 
 	constructor(
-		readonly orm: O,
+		orm: O,
 		readonly tb: T,
 	) {
 		super();
+		this[__orm] = orm;
 	}
 
 	get entry(): E {
-		return (this._entry?.[__type] ?? this.orm.tables[this.tb].schema) as E;
+		return (this._entry?.[__type] ?? this[__orm].tables[this.tb].schema) as E;
 	}
 
 	get [__type](): ArrayType<E> {
@@ -52,6 +55,7 @@ export class SelectQuery<
 		R extends PredicableIntoType<P> = PredicableIntoType<P>,
 	>(cb: (tb: Actionable<E>) => P): SelectQuery<O, T, R> {
 		const tb = actionable({
+			[__orm]: this[__orm],
 			[__type]: this.entry,
 			[__display]: () => "$this",
 		}) as Actionable<E>;
@@ -59,14 +63,13 @@ export class SelectQuery<
 		(this as unknown as SelectQuery<O, T, R>)._entry = sanitizeWorkable(
 			predicableIntoWorkable(cb(tb)) as Workable<R>,
 		);
-		console.log(this._entry);
-		console.log(this.entry);
 		return this as unknown as SelectQuery<O, T, R>;
 	}
 
 	filter(cb: (tb: Actionable<O["tables"][T]["schema"]>) => Workable) {
 		const tb = actionable({
-			[__type]: this.orm.tables[this.tb].schema,
+			[__orm]: this[__orm],
+			[__type]: this[__orm].tables[this.tb].schema,
 			[__display]: () => "$this",
 		}) as Actionable<O["tables"][T]["schema"]>;
 
@@ -109,17 +112,19 @@ export class SelectOneQuery<
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
 > extends Query<O, UnionType<(E | NoneType)[]>> {
+	readonly [__orm]: O;
 	private _entry?: Workable<E>;
 
 	constructor(
-		readonly orm: O,
+		orm: O,
 		readonly rid: RecordId<T>,
 	) {
 		super();
+		this[__orm] = orm;
 	}
 
 	get entry(): E {
-		return (this._entry?.[__type] ?? this.orm.tables[this.rid.tb].schema) as E;
+		return (this._entry?.[__type] ?? this[__orm].tables[this.rid.tb].schema) as E;
 	}
 
 	get [__type]() {
@@ -141,6 +146,7 @@ export class SelectOneQuery<
 		R extends PredicableIntoType<P> = PredicableIntoType<P>,
 	>(cb: (tb: Actionable<E>) => P): SelectOneQuery<O, T, R> {
 		const tb = actionable({
+			[__orm]: this[__orm],
 			[__type]: this.entry,
 			[__display]: () => "$this",
 		}) as Actionable<E>;
@@ -148,8 +154,6 @@ export class SelectOneQuery<
 		(this as unknown as SelectOneQuery<O, T, R>)._entry = sanitizeWorkable(
 			predicableIntoWorkable(cb(tb)) as Workable<R>,
 		);
-		console.log(this._entry);
-		console.log(this.entry);
 		return this as unknown as SelectOneQuery<O, T, R>;
 	}
 }

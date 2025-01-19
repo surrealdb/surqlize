@@ -38,14 +38,9 @@ export function predicableIntoWorkable<T extends Predicable>(
 		throw new Error("Invalid Predicable value: must be an object");
 	}
 
-	console.log("Converting Predicable to Workable", value);
-
 	if ((value as Workable)[__type] !== undefined) {
-		console.log("already a workable with type", (value as Workable)[__type]);
 		return value as unknown as PredicableIntoWorkable<T>;
 	}
-
-	console.log("found predicable object");
 
 	const converted = Object.fromEntries(
 		Object.entries(value).map(([key, val]) => [
@@ -57,9 +52,6 @@ export function predicableIntoWorkable<T extends Predicable>(
 	const fieldTypes = Object.fromEntries(
 		Object.entries(converted).map(([key, val]) => [key, val[__type]]),
 	) as Record<string, AbstractType>;
-
-	console.log("converted", converted);
-	console.log("special", converted.name[__type]);
 
 	return {
 		[__type]: new ObjectType(fieldTypes),

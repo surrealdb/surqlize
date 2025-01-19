@@ -4,31 +4,17 @@ import {
 	type DisplayUtils,
 	type Workable,
 	__display,
+	__orm,
 	__type,
 	createDisplayUtils,
 } from "../utils";
-
-export abstract class QueryPart<T extends AbstractType = AbstractType>
-	implements Workable<T>
-{
-	abstract [__display](utils: DisplayUtils): string;
-	abstract [__type]: T;
-
-	infer = undefined as unknown as T["infer"];
-	validate(value: unknown): value is T["infer"] {
-		return this[__type].validate(value);
-	}
-
-	clone(): this {
-		return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
-	}
-}
 
 export abstract class Query<
 	O extends Orm,
 	T extends AbstractType = AbstractType,
 > implements Workable<T>
 {
+	abstract [__orm]: O;
 	abstract [__display](utils: DisplayUtils): string;
 	abstract [__type]: T;
 
@@ -51,8 +37,6 @@ export abstract class Query<
 	}
 
 	[Symbol.toStringTag] = "Query";
-
-	abstract orm: O;
 
 	catch<TResult = never>(
 		onRejected?:
@@ -93,7 +77,7 @@ export abstract class Query<
 	async execute() {
 		const utils = createDisplayUtils();
 		const query = this[__display](utils);
-		const [result] = await this.orm.surreal.query<[this["type"]]>(
+		const [result] = await this[__orm].surreal.query<[this["type"]]>(
 			query,
 			utils.variables,
 		);
