@@ -26,7 +26,7 @@ interface BaseFunctions {
 	option: typeFunctions.option.Functions;
 	record: typeFunctions.record.Functions;
 	string: typeFunctions.string.Functions;
-};
+}
 
 export type GetFunctions<
 	C extends WorkableContext,

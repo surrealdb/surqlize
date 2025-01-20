@@ -1,55 +1,61 @@
 import type { SelectOneQuery } from "../../query/select";
 import type { RecordType } from "../../types";
-import { __ctx, __type, __display, type Workable, type WorkableContext } from "../../utils";
+import {
+	type Workable,
+	type WorkableContext,
+	__ctx,
+	__display,
+	__type,
+} from "../../utils";
 
 export const functions = {
-    select<
-        C extends WorkableContext,
-        Tb extends keyof C['orm']["tables"] & string,
-    >(this: Workable<C, RecordType<Tb>>) {
-        return this[__ctx].orm.select(this);
-    },
+	select<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(this: Workable<C, RecordType<Tb>>) {
+		return this[__ctx].orm.select(this);
+	},
 
-    to<
-        C extends WorkableContext,
-        Tb extends keyof C["orm"]["tables"] & string,
-        To extends C["orm"]["lookup"]["to"][Tb] extends readonly (infer E)[]
-            ? E
-            : never,
-    >(this: Workable<C, RecordType<Tb>>, to: To) {
-        return to;
-    },
+	to<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+		To extends C["orm"]["lookup"]["to"][Tb] extends readonly (infer E)[]
+			? E
+			: never,
+	>(this: Workable<C, RecordType<Tb>>, to: To) {
+		return to;
+	},
 
-    from<
-        C extends WorkableContext,
-        Tb extends keyof C["orm"]["tables"] & string,
-        From extends C["orm"]["lookup"]["from"][Tb] extends readonly (infer E)[]
-            ? E
-            : never,
-    >(this: Workable<C, RecordType<Tb>>, from: From) {
-        return from;
-    },
+	from<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+		From extends C["orm"]["lookup"]["from"][Tb] extends readonly (infer E)[]
+			? E
+			: never,
+	>(this: Workable<C, RecordType<Tb>>, from: From) {
+		return from;
+	},
 } satisfies Functions;
 
 export type Functions = {
-    select<
-        C extends WorkableContext,
-        Tb extends keyof C["orm"]["tables"] & string,
-    >(this: Workable<C, RecordType<Tb>>): SelectOneQuery<C["orm"], C, Tb>;
+	select<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(this: Workable<C, RecordType<Tb>>): SelectOneQuery<C["orm"], C, Tb>;
 
-    to<
-        C extends WorkableContext,
-        Tb extends keyof C["orm"]["tables"] & string,
-        To extends C["orm"]["lookup"]["to"][Tb] extends readonly (infer E)[]
-            ? E
-            : never,
-    >(this: Workable<C, RecordType<Tb>>, to: To): To;
+	to<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+		To extends C["orm"]["lookup"]["to"][Tb] extends readonly (infer E)[]
+			? E
+			: never,
+	>(this: Workable<C, RecordType<Tb>>, to: To): To;
 
-    from<
-        C extends WorkableContext,
-        Tb extends keyof C["orm"]["tables"] & string,
-        From extends C["orm"]["lookup"]["from"][Tb] extends readonly (infer E)[]
-            ? E
-            : never,
-    >(this: Workable<C, RecordType<Tb>>, from: From): From;
+	from<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+		From extends C["orm"]["lookup"]["from"][Tb] extends readonly (infer E)[]
+			? E
+			: never,
+	>(this: Workable<C, RecordType<Tb>>, from: From): From;
 };
