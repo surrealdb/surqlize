@@ -1,4 +1,4 @@
-import type { Workable } from "../utils";
+import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
 	ArrayType,
@@ -87,6 +87,7 @@ export function record<T extends string | undefined>(
 }
 
 export type infer<T extends AbstractType | Workable> = T extends Workable<
+	WorkableContext,
 	infer T
 >
 	? T["infer"]

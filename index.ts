@@ -51,6 +51,12 @@ db.select("authored").return((user) => {
 	return user;
 });
 
+db.select("user").return((user) => {
+	user.props[0].eq("test");
+	user.props.contains(123);
+	return user;
+});
+
 db.lookup.to;
 
 type a = t.infer<typeof query>;
