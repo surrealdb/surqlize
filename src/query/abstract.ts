@@ -1,3 +1,4 @@
+import { getFunctions, type GetFunctions } from "../functions";
 import type { Orm } from "../schema";
 import type { AbstractType } from "../types";
 import {
@@ -8,7 +9,9 @@ import {
 	__display,
 	__type,
 	displayContext,
+	sanitizeWorkable,
 } from "../utils";
+import { actionable, type Actionable } from "../utils/actionable";
 
 export abstract class Query<
 	C extends WorkableContext = WorkableContext,
@@ -65,17 +68,23 @@ export abstract class Query<
 	}
 
 	// biome-ignore lint/suspicious/noThenProperty: entire point of the class
-	then<TResult1 = this["type"], TResult2 = never>(
-		onFulfilled?:
-			| ((value: this["type"]) => TResult1 | PromiseLike<TResult1>)
-			| undefined
-			| null,
-		onRejected?:
-			| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-			| undefined
-			| null,
-	): Promise<TResult1 | TResult2> {
-		return this.execute().then(onFulfilled, onRejected);
+	get then(): Then<this> & Actionable<C, T> {
+		const fn = <TResult1 = this["type"], TResult2 = never>(
+			onFulfilled?:
+				| ((value: this["type"]) => TResult1 | PromiseLike<TResult1>)
+				| undefined
+				| null,
+			onRejected?:
+				| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+				| undefined
+				| null,
+		): Promise<TResult1 | TResult2> => {
+			return this.execute().then(onFulfilled, onRejected);
+		}
+
+		const workable = sanitizeWorkable(this);
+		const functions = actionable(workable);
+		return Object.assign(fn, functions) as Then<this> & Actionable<C, T>;
 	}
 
 	async execute() {
@@ -88,3 +97,14 @@ export abstract class Query<
 		return this.parse(result);
 	}
 }
+
+type Then<Q extends Query> = <TResult1 = Q["type"], TResult2 = never>(
+	onFulfilled?:
+		| ((value: Q["type"]) => TResult1 | PromiseLike<TResult1>)
+		| undefined
+		| null,
+	onRejected?:
+		| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+		| undefined
+		| null,
+) => Promise<TResult1 | TResult2>;

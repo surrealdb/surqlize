@@ -175,8 +175,8 @@ function at<
 	this: Workable<C, ArrayType<T>>,
 	n: IntoWorkable<C, LiteralType<N>>,
 ): Actionable<C, At<T, N>>;
-function at<C extends WorkableContext>(
-	this: Workable,
+function at<C extends WorkableContext, T extends AbstractType>(
+	this: Workable<C, ArrayType<T>>,
 	n: IntoWorkable<C, NumberType>,
 ) {
 	const v = intoWorkable(this[__ctx], t.number(), n);

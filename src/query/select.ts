@@ -11,10 +11,10 @@ import {
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
-	type Predicable,
-	type PredicableIntoType,
-	predicableIntoWorkable,
-} from "../utils/predicable.ts";
+	type Inheritable,
+	type InheritableIntoType,
+	inheritableIntoWorkable,
+} from "../utils/inheritable.ts";
 import {
 	type Workable,
 	type WorkableContext,
@@ -59,8 +59,8 @@ export class SelectQuery<
 	}
 
 	return<
-		P extends Predicable<C>,
-		R extends PredicableIntoType<C, P> = PredicableIntoType<C, P>,
+		P extends Inheritable<C>,
+		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
 	>(cb: (tb: Actionable<C, E>) => P): SelectQuery<O, C, T, R> {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
@@ -72,7 +72,7 @@ export class SelectQuery<
 		}) as Actionable<C, E>;
 
 		const predicable = cb(tb);
-		const workable = predicableIntoWorkable<C, P>(
+		const workable = inheritableIntoWorkable<C, P>(
 			predicable,
 		) as unknown as Workable<C, R>;
 		const entry = sanitizeWorkable(workable);
@@ -81,7 +81,7 @@ export class SelectQuery<
 		return this as unknown as SelectQuery<O, C, T, R>;
 	}
 
-	filter(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
+	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: this[__ctx].orm.tables[this.tb].schema,
@@ -184,8 +184,8 @@ export class SelectOneQuery<
 	}
 
 	return<
-		P extends Predicable<C>,
-		R extends PredicableIntoType<C, P> = PredicableIntoType<C, P>,
+		P extends Inheritable<C>,
+		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
 	>(cb: (tb: Actionable<C, E>) => P): SelectOneQuery<O, C, T, R> {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
@@ -197,7 +197,7 @@ export class SelectOneQuery<
 		}) as Actionable<C, E>;
 
 		(this as unknown as SelectOneQuery<O, C, T, R>)._entry = sanitizeWorkable(
-			predicableIntoWorkable(cb(tb)) as unknown as Workable<C, R>,
+			inheritableIntoWorkable(cb(tb)) as unknown as Workable<C, R>,
 		);
 		return this as unknown as SelectOneQuery<O, C, T, R>;
 	}

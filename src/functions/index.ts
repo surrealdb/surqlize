@@ -13,7 +13,6 @@ import * as typeFunctions from "./types";
 const functions = {
 	any: typeFunctions.any.functions,
 	array: typeFunctions.array.functions,
-	object: typeFunctions.object.functions,
 	option: typeFunctions.option.functions,
 	record: typeFunctions.record.functions,
 	string: typeFunctions.string.functions,
@@ -22,7 +21,6 @@ const functions = {
 interface BaseFunctions {
 	any: typeFunctions.any.Functions;
 	array: typeFunctions.array.Functions;
-	object: typeFunctions.object.Functions;
 	option: typeFunctions.option.Functions;
 	record: typeFunctions.record.Functions;
 	string: typeFunctions.string.Functions;

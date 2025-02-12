@@ -1,8 +1,6 @@
 import {
 	type AbstractType,
-	type ArrayType,
 	ObjectType,
-	StringType,
 } from "../types";
 import type { DisplayContext } from "./display";
 import {
@@ -13,48 +11,55 @@ import {
 	isWorkable,
 } from "./workable";
 
-export type PredicableObject<C extends WorkableContext> = {
-	[key: string]: Predicable<C>;
+export type InheritableObject<C extends WorkableContext> = {
+	[key: string]: Inheritable<C>;
 };
 
-export type Predicable<C extends WorkableContext> =
+// TODO: Get inheritable arrays to work
+export type Inheritable<C extends WorkableContext> =
 	| Workable<C>
-	| PredicableObject<C>;
+	| InheritableObject<C>;
 
-export type PredicableIntoType<
+export type InheritableIntoType<
 	C extends WorkableContext,
-	T extends Predicable<C>,
+	T extends Inheritable<C>,
 > = T extends Workable<C, infer U>
 	? U
-	: T extends PredicableObject<C>
-		? ObjectType<{ [K in keyof T]: PredicableIntoType<C, T[K]> }>
+	: T extends InheritableObject<C>
+		? ObjectType<{ [K in keyof T]: InheritableIntoType<C, T[K]> }>
 		: never;
 
-export type PredicableIntoWorkable<
+export type InheritableIntoWorkable<
 	C extends WorkableContext,
-	P extends Predicable<C>,
+	P extends Inheritable<C>,
 > = P extends Workable<C, infer T>
 	? Workable<C, T>
-	: P extends PredicableObject<C>
-		? Workable<C, PredicableIntoType<C, P>>
+	: P extends InheritableObject<C>
+		? Workable<C, InheritableIntoType<C, P>>
 		: never;
 
-export function predicableIntoWorkable<
+export type InheritableForWorkable<
 	C extends WorkableContext,
-	T extends Predicable<C>,
->(value: T): PredicableIntoWorkable<C, T> {
+	T extends AbstractType,
+	P extends Inheritable<C> = Inheritable<C>,
+> = InheritableIntoWorkable<C, P> extends Workable<C, T> ? P : never;
+
+export function inheritableIntoWorkable<
+	C extends WorkableContext,
+	T extends Inheritable<C>,
+>(value: T): InheritableIntoWorkable<C, T> {
 	if (typeof value !== "object" || value === null) {
 		throw new Error("Invalid Predicable value: must be an object");
 	}
 
 	if (isWorkable(value)) {
-		return value as unknown as PredicableIntoWorkable<C, T>;
+		return value as unknown as InheritableIntoWorkable<C, T>;
 	}
 
 	const converted = Object.fromEntries(
 		Object.entries(value).map(([key, val]) => [
 			key,
-			predicableIntoWorkable(val as Predicable<C>),
+			inheritableIntoWorkable(val as Inheritable<C>),
 		]),
 	) as Record<string, Workable<C>>;
 
@@ -70,5 +75,5 @@ export function predicableIntoWorkable<
 			);
 			return `{ ${innerDisplays.join(", ")} }`;
 		},
-	} as PredicableIntoWorkable<C, T>;
+	} as InheritableIntoWorkable<C, T>;
 }

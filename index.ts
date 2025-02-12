@@ -35,9 +35,12 @@ const post = table("post", {
 	updated: t.date(),
 });
 
-const db = orm(new Surreal(), user, authored, post);
+const foo = table("foo", {});
+
+const db = orm(new Surreal(), user, authored, post, foo);
 
 const ctx = displayContext();
+
 const query = db.select("post").return((post) => ({
 	title: post.title,
 	author: post.author.select().return((author) => ({
@@ -46,16 +49,15 @@ const query = db.select("post").return((post) => ({
 	})),
 }));
 
-db.select("authored").return((user) => {
-	const a = user.id.from("user");
-	return user;
-});
+db
+	.select("user")
+	.where(($this) => $this.name.first.eq("John"))
 
-db.select("user").return((user) => {
-	user.props[0].eq("test");
-	user.props.contains(123);
-	return user;
-});
+db.select("user").return((user) => user.extend({
+	fullName: user.name.first.join(" ", user.name.last),
+}));
+
+const bla = db.select("foo").then.at(0).eq({ title: "Hello, World!" });
 
 db.lookup.to;
 
