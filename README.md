@@ -359,10 +359,6 @@ db.select("user").where((user) =>
   user.age.lt(65)                   // <
   user.age.lte(64)                  // <=
 
-  // Fuzzy matching
-  user.name.fy("John")              // ~ (fuzzy)
-  user.name.nf("Jane")              // !~ (not fuzzy)
-
   // Array membership
   user.status.inside(["active", "pending"])    // IN
   user.status.notInside(["banned", "deleted"]) // NOT IN

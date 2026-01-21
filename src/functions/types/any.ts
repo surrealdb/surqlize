@@ -31,21 +31,6 @@ export const functions = {
 		return comparingFilter(this[__ctx], "==", this, v);
 	},
 
-	// Fuzzy Matching
-	fy<C extends WorkableContext, T extends AbstractType>(
-		this: Workable<C, T>,
-		v: IntoWorkable<C, T>,
-	) {
-		return comparingFilter(this[__ctx], "~", this, v);
-	},
-
-	nf<C extends WorkableContext, T extends AbstractType>(
-		this: Workable<C, T>,
-		v: IntoWorkable<C, T>,
-	) {
-		return comparingFilter(this[__ctx], "!~", this, v);
-	},
-
 	// Greater/Less
 	gt<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, T>,
@@ -124,16 +109,6 @@ export type Functions = {
 		v: IntoWorkable<C, T>,
 	): Actionable<C, BoolType>;
 	ex<C extends WorkableContext, T extends AbstractType>(
-		this: Workable<C, T>,
-		v: IntoWorkable<C, T>,
-	): Actionable<C, BoolType>;
-
-	// Fuzzy Matching
-	fy<C extends WorkableContext, T extends AbstractType>(
-		this: Workable<C, T>,
-		v: IntoWorkable<C, T>,
-	): Actionable<C, BoolType>;
-	nf<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, T>,
 		v: IntoWorkable<C, T>,
 	): Actionable<C, BoolType>;
