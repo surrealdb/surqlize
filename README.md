@@ -737,15 +737,15 @@ type Result = t.infer<typeof query>;
 
 ## Comparison with other ORMs
 
-| Feature | Surqlize | Prisma | Drizzle | SurrealDB.js | TypeORM |
-|---------|----------|--------|---------|--------------|---------|
-| SurrealDB Support | ✅ Native | ❌ | ❌ | ✅ Official | ❌ |
-| Type Inference | ✅ Full, no codegen | ✅ Via codegen | ✅ Full | ⚠️ Partial | ⚠️ Decorators |
+| Feature | Surqlize | SurrealDB.js | Prisma | Drizzle | TypeORM |
+|---------|----------|--------------|--------|---------|---------|
+| SurrealDB Support | ✅ Native | ✅ Official | ❌ | ❌ | ❌ |
+| Type Inference | ✅ Full, no codegen | ⚠️ Partial | ✅ Via codegen | ✅ Full | ⚠️ Decorators |
 | CRUD Operations | ✅ All operations | ✅ | ✅ | ✅ | ✅ |
-| Graph/Edges | ✅ First-class | ❌ | ❌ | ✅ Manual | ❌ |
-| Query Builder | ✅ Type-safe | ⚠️ Limited | ✅ Type-safe | ⚠️ String-based | ✅ Query Builder |
-| Fluent API | ✅ | ⚠️ | ✅ | ❌ | ✅ |
-| Runtime Validation | 🚧 Planned | ✅ | ❌ | ❌ | ✅ |
+| Graph/Edges | ✅ First-class | ✅ Manual | ❌ | ❌ | ❌ |
+| Query Builder | ✅ Type-safe | ⚠️ String-based | ⚠️ Limited | ✅ Type-safe | ✅ Query Builder |
+| Fluent API | ✅ | ❌ | ⚠️ | ✅ | ✅ |
+| Runtime Validation | 🚧 Planned | ❌ | ✅ | ❌ | ✅ |
 
 **Why Surqlize?**
 
