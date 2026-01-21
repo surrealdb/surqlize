@@ -14,7 +14,7 @@
 	},
 	"scripts": {
 		"qc": "biome check .",
-		"qa": "biome check . --apply",
-		"qau": "biome check . --apply-unsafe"
+		"qa": "biome check . --write",
+		"qau": "biome check . --write --unsafe"
 	}
 }

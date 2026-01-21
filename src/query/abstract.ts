@@ -1,4 +1,4 @@
-import { getFunctions, type GetFunctions } from "../functions";
+import { type GetFunctions, getFunctions } from "../functions";
 import type { Orm } from "../schema";
 import type { AbstractType } from "../types";
 import {
@@ -11,7 +11,7 @@ import {
 	displayContext,
 	sanitizeWorkable,
 } from "../utils";
-import { actionable, type Actionable } from "../utils/actionable";
+import { type Actionable, actionable } from "../utils/actionable";
 
 export abstract class Query<
 	C extends WorkableContext = WorkableContext,
@@ -80,7 +80,7 @@ export abstract class Query<
 				| null,
 		): Promise<TResult1 | TResult2> => {
 			return this.execute().then(onFulfilled, onRejected);
-		}
+		};
 
 		const workable = sanitizeWorkable(this);
 		const functions = actionable(workable);
