@@ -1,7 +1,4 @@
-import {
-	type AbstractType,
-	ObjectType,
-} from "../types";
+import { type AbstractType, ObjectType } from "../types";
 import type { DisplayContext } from "./display";
 import {
 	type Workable,

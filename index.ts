@@ -49,13 +49,13 @@ const query = db.select("post").return((post) => ({
 	})),
 }));
 
-db
-	.select("user")
-	.where(($this) => $this.name.first.eq("John"))
+db.select("user").where(($this) => $this.name.first.eq("John"));
 
-db.select("user").return((user) => user.extend({
-	fullName: user.name.first.join(" ", user.name.last),
-}));
+db.select("user").return((user) =>
+	user.extend({
+		fullName: user.name.first.join(" ", user.name.last),
+	}),
+);
 
 const bla = db.select("foo").then.at(0).eq({ title: "Hello, World!" });
 
