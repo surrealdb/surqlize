@@ -202,5 +202,3 @@ export class SelectOneQuery<
 		return this as unknown as SelectOneQuery<O, C, T, R>;
 	}
 }
-
-const a = t.union([t.string(), t.number()]);
