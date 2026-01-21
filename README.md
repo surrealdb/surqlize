@@ -36,13 +36,14 @@
 
 > **⚠️ Experimental**: This project is in early development and the API may change significantly.
 
-A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fluent query builder, and first-class support for graph relationships, database functions.
+A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fluent query builder, comprehensive CRUD operations, and first-class support for graph relationships, and database functions.
 
 ## Features
 
 - **Type-safe schema definitions** - Define your database schema using intuitive `t.*` builders
 - **Automatic type inference** - Get full TypeScript types without code generation
 - **Fluent query builder** - Chain `.select()`, `.where()`, `.return()` with full type safety
+- **Complete CRUD operations** - SELECT, CREATE, UPDATE, DELETE, and UPSERT queries
 - **Graph relationships** - First-class support for edges and graph traversal
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
@@ -168,9 +169,9 @@ const db = orm(new Surreal(), user, post, authored);
 - `in`: RecordId of the source table (user)
 - `out`: RecordId of the target table (post)
 
-## Query building
+## CRUD Operations
 
-### Basic queries
+### SELECT Queries
 
 ```typescript
 // Select all records
@@ -197,9 +198,151 @@ const paginatedUsers = db
 
 // Select a single record
 const specificUser = db.select(new RecordId("user", "john"));
+
+// Nested queries (JOIN-like)
+const postsWithAuthors = db.select("post").return((post) => ({
+  title: post.title,
+  author: post.authorId.select().return((author) => ({
+    name: author.name,
+    email: author.email,
+  })),
+}));
 ```
 
-### Filtering operations
+### CREATE Queries
+
+```typescript
+// Create with SET
+const newUser = await db.create("user").set({
+  name: "Alice",
+  email: "alice@example.com",
+  age: 30,
+  created: new Date(),
+});
+
+// Create with CONTENT
+const newPost = await db.create("post").content({
+  title: "Hello World",
+  body: "First post!",
+  authorId: new RecordId("user", "alice"),
+  published: true,
+});
+
+// Create with explicit ID
+const user = await db.create("user", "alice123").set({
+  name: "Alice",
+  email: "alice@example.com",
+});
+
+// Control return value
+const created = await db.create("user")
+  .set({ name: "Bob" })
+  .return("after"); // or "before", "none", "diff"
+```
+
+### UPSERT Queries
+
+Insert if not exists, update if exists:
+
+```typescript
+// Upsert with SET
+await db.upsert("user", "alice")
+  .set({
+    name: "Alice",
+    email: "alice@example.com",
+    age: 30,
+  });
+
+// Upsert with operators (atomic increment)
+await db.upsert("pageview", "homepage")
+  .set({
+    count: { "+=": 1 },
+    lastViewed: new Date(),
+  });
+
+// Upsert with MERGE
+await db.upsert("user", "alice")
+  .merge({ lastLogin: new Date() });
+
+// Bulk upsert with WHERE
+await db.upsert("user")
+  .where((u) => u.email.eq("alice@example.com"))
+  .set({ lastSeen: new Date() });
+```
+
+### UPDATE Queries
+
+```typescript
+// Update with SET
+await db.update("user", "alice")
+  .set({ age: 31 });
+
+// Bulk update with WHERE
+await db.update("user")
+  .where((u) => u.age.lt(18))
+  .set({ status: "minor" });
+
+// Array and number operators
+await db.update("user", "alice")
+  .set({
+    age: { "+=": 1 },                // Increment
+    tags: { "+=": ["developer"] },   // Append to array
+    oldTags: { "-=": ["beginner"] }, // Remove from array
+  });
+
+// CONTENT (replace entire record)
+await db.update("user", "alice")
+  .content({
+    name: "Alice Smith",
+    email: "alice@example.com",
+    age: 31,
+  });
+
+// MERGE (partial update)
+await db.update("user", "alice")
+  .merge({ email: "newemail@example.com" });
+
+// PATCH (JSON Patch operations)
+await db.update("user", "alice")
+  .patch([
+    { op: "replace", path: "/age", value: 32 },
+    { op: "remove", path: "/oldField" },
+  ]);
+
+// UNSET (remove fields)
+await db.update("user", "alice")
+  .set({ name: "Alice" })
+  .unset(["oldField1", "oldField2"]);
+
+// Return modified records
+const updated = await db.update("user")
+  .where((u) => u.age.gt(65))
+  .set({ status: "senior" })
+  .return("after");
+```
+
+### DELETE Queries
+
+```typescript
+// Delete single record
+await db.delete("user", "alice");
+
+// Bulk delete with WHERE
+await db.delete("user")
+  .where((u) => u.age.lt(13));
+
+// Return deleted records
+const deleted = await db.delete("user")
+  .where((u) => u.status.eq("inactive"))
+  .return("before");
+
+// Delete with projection
+const deletedNames = await db.delete("user")
+  .where((u) => u.email.endsWith("@spam.com"))
+  .return((u) => ({ name: u.name }));
+```
+
+## Filtering operations
 
 All types support these comparison operators:
 
@@ -231,9 +374,9 @@ db.select("user").where((user) =>
 );
 ```
 
-### Type-specific functions
+## Type-specific functions
 
-#### String functions
+### String functions
 
 ```typescript
 db.select("user").where((user) =>
@@ -247,7 +390,7 @@ db.select("user").return((user) => ({
 }));
 ```
 
-#### Array functions
+### Array functions
 
 ```typescript
 db.select("user").where((user) =>
@@ -264,7 +407,7 @@ db.select("post").return((post) => ({
 }));
 ```
 
-#### Record functions
+### Record functions
 
 When you have a record reference, you can perform nested queries:
 
@@ -291,7 +434,132 @@ type Result = t.infer<typeof query>;
 // }>
 ```
 
-### Complex example
+## Advanced Features
+
+### Return Clauses
+
+Control what gets returned from mutations:
+
+```typescript
+// Return nothing
+await db.update("user", "alice").set({ age: 31 }).return("none");
+
+// Return state before modification
+const before = await db.update("user", "alice")
+  .set({ age: 31 })
+  .return("before");
+
+// Return state after modification (default)
+const after = await db.update("user", "alice")
+  .set({ age: 31 })
+  .return("after");
+
+// Return diff of changes
+const diff = await db.update("user", "alice")
+  .set({ age: 31 })
+  .return("diff");
+
+// Return specific fields with projection
+const projection = await db.update("user", "alice")
+  .set({ age: 31, email: "new@email.com" })
+  .return((u) => ({ name: u.name, age: u.age }));
+```
+
+### Query Timeouts
+
+```typescript
+const users = await db.select("user")
+  .where((u) => u.age.gt(18))
+  .timeout("5s");
+
+await db.update("user", "alice")
+  .set({ age: 31 })
+  .timeout("10s");
+```
+
+### Operators
+
+Use operators for atomic operations:
+
+```typescript
+// Increment/decrement numbers
+db.update("user", "alice").set({
+  age: { "+=": 1 },
+  score: { "-=": 10 },
+});
+
+// Add/remove from arrays
+db.update("post", "post1").set({
+  tags: { "+=": ["typescript", "database"] },
+  oldTags: { "-=": ["deprecated"] },
+});
+```
+
+## Type inference
+
+Extract TypeScript types from your queries using `t.infer<>`:
+
+```typescript
+// Infer query result type
+const query = db.select("user").return((user) => ({
+  name: user.name,
+  age: user.age,
+}));
+
+type QueryResult = t.infer<typeof query>;
+// QueryResult: Array<{ name: string; age: number }>
+
+// Infer table type
+const userTable = table("user", {
+  name: t.string(),
+  age: t.number(),
+});
+
+type User = t.infer<typeof userTable>;
+// User: { id: RecordId<"user">; name: string; age: number }
+
+// Infer individual type definitions
+const emailType = t.string();
+type Email = t.infer<typeof emailType>;
+// Email: string
+```
+
+## Debugging Queries
+
+Inspect generated SurrealQL:
+
+```typescript
+import { displayContext, __display } from "surqlize";
+
+const query = db.select("user").where((u) => u.age.gte(18));
+
+const ctx = displayContext();
+const sql = query[__display](ctx);
+
+console.log(sql);           // Generated SurrealQL
+console.log(ctx.variables); // Parameterized values
+```
+
+## Graph relationships
+
+Surqlize provides type-safe graph traversal through the `lookup` system:
+
+```typescript
+const user = table("user", { name: t.string() });
+const post = table("post", { title: t.string() });
+const authored = edge("user", "authored", "post", {});
+
+const db = orm(new Surreal(), user, post, authored);
+
+// TypeScript knows which edges connect to which tables
+db.lookup.to;   // { user: ["authored"], authored: ["post"], post: [] }
+db.lookup.from; // { user: [], authored: ["user"], post: ["authored"] }
+
+// Use in queries for type-safe graph navigation
+// (This feature is under active development)
+```
+
+## Complex example
 
 Here's a complete example showcasing multiple features:
 
@@ -342,60 +610,13 @@ const query = db
 type Result = t.infer<typeof query>;
 ```
 
-## Type inference
-
-Extract TypeScript types from your queries using `t.infer<>`:
-
-```typescript
-// Infer query result type
-const query = db.select("user").return((user) => ({
-  name: user.name,
-  age: user.age,
-}));
-
-type QueryResult = t.infer<typeof query>;
-// QueryResult: Array<{ name: string; age: number }>
-
-// Infer table type
-const userTable = table("user", {
-  name: t.string(),
-  age: t.number(),
-});
-
-type User = t.infer<typeof userTable>;
-// User: { id: RecordId<"user">; name: string; age: number }
-
-// Infer individual type definitions
-const emailType = t.string();
-type Email = t.infer<typeof emailType>;
-// Email: string
-```
-
-## Graph relationships
-
-Surqlize provides type-safe graph traversal through the `lookup` system:
-
-```typescript
-const user = table("user", { name: t.string() });
-const post = table("post", { title: t.string() });
-const authored = edge("user", "authored", "post", {});
-
-const db = orm(new Surreal(), user, post, authored);
-
-// TypeScript knows which edges connect to which tables
-db.lookup.to;   // { user: ["authored"], authored: ["post"], post: [] }
-db.lookup.from; // { user: [], authored: ["user"], post: ["authored"] }
-
-// Use in queries for type-safe graph navigation
-// (This feature is under active development)
-```
-
 ## Comparison with other ORMs
 
 | Feature | Surqlize | Prisma | Drizzle | SurrealDB.js | TypeORM |
 |---------|----------|--------|---------|--------------|---------|
 | SurrealDB Support | ✅ Native | ❌ | ❌ | ✅ Official | ❌ |
 | Type Inference | ✅ Full, no codegen | ✅ Via codegen | ✅ Full | ⚠️ Partial | ⚠️ Decorators |
+| CRUD Operations | ✅ All operations | ✅ | ✅ | ✅ | ✅ |
 | Graph/Edges | ✅ First-class | ❌ | ❌ | ✅ Manual | ❌ |
 | Query Builder | ✅ Type-safe | ⚠️ Limited | ✅ Type-safe | ⚠️ String-based | ✅ Query Builder |
 | Fluent API | ✅ | ⚠️ | ✅ | ❌ | ✅ |
@@ -407,14 +628,15 @@ db.lookup.from; // { user: [], authored: ["user"], post: ["authored"] }
 - **No code generation**: Full type inference using TypeScript's type system—no build step required
 - **Fluent API**: Natural, chainable syntax that mirrors SurrealQL while providing complete type safety
 - **Graph-first**: Edges and relationships are first-class citizens, not an afterthought
+- **Complete CRUD**: Full support for SELECT, CREATE, UPDATE, DELETE, and UPSERT operations
 
 ## Roadmap
 
 This project is in active development. Planned features include:
 
 - [ ] **Additional SurrealDB functions** - Math, time, crypto, geo, and more
-- [ ] **CRUD operations** - INSERT, UPDATE, DELETE, CREATE statements
 - [ ] **RELATE statements** - Create graph edges directly in queries
+- [ ] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
 - [ ] **Transaction support** - BEGIN, COMMIT, CANCEL transactions
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [ ] **Advanced graph traversal** - Path finding, recursive queries, graph algorithms
