@@ -66,7 +66,6 @@ export class SelectQuery<
 			[__ctx]: this[__ctx],
 			[__type]: this.entry,
 			[__display]: ({ contextId }) => {
-				console.log(contextId, this[__ctx].id);
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
 		}) as Actionable<C, E>;
@@ -86,7 +85,6 @@ export class SelectQuery<
 			[__ctx]: this[__ctx],
 			[__type]: this[__ctx].orm.tables[this.tb].schema,
 			[__display]: ({ contextId }) => {
-				console.log(contextId, this[__ctx].id);
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
@@ -191,7 +189,6 @@ export class SelectOneQuery<
 			[__ctx]: this[__ctx],
 			[__type]: this.entry,
 			[__display]: ({ contextId }) => {
-				console.log(contextId, this[__ctx].id);
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
 		}) as Actionable<C, E>;
