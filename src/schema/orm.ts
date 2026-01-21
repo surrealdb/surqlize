@@ -3,12 +3,13 @@ import { RecordId, type RecordIdValue } from "surrealdb";
 import { CreateQuery } from "../query/create";
 import { DeleteOneQuery, DeleteQuery } from "../query/delete";
 import { InsertQuery } from "../query/insert";
+import { RelateOneQuery, RelateQuery } from "../query/relate";
 import { SelectOneQuery, SelectQuery } from "../query/select";
 import { UpdateOneQuery, UpdateQuery } from "../query/update";
 import { UpsertOneQuery, UpsertQuery } from "../query/upsert";
-import type { RecordType } from "../types";
+import type { ArrayType, RecordType } from "../types";
 import { type Workable, type WorkableContext, isWorkable } from "../utils";
-import type { EdgeSchema } from "./edge";
+import { EdgeSchema } from "./edge";
 import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
 import type { TableSchema } from "./table";
 
@@ -193,6 +194,68 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 			return new UpsertOneQuery(this, tb as Workable<C, RecordType<Tb>>);
 		if (id === undefined) return new UpsertQuery(this, tb as Tb);
 		return new UpsertOneQuery(this, new RecordId(tb as Tb, id));
+	}
+
+	// RELATE - single source to single target
+	relate<
+		C extends WorkableContext<this>,
+		Edge extends keyof this["tables"] & string,
+	>(
+		edge: Edge,
+		from: RecordId | Workable<C, RecordType>,
+		to: RecordId | Workable<C, RecordType>,
+	): RelateOneQuery<this, C, Edge>;
+
+	// RELATE - arrays (cartesian product)
+	relate<
+		C extends WorkableContext<this>,
+		Edge extends keyof this["tables"] & string,
+	>(
+		edge: Edge,
+		from: RecordId[] | Workable<C, ArrayType<RecordType>>,
+		to: RecordId[] | Workable<C, ArrayType<RecordType>>,
+	): RelateQuery<this, C, Edge>;
+
+	// Method
+	relate<
+		C extends WorkableContext<this>,
+		Edge extends keyof this["tables"] & string,
+	>(
+		edge: Edge,
+		from:
+			| RecordId
+			| RecordId[]
+			| Workable<C, RecordType>
+			| Workable<C, ArrayType<RecordType>>,
+		to:
+			| RecordId
+			| RecordId[]
+			| Workable<C, RecordType>
+			| Workable<C, ArrayType<RecordType>>,
+	) {
+		const edgeSchema = this.tables[edge];
+
+		// Validate it's an EdgeSchema
+		if (!(edgeSchema instanceof EdgeSchema)) {
+			throw new Error(`"${edge}" is not an edge table`);
+		}
+
+		// Determine if single or multiple
+		const isFromArray =
+			Array.isArray(from) ||
+			(isWorkable(from) && from[Symbol.for("type")].name === "array");
+		const isToArray =
+			Array.isArray(to) ||
+			(isWorkable(to) && to[Symbol.for("type")].name === "array");
+
+		return isFromArray || isToArray
+			? new RelateQuery(this, edge, from, to)
+			: new RelateOneQuery(
+					this,
+					edge,
+					from as RecordId | Workable<C, RecordType>,
+					to as RecordId | Workable<C, RecordType>,
+				);
 	}
 }
 

@@ -171,7 +171,7 @@ const db = orm(new Surreal(), user, post, authored);
 
 ## CRUD Operations
 
-### SELECT Queries
+### SELECT statements
 
 ```typescript
 // Select all records
@@ -209,7 +209,7 @@ const postsWithAuthors = db.select("post").return((post) => ({
 }));
 ```
 
-### CREATE Queries
+### CREATE statements
 
 Create a new record with a specific id or a generated id.
 
@@ -242,7 +242,7 @@ const created = await db.create("user")
   .return("after"); // or "before", "none", "diff"
 ```
 
-### INSERT Queries
+### INSERT statements
 
 Insert one or multiple records with support for bulk operations and conflict handling.
 
@@ -298,7 +298,7 @@ const insertedNames = await db.insert("user", data)
   .return(u => ({ name: u.name }));
 ```
 
-### UPSERT Queries
+### UPSERT statements
 
 Create a record if it doesn't exist, update records if matching records exist.
 
@@ -328,7 +328,7 @@ await db.upsert("user")
   .set({ lastSeen: new Date() });
 ```
 
-### UPDATE Queries
+### UPDATE statements
 
 Update a record or multiple records in a table.
 
@@ -381,7 +381,76 @@ const updated = await db.update("user")
   .return("after");
 ```
 
-### DELETE Queries
+### RELATE statements
+
+Create graph edges between records using defined edge schemas.
+
+```typescript
+// Single edge between two records
+const edge = await db.relate(
+  "authored",
+  new RecordId("user", "alice"),
+  new RecordId("post", "hello-world")
+);
+
+// With edge data using content()
+const friendship = await db.relate(
+  "knows",
+  new RecordId("user", "user1"),
+  new RecordId("user", "user2")
+).content({
+  since: new Date(),
+  strength: 5,
+});
+
+// With edge data using set()
+const likes = await db.relate(
+  "likes",
+  new RecordId("user", "userId"),
+  new RecordId("post", "postId")
+).set({
+  created: new Date(),
+  rating: 5,
+});
+
+// Cartesian product: create multiple edges
+// Creates: alice->authored->post1, alice->authored->post2,
+//          bob->authored->post1, bob->authored->post2
+const edges = await db.relate(
+  "authored",
+  [new RecordId("user", "alice"), new RecordId("user", "bob")],
+  [new RecordId("post", "post1"), new RecordId("post", "post2")]
+);
+
+// Control return mode
+await db.relate(
+  "authored",
+  new RecordId("user", "user"),
+  new RecordId("post", "post")
+).content({ created: new Date() })
+.return("after"); // or "before", "none", "diff"
+
+// With return projection
+const edgeInfo = await db.relate(
+  "follows",
+  new RecordId("user", "follower"),
+  new RecordId("user", "followee")
+).set({ since: new Date() })
+.return(edge => ({
+  id: edge.id,
+  from: edge.in,
+  to: edge.out,
+  since: edge.since,
+}));
+
+
+// Using with query results
+const userQuery = db.select("user", "alice");
+const postQuery = db.select("post", "hello");
+await db.relate("authored", userQuery, postQuery);
+```
+
+### DELETE statements
 
 ```typescript
 // Delete single record

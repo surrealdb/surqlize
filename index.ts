@@ -225,6 +225,55 @@ const upsertWithIncrement = db.upsert("user", "alice123").set({
 	age: { "+=": 1 },
 });
 
+// RELATE examples
+const relateSingle = db.relate(
+	"authored",
+	new RecordId("user", "alice"),
+	new RecordId("post", "hello-world"),
+);
+
+const relateWithContent = db
+	.relate(
+		"authored",
+		new RecordId("user", "alice"),
+		new RecordId("post", "hello-world"),
+	)
+	.content({
+		created: new Date(),
+		updated: new Date(),
+	});
+
+const relateWithSet = db
+	.relate(
+		"authored",
+		new RecordId("user", "alice"),
+		new RecordId("post", "hello-world"),
+	)
+	.set({
+		created: new Date(),
+		updated: new Date(),
+	});
+
+const relateCartesian = db.relate(
+	"authored",
+	[new RecordId("user", "alice"), new RecordId("user", "bob")],
+	[new RecordId("post", "post1"), new RecordId("post", "post2")],
+);
+
+const relateWithReturn = db
+	.relate(
+		"authored",
+		new RecordId("user", "alice"),
+		new RecordId("post", "hello-world"),
+	)
+	.set({ created: new Date() })
+	.return((edge) => ({
+		id: edge.id,
+		from: edge.in,
+		to: edge.out,
+		created: edge.created,
+	}));
+
 // Display generated queries
 console.log("\n=== CREATE ===");
 console.log(createUser[__display](displayContext()));
@@ -246,3 +295,14 @@ console.log(updateBulk[__display](displayContext()));
 
 console.log("\n=== DELETE ===");
 console.log(deleteBulk[__display](displayContext()));
+
+console.log("\n=== RELATE ===");
+console.log(relateSingle[__display](displayContext()));
+console.log("\n=== RELATE WITH CONTENT ===");
+console.log(relateWithContent[__display](displayContext()));
+console.log("\n=== RELATE WITH SET ===");
+console.log(relateWithSet[__display](displayContext()));
+console.log("\n=== RELATE CARTESIAN ===");
+console.log(relateCartesian[__display](displayContext()));
+console.log("\n=== RELATE WITH RETURN ===");
+console.log(relateWithReturn[__display](displayContext()));
