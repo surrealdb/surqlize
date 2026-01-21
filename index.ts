@@ -101,6 +101,80 @@ const createWithId = db.create("user", "alice123").content({
 	tags: ["developer", "typescript"],
 });
 
+// INSERT examples
+const insertSingle = db.insert("user", {
+	name: { first: "Charlie", last: "Brown" },
+	age: 28,
+	email: "charlie@example.com",
+	created: new Date(),
+	updated: new Date(),
+	metadata: {
+		bio: "Developer",
+		avatar: "avatar.jpg",
+		eq: { value: true },
+	},
+	props: ["test", 456, false],
+	tags: ["backend", "api"],
+});
+
+const insertBulk = db.insert("user", [
+	{
+		name: { first: "Dave", last: "Smith" },
+		age: 35,
+		email: "dave@example.com",
+		created: new Date(),
+		updated: new Date(),
+		metadata: {
+			bio: "Senior Developer",
+			avatar: "dave.jpg",
+			eq: { value: true },
+		},
+		props: ["bulk", 789, true],
+		tags: ["fullstack", "lead"],
+	},
+	{
+		name: { first: "Eve", last: "Jones" },
+		age: 29,
+		email: "eve@example.com",
+		created: new Date(),
+		updated: new Date(),
+		metadata: {
+			bio: "Designer",
+			avatar: "eve.jpg",
+			eq: { value: true },
+		},
+		props: ["creative", 321, false],
+		tags: ["ui", "ux"],
+	},
+]);
+
+const insertValues = db
+	.insert("user")
+	.fields(["name", "age", "email"])
+	.values(
+		[{ first: "Frank", last: "Miller" }, 40, "frank@example.com"],
+		[{ first: "Grace", last: "Lee" }, 32, "grace@example.com"],
+	);
+
+const insertIgnore = db
+	.insert("user", {
+		name: { first: "Alice", last: "Smith" },
+		age: 30,
+		email: "alice@example.com",
+	})
+	.ignore();
+
+const insertOnDuplicate = db
+	.insert("user", {
+		name: { first: "Alice", last: "Smith" },
+		age: 30,
+		email: "alice@example.com",
+	})
+	.onDuplicate({
+		age: { "+=": 1 },
+		updated: new Date(),
+	});
+
 // UPDATE examples
 const updateBulk = db
 	.update("user")
@@ -154,6 +228,15 @@ const upsertWithIncrement = db.upsert("user", "alice123").set({
 // Display generated queries
 console.log("\n=== CREATE ===");
 console.log(createUser[__display](displayContext()));
+
+console.log("\n=== INSERT ===");
+console.log(insertSingle[__display](displayContext()));
+console.log("\n=== INSERT BULK ===");
+console.log(insertBulk[__display](displayContext()));
+console.log("\n=== INSERT VALUES ===");
+console.log(insertValues[__display](displayContext()));
+console.log("\n=== INSERT ON DUPLICATE ===");
+console.log(insertOnDuplicate[__display](displayContext()));
 
 console.log("\n=== UPSERT ===");
 console.log(upsertUser[__display](displayContext()));

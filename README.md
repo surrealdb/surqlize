@@ -211,6 +211,8 @@ const postsWithAuthors = db.select("post").return((post) => ({
 
 ### CREATE Queries
 
+Create a new record with a specific id or a generated id.
+
 ```typescript
 // Create with SET
 const newUser = await db.create("user").set({
@@ -240,9 +242,65 @@ const created = await db.create("user")
   .return("after"); // or "before", "none", "diff"
 ```
 
+### INSERT Queries
+
+Insert one or multiple records with support for bulk operations and conflict handling.
+
+```typescript
+// Insert single record (object style)
+await db.insert("user", {
+  name: "Alice",
+  email: "alice@example.com",
+  age: 30,
+});
+
+// Bulk insert (object style)
+await db.insert("user", [
+  { name: "Alice", email: "alice@example.com", age: 30 },
+  { name: "Bob", email: "bob@example.com", age: 25 },
+  { name: "Charlie", email: "charlie@example.com", age: 28 },
+]);
+
+// VALUES tuple syntax
+await db.insert("user")
+  .fields(["name", "email", "age"])
+  .values(
+    ["Alice", "alice@example.com", 30],
+    ["Bob", "bob@example.com", 25]
+  );
+
+// IGNORE duplicates (skip conflicts silently)
+await db.insert("user", userData).ignore();
+
+// ON DUPLICATE KEY UPDATE (update on conflict)
+await db.insert("user", { 
+  id: "alice", 
+  name: "Alice", 
+  age: 30 
+})
+.onDuplicate({
+  age: { "+=": 1 },
+  lastSeen: new Date(),
+});
+
+// With operators in ON DUPLICATE
+await db.insert("post", posts)
+  .onDuplicate({
+    views: { "+=": 1 },
+    tags: { "+=": ["updated"] },
+  });
+
+// With RETURN clause
+const inserted = await db.insert("user", data).return("after");
+
+// With RETURN projection
+const insertedNames = await db.insert("user", data)
+  .return(u => ({ name: u.name }));
+```
+
 ### UPSERT Queries
 
-Insert if not exists, update if exists:
+Create a record if it doesn't exist, update records if matching records exist.
 
 ```typescript
 // Upsert with SET
@@ -271,6 +329,8 @@ await db.upsert("user")
 ```
 
 ### UPDATE Queries
+
+Update a record or multiple records in a table.
 
 ```typescript
 // Update with SET

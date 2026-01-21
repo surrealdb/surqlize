@@ -2,6 +2,7 @@ import type Surreal from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
 import { CreateQuery } from "../query/create";
 import { DeleteOneQuery, DeleteQuery } from "../query/delete";
+import { InsertQuery } from "../query/insert";
 import { SelectOneQuery, SelectQuery } from "../query/select";
 import { UpdateOneQuery, UpdateQuery } from "../query/update";
 import { UpsertOneQuery, UpsertQuery } from "../query/upsert";
@@ -76,6 +77,26 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		Tb extends keyof this["tables"] & string,
 	>(tb: Tb, id?: RecordIdValue) {
 		return new CreateQuery(this, tb, id);
+	}
+
+	// INSERT with data (object style)
+	insert<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(tb: Tb, data: unknown | unknown[]): InsertQuery<this, C, Tb>;
+
+	// INSERT without data (for VALUES syntax)
+	insert<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(tb: Tb): InsertQuery<this, C, Tb>;
+
+	// Method
+	insert<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(tb: Tb, data?: unknown | unknown[]) {
+		return new InsertQuery(this, tb, data);
 	}
 
 	// UPDATE - bulk

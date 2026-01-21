@@ -3,6 +3,7 @@ export * from "./schema";
 export * from "./utils";
 export * from "./query/select";
 export * from "./query/create";
+export * from "./query/insert";
 export * from "./query/update";
 export * from "./query/delete";
 export * from "./query/upsert";
