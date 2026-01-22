@@ -68,7 +68,9 @@ export class InsertQuery<
 		return t.array(this.schema);
 	}
 
-	fields(fields: E extends ObjectType ? (keyof E["schema"])[] : string[]): this {
+	fields(
+		fields: E extends ObjectType ? (keyof E["schema"])[] : string[],
+	): this {
 		if (this._data) {
 			throw new Error("Cannot use fields() with object-style insert");
 		}
@@ -106,7 +108,9 @@ export class InsertQuery<
 	}
 
 	onDuplicate(
-		updates: E extends ObjectType ? Partial<SetData<E>> : Record<string, unknown>,
+		updates: E extends ObjectType
+			? Partial<SetData<E>>
+			: Record<string, unknown>,
 	): this {
 		if (this._ignore) {
 			throw new Error("Cannot use both ignore() and onDuplicate()");
@@ -178,8 +182,8 @@ export class InsertQuery<
 
 		const table = ctx.var(new Table(this.tb));
 
-		let query = /* surql */ `INSERT`;
-		if (this._ignore) query += /* surql */ ` IGNORE`;
+		let query = /* surql */ "INSERT";
+		if (this._ignore) query += /* surql */ " IGNORE";
 		query += /* surql */ ` INTO ${table}`;
 
 		// Object-style syntax

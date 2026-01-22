@@ -77,14 +77,14 @@ export class RelateQuery<
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
 		if (this._content) {
-			throw new Error(
-				"Cannot use both set() and content() on the same query",
-			);
+			throw new Error("Cannot use both set() and content() on the same query");
 		}
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -102,9 +102,7 @@ export class RelateQuery<
 
 	content(data: E["infer"]): this {
 		if (this._set) {
-			throw new Error(
-				"Cannot use both content() and set() on the same query",
-			);
+			throw new Error("Cannot use both content() and set() on the same query");
 		}
 		this._content = data;
 		return this;
@@ -248,14 +246,14 @@ export class RelateOneQuery<
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
 		if (this._content) {
-			throw new Error(
-				"Cannot use both set() and content() on the same query",
-			);
+			throw new Error("Cannot use both set() and content() on the same query");
 		}
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -273,9 +271,7 @@ export class RelateOneQuery<
 
 	content(data: E["infer"]): this {
 		if (this._set) {
-			throw new Error(
-				"Cannot use both content() and set() on the same query",
-			);
+			throw new Error("Cannot use both content() and set() on the same query");
 		}
 		this._content = data;
 		return this;

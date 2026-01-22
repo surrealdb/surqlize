@@ -93,7 +93,9 @@ export class UpsertQuery<
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -196,19 +198,11 @@ export class UpsertQuery<
 		} else if (this._set) {
 			const assignments: string[] = [];
 			for (const [key, value] of Object.entries(this._set)) {
-				if (
-					value &&
-					typeof value === "object" &&
-					"+=" in value
-				) {
+				if (value && typeof value === "object" && "+=" in value) {
 					assignments.push(
 						`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
 					);
-				} else if (
-					value &&
-					typeof value === "object" &&
-					"-=" in value
-				) {
+				} else if (value && typeof value === "object" && "-=" in value) {
 					assignments.push(
 						`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 					);
@@ -295,7 +289,9 @@ export class UpsertOneQuery<
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -388,19 +384,11 @@ export class UpsertOneQuery<
 		} else if (this._set) {
 			const assignments: string[] = [];
 			for (const [key, value] of Object.entries(this._set)) {
-				if (
-					value &&
-					typeof value === "object" &&
-					"+=" in value
-				) {
+				if (value && typeof value === "object" && "+=" in value) {
 					assignments.push(
 						`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
 					);
-				} else if (
-					value &&
-					typeof value === "object" &&
-					"-=" in value
-				) {
+				} else if (value && typeof value === "object" && "-=" in value) {
 					assignments.push(
 						`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 					);

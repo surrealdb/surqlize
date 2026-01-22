@@ -61,14 +61,14 @@ export class CreateQuery<
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
 		if (this._content) {
-			throw new Error(
-				"Cannot use both set() and content() on the same query",
-			);
+			throw new Error("Cannot use both set() and content() on the same query");
 		}
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -86,9 +86,7 @@ export class CreateQuery<
 
 	content(data: E["infer"]): this {
 		if (this._set) {
-			throw new Error(
-				"Cannot use both content() and set() on the same query",
-			);
+			throw new Error("Cannot use both content() and set() on the same query");
 		}
 		this._content = data;
 		return this;
@@ -97,7 +95,12 @@ export class CreateQuery<
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return(cb: (record: Workable<C, E>) => Workable<C>): this;
 	return(
-		value: "none" | "before" | "after" | "diff" | ((record: Workable<C, E>) => Workable<C>),
+		value:
+			| "none"
+			| "before"
+			| "after"
+			| "diff"
+			| ((record: Workable<C, E>) => Workable<C>),
 	): this {
 		if (typeof value === "function") {
 			const record: Workable<C, E> = {
@@ -135,19 +138,11 @@ export class CreateQuery<
 		} else if (this._set) {
 			const assignments: string[] = [];
 			for (const [key, value] of Object.entries(this._set)) {
-				if (
-					value &&
-					typeof value === "object" &&
-					"+=" in value
-				) {
+				if (value && typeof value === "object" && "+=" in value) {
 					assignments.push(
 						`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
 					);
-				} else if (
-					value &&
-					typeof value === "object" &&
-					"-=" in value
-				) {
+				} else if (value && typeof value === "object" && "-=" in value) {
 					assignments.push(
 						`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 					);

@@ -60,12 +60,7 @@ export class UpdateQuery<
 	private _filter?: Workable<C>;
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
 	private _timeout?: string;
-	private _modificationMode?:
-		| "set"
-		| "content"
-		| "merge"
-		| "patch"
-		| "replace";
+	private _modificationMode?: "set" | "content" | "merge" | "patch" | "replace";
 
 	constructor(
 		orm: O,
@@ -100,7 +95,9 @@ export class UpdateQuery<
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -220,19 +217,11 @@ export class UpdateQuery<
 			if (this._set) {
 				const assignments: string[] = [];
 				for (const [key, value] of Object.entries(this._set)) {
-					if (
-						value &&
-						typeof value === "object" &&
-						"+=" in value
-					) {
+					if (value && typeof value === "object" && "+=" in value) {
 						assignments.push(
 							`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
 						);
-					} else if (
-						value &&
-						typeof value === "object" &&
-						"-=" in value
-					) {
+					} else if (value && typeof value === "object" && "-=" in value) {
 						assignments.push(
 							`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 						);
@@ -289,12 +278,7 @@ export class UpdateOneQuery<
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
 	private _timeout?: string;
 	private tb: T;
-	private _modificationMode?:
-		| "set"
-		| "content"
-		| "merge"
-		| "patch"
-		| "replace";
+	private _modificationMode?: "set" | "content" | "merge" | "patch" | "replace";
 
 	constructor(
 		orm: O,
@@ -335,7 +319,9 @@ export class UpdateOneQuery<
 
 		// Process operators
 		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+		for (const [key, value] of Object.entries(
+			data as Record<string, unknown>,
+		)) {
 			if (
 				value &&
 				typeof value === "object" &&
@@ -445,19 +431,11 @@ export class UpdateOneQuery<
 			if (this._set) {
 				const assignments: string[] = [];
 				for (const [key, value] of Object.entries(this._set)) {
-					if (
-						value &&
-						typeof value === "object" &&
-						"+=" in value
-					) {
+					if (value && typeof value === "object" && "+=" in value) {
 						assignments.push(
 							`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
 						);
-					} else if (
-						value &&
-						typeof value === "object" &&
-						"-=" in value
-					) {
+					} else if (value && typeof value === "object" && "-=" in value) {
 						assignments.push(
 							`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 						);

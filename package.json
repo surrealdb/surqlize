@@ -13,6 +13,11 @@
 		"surrealdb": "^1.1.0"
 	},
 	"scripts": {
+		"test": "bun test",
+		"test:unit": "bun test tests/unit/",
+		"test:integration": "bun test tests/integration/",
+		"test:watch": "bun test --watch",
+		"type-check": "tsc --noEmit",
 		"qc": "biome check .",
 		"qa": "biome check . --write",
 		"qau": "biome check . --write --unsafe"

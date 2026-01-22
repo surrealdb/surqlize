@@ -186,12 +186,10 @@ const updateOne = db
 	.set({ age: 31 })
 	.return("after");
 
-const updateWithOperators = db
-	.update("user", "alice123")
-	.set({
-		age: { "+=": 1 }, // Increment age
-		tags: { "+=": ["senior"] }, // Add tag to array
-	});
+const updateWithOperators = db.update("user", "alice123").set({
+	age: { "+=": 1 }, // Increment age
+	tags: { "+=": ["senior"] }, // Add tag to array
+});
 
 const updateMerge = db.update("user", "alice123").merge({
 	email: "newemail@example.com",
