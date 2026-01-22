@@ -775,13 +775,15 @@ type Result = t.infer<typeof query>;
 
 | Feature | Surqlize | SurrealDB.js | Prisma | Drizzle | TypeORM |
 |---------|----------|--------------|--------|---------|---------|
-| SurrealDB Support | ✅ Native | ✅ Official | ❌ | ❌ | ❌ |
-| Type Inference | ✅ Full, no codegen | ⚠️ Partial | ✅ Via codegen | ✅ Full | ⚠️ Decorators |
-| CRUD Operations | ✅ All operations | ✅ | ✅ | ✅ | ✅ |
-| Graph/Edges | ✅ First-class | ✅ Manual | ❌ | ❌ | ❌ |
-| Query Builder | ✅ Type-safe | ⚠️ String-based | ⚠️ Limited | ✅ Type-safe | ✅ Query Builder |
-| Fluent API | ✅ | ❌ | ⚠️ | ✅ | ✅ |
-| Runtime Validation | 🚧 Planned | ❌ | ✅ | ❌ | ✅ |
+| SurrealDB support | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Schema definition | ✅ <sup><sub>Code-first</sub></sup> | ❌ | ✅ <sup><sub>Schema file</sub></sup> | ✅ <sup><sub>Code-first</sub></sup> | ⚠️ <sup><sub>Decorators</sub></sup> |
+| Type inference | ✅ <sup><sub>Full</sub></sup> | ⚠️ <sup><sub>Partial</sub></sup> | ✅ <sup><sub>With codegen</sub></sup> | ✅ <sup><sub>Full</sub></sup> | ⚠️ <sup><sub>Decorators</sub></sup> |
+| CRUD operations | ✅ <sup><sub>All operations</sub></sup> | ✅ | ✅ | ✅ | ✅ |
+| Graph and edges | ✅ <sup><sub>Native</sub></sup> | ✅ <sup><sub>Manual</sub></sup> | ❌ | ❌ | ❌ |
+| Query builder | ✅ <sup><sub>Type-safe</sub></sup> | ⚠️ <sup><sub>Manual</sub></sup> | ⚠️ <sup><sub>Limited</sub></sup> | ✅ <sup><sub>Type-safe</sub></sup> | ✅ <sup><sub>Query builder</sub></sup> |
+| Database Functions | ✅ <sup><sub>Integrated</sub></sup> | ⚠️ <sup><sub>Manual</sub></sup> | ⚠️ <sup><sub>Limited</sub></sup> | ✅ <sup><sub>SQL functions</sub></sup> | ✅ <sup><sub>Query functions</sub></sup> |
+| Nested Queries | ✅ <sup><sub>Type-safe</sub></sup> | ⚠️ <sup><sub>Manual</sub></sup> | ✅ <sup><sub>Relations</sub></sup> | ✅ <sup><sub>Joins</sub></sup> | ✅ <sup><sub>Relations</sub></sup> |
+| Fluent API | ✅ | ❌ | ❌ | ✅ | ✅ |
 
 **Why Surqlize?**
 
