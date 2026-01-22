@@ -136,4 +136,29 @@ describe("SELECT queries", () => {
 
 		expect(result).toContain("SELECT");
 	});
+
+	test("generates SELECT with TIMEOUT", () => {
+		const query = db.select("user").timeout("5s");
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("SELECT * FROM");
+		expect(result).toContain("TIMEOUT");
+		expect(Object.values(ctx.variables)).toContainEqual("5s");
+	});
+
+	test("generates SELECT with WHERE, LIMIT and TIMEOUT", () => {
+		const query = db
+			.select("user")
+			.where(($this) => $this.age.gt(18))
+			.limit(10)
+			.timeout("10s");
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("SELECT * FROM");
+		expect(result).toContain("WHERE");
+		expect(result).toContain("LIMIT");
+		expect(result).toContain("TIMEOUT");
+	});
 });

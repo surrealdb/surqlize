@@ -37,6 +37,7 @@ export class SelectQuery<
 	private _limit?: number;
 	private _filter?: Workable<C>;
 	private _entry?: Workable<C, E>;
+	private _timeout?: string;
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
@@ -112,6 +113,11 @@ export class SelectQuery<
 		return this;
 	}
 
+	timeout(duration: string): this {
+		this._timeout = duration;
+		return this;
+	}
+
 	[__display](inp: DisplayContext) {
 		const ctx = displayContext({
 			...inp,
@@ -138,6 +144,10 @@ export class SelectQuery<
 
 		if (start) query += /* surql */ ` START ${start}`;
 		if (limit) query += /* surql */ ` LIMIT ${limit}`;
+
+		if (this._timeout) {
+			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;
+		}
 
 		return `(${query})`;
 	}
