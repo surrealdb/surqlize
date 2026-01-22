@@ -53,7 +53,7 @@ describe("CRUD Integration Tests", () => {
 					email: "bob@example.com",
 					created: new Date(),
 					updated: new Date(),
-				})
+				} as any)
 				.execute();
 
 			expect(result[0].name.first).toBe("Bob");

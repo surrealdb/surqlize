@@ -77,7 +77,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
 	>(tb: Tb, id?: RecordIdValue) {
-		return new CreateQuery(this, tb, id);
+		return new CreateQuery(this, tb, id?.toString());
 	}
 
 	// INSERT with data (object style)

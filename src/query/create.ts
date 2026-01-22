@@ -52,7 +52,7 @@ export class CreateQuery<
 	}
 
 	get schema(): E {
-		return this[__ctx].orm.tables[this.tb].schema as E;
+		return this[__ctx].orm.tables[this.tb].schema as unknown as E;
 	}
 
 	get [__type](): ArrayType<E> {

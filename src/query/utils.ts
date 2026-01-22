@@ -42,5 +42,5 @@ export function createWalkable<
 			return display(ctx);
 		},
 		[__type]: ctx.orm.tables[tb].schema,
-	});
+	}) as unknown as Walkable<C, Tb>;
 }

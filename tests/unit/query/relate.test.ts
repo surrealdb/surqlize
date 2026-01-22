@@ -58,7 +58,7 @@ describe("RELATE queries", () => {
 			)
 			.content({
 				created: new Date("2024-01-01"),
-			});
+			} as any);
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -158,6 +158,6 @@ describe("RELATE queries", () => {
 				new RecordId("post", "post1"),
 			)
 			.set({ created: new Date() });
-		expect(() => query.content({ created: new Date() })).toThrow();
+		expect(() => query.content({ created: new Date() } as any)).toThrow();
 	});
 });

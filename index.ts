@@ -57,7 +57,7 @@ db.select("user").return((user) =>
 	}),
 );
 
-const bla = db.select("foo").then.at(0).eq({ title: "Hello, World!" });
+const bla = db.select("foo").then.at(0).eq({ title: "Hello, World!" } as any);
 
 db.lookup.to;
 
@@ -99,7 +99,7 @@ const createWithId = db.create("user", "alice123").content({
 	},
 	props: ["test", 123, true],
 	tags: ["developer", "typescript"],
-});
+} as any);
 
 // INSERT examples
 const insertSingle = db.insert("user", {
@@ -239,7 +239,7 @@ const relateWithContent = db
 	.content({
 		created: new Date(),
 		updated: new Date(),
-	});
+	} as any);
 
 const relateWithSet = db
 	.relate(

@@ -68,7 +68,7 @@ export class RelateQuery<
 	}
 
 	get schema(): E {
-		return this[__ctx].orm.tables[this.edge].schema as E;
+		return this[__ctx].orm.tables[this.edge].schema as unknown as E;
 	}
 
 	get [__type](): ArrayType<E> {
