@@ -1,7 +1,9 @@
 {
 	"name": "surqlize",
+	"version": "0.1.0",
 	"module": "index.ts",
 	"type": "module",
+	"license": "Apache-2.0",
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",
 		"@types/bun": "latest"

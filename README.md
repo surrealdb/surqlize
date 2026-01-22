@@ -532,6 +532,10 @@ db.select("user").where((user) =>
   user.age.gte(18).and(user.isActive.eq(true))
   user.role.eq("admin").or(user.role.eq("moderator"))
   user.isActive.not()
+  
+  // Truthiness checks
+  user.bio.trueish()    // !! (double negation - checks for truthy value)
+  user.archived.falseish() // ! (negation - checks for falsy value)
 );
 ```
 
@@ -555,16 +559,44 @@ db.select("user").return((user) => ({
 
 ```typescript
 db.select("user").where((user) =>
-  user.tags.contains("typescript")
-  user.tags.containsAll(["javascript", "typescript"])
-  user.tags.containsAny(["rust", "go", "python"])
-  user.tags.containsNone(["php", "perl"])
+  // Single element checks
+  user.tags.contains("typescript")          // Array contains element
+  user.tags.containsNot("java")             // Array doesn't contain element
+  
+  // Multiple element checks
+  user.tags.containsAll(["javascript", "typescript"]) // Contains all elements
+  user.tags.containsAny(["rust", "go", "python"])     // Contains any element
+  user.tags.containsNone(["php", "perl"])             // Contains none of elements
+  
+  // Inside checks (array subset operations)
+  user.tags.allInside(allowedTags)   // All elements are in allowedTags
+  user.tags.anyInside(popularTags)   // Any element is in popularTags
+  user.tags.noneInside(bannedTags)   // No elements are in bannedTags
 );
 
 db.select("post").return((post) => ({
   title: post.title,
-  firstTag: post.tags.at(0),
-  tagCount: post.tags.len(),
+  firstTag: post.tags.at(0),  // Get element at index
+  tagCount: post.tags.len(),   // Array length
+}));
+```
+
+### Option functions
+
+When working with optional values (created with `t.option()`), you can use `map()` to transform the value if it exists:
+
+```typescript
+const user = table("user", {
+  name: t.string(),
+  bio: t.option(t.string()),
+});
+
+db.select("user").return((user) => ({
+  name: user.name,
+  // Transform bio to uppercase if it exists
+  bioUpper: user.bio.map((b) => b.toUpperCase()),
+  // Chain multiple operations
+  bioLength: user.bio.map((b) => b.len()),
 }));
 ```
 
@@ -791,14 +823,13 @@ type Result = t.infer<typeof query>;
 - **No code generation**: Full type inference using TypeScript's type system—no build step required
 - **Fluent API**: Natural, chainable syntax that mirrors SurrealQL while providing complete type safety
 - **Graph-first**: Edges and relationships are first-class citizens, not an afterthought
-- **Complete CRUD**: Full support for SELECT, CREATE, UPDATE, DELETE, and UPSERT operations
+- **Complete CRUD**: Full support for SELECT, CREATE, UPSERT, UPDATE, RELATE, and DELETE operations
 
 ## Roadmap
 
 This project is in active development. Planned features include:
 
 - [ ] **Additional SurrealDB functions** - Math, time, crypto, geo, and more
-- [ ] **RELATE statements** - Create graph edges directly in queries
 - [ ] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
 - [ ] **Transaction support** - BEGIN, COMMIT, CANCEL transactions
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
@@ -835,7 +866,7 @@ Please ensure your code passes the linting checks (`bun run qc`).
 
 ## License
 
-[Specify license here - check package.json or add LICENSE file]
+Apache-2.0
 
 ---
 
