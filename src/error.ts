@@ -1,11 +1,16 @@
 export class OrmError extends Error {}
 
 export class TypeParseError extends Error {
+	public readonly name: string;
+	public readonly expected: string | [string, string, ...string[]];
+	public readonly found: unknown;
+
 	constructor(
-		public readonly name: string,
-		public readonly expected: string | [string, string, ...string[]],
-		public readonly found: unknown,
+		name: string,
+		expected: string | [string, string, ...string[]],
+		found: unknown,
 	) {
+		// Call super() first before accessing this
 		if (Array.isArray(expected)) {
 			const expected_str =
 				expected.length <= 1
@@ -18,5 +23,10 @@ export class TypeParseError extends Error {
 		} else {
 			super(`Expected ${expected} but found ${found}`);
 		}
+
+		// Now assign properties
+		this.name = name;
+		this.expected = expected;
+		this.found = found;
 	}
 }

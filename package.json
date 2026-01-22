@@ -1,7 +1,9 @@
 {
 	"name": "surqlize",
+	"version": "0.1.0",
 	"module": "index.ts",
 	"type": "module",
+	"license": "Apache-2.0",
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",
 		"@types/bun": "latest"
@@ -10,9 +12,14 @@
 		"typescript": "^5.0.0"
 	},
 	"dependencies": {
-		"surrealdb": "^1.1.0"
+		"surrealdb": "2.0.0-alpha.16"
 	},
 	"scripts": {
+		"all": "bun test && bun type-check && biome check .",
+		"test": "bun test",
+		"test:unit": "bun test tests/unit/",
+		"test:integration": "bun test tests/integration/",
+		"type-check": "tsc --noEmit",
 		"qc": "biome check .",
 		"qa": "biome check . --write",
 		"qau": "biome check . --write --unsafe"

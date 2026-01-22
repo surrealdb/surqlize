@@ -26,17 +26,16 @@ import {
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 
-export class SelectQuery<
+export class DeleteQuery<
 	O extends Orm,
 	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
 > extends Query<C, ArrayType<E>> {
 	readonly [__ctx]: C;
-	private _start?: number;
-	private _limit?: number;
 	private _filter?: Workable<C>;
-	private _entry?: Workable<C, E>;
+	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
+	private _timeout?: string;
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
@@ -58,35 +57,12 @@ export class SelectQuery<
 		}
 	}
 
-	get entry(): E {
-		return (this._entry?.[__type] ??
-			this[__ctx].orm.tables[this.tb].schema) as E;
+	get schema(): E {
+		return this[__ctx].orm.tables[this.tb].schema as unknown as E;
 	}
 
 	get [__type](): ArrayType<E> {
-		return t.array(this.entry);
-	}
-
-	return<
-		P extends Inheritable<C>,
-		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): SelectQuery<O, C, T, R> {
-		const tb = actionable({
-			[__ctx]: this[__ctx],
-			[__type]: this.entry,
-			[__display]: ({ contextId }) => {
-				return contextId === this[__ctx].id ? "$this" : "$parent";
-			},
-		}) as Actionable<C, E>;
-
-		const predicable = cb(tb);
-		const workable = inheritableIntoWorkable<C, P>(
-			predicable,
-		) as unknown as Workable<C, R>;
-		const entry = sanitizeWorkable(workable);
-
-		(this as unknown as SelectQuery<O, C, T, R>)._entry = entry;
-		return this as unknown as SelectQuery<O, C, T, R>;
+		return t.array(this.schema);
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
@@ -102,13 +78,41 @@ export class SelectQuery<
 		return this;
 	}
 
-	start(start: number) {
-		this._start = start;
+	return(mode: "none" | "before" | "after" | "diff"): this;
+	return<
+		P extends Inheritable<C>,
+		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
+	>(cb: (tb: Actionable<C, E>) => P): DeleteQuery<O, C, T, R>;
+	return(
+		value:
+			| "none"
+			| "before"
+			| "after"
+			| "diff"
+			| ((tb: Actionable<C, E>) => Inheritable<C>),
+	): this {
+		if (typeof value === "function") {
+			const tb = actionable({
+				[__ctx]: this[__ctx],
+				[__type]: this.schema,
+				[__display]: ({ contextId }) => {
+					return contextId === this[__ctx].id ? "$this" : "$parent";
+				},
+			}) as Actionable<C, E>;
+
+			const predicable = value(tb);
+			const workable = inheritableIntoWorkable<C, typeof predicable>(
+				predicable,
+			) as unknown as Workable<C, E>;
+			this._return = sanitizeWorkable(workable);
+		} else {
+			this._return = value;
+		}
 		return this;
 	}
 
-	limit(limit: number) {
-		this._limit = limit;
+	timeout(duration: string): this {
+		this._timeout = duration;
 		return this;
 	}
 
@@ -125,19 +129,22 @@ export class SelectQuery<
 					? this.subject[__display](ctx)
 					: ctx.var(this.subject);
 
-		const start = this._start && ctx.var(this._start);
-		const limit = this._limit && ctx.var(this._limit);
-
-		const predicates = this._entry
-			? /* surql */ `VALUE ${this._entry[__display](ctx)}`
-			: "*";
-		let query = /* surql */ `SELECT ${predicates} FROM ${thing}`;
+		let query = /* surql */ `DELETE ${thing}`;
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
-		if (start) query += /* surql */ ` START ${start}`;
-		if (limit) query += /* surql */ ` LIMIT ${limit}`;
+		if (this._return) {
+			if (typeof this._return === "string") {
+				query += /* surql */ ` RETURN ${this._return.toUpperCase()}`;
+			} else {
+				query += /* surql */ ` RETURN ${this._return[__display](ctx)}`;
+			}
+		}
+
+		if (this._timeout) {
+			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;
+		}
 
 		return `(${query})`;
 	}

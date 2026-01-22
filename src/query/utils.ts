@@ -1,46 +1,56 @@
-import type { Prettify } from "surrealdb";
-import {
-	type DisplayContext,
-	type Workable,
-	type WorkableContext,
-	__ctx,
-	__display,
-	__type,
-} from "../utils";
-import { type Actionable, actionable } from "../utils/actionable";
+import type { AbstractType } from "../types";
+import type { DisplayContext } from "../utils";
 
-export type Walkable<
-	C extends WorkableContext,
-	Tb extends keyof C["orm"]["tables"],
-> = Actionable<C, C["orm"]["tables"][Tb]["schema"]>;
-export type Walkables<
-	C extends WorkableContext,
-	Tb extends keyof C["orm"]["tables"],
-	T extends `$${string}`,
-	R extends Workable<C> = Workable<C>,
-> = (
-	vars: Prettify<{
-		[K in T]: Walkable<C, Tb>;
-	}>,
-) => R;
+export type SetValue<T extends AbstractType> =
+	| T["infer"]
+	| { "+=": T["infer"] }
+	| { "-=": T["infer"] };
 
-export function createWalkable<
-	C extends WorkableContext,
-	Tb extends keyof C["orm"]["tables"],
->(
-	ctx: C,
-	tb: Tb,
-	display: `$${string}` | ((ctx: DisplayContext) => string),
-): Walkable<C, Tb> {
-	return actionable({
-		[__ctx]: ctx,
-		[__display](ctx) {
-			if (typeof display === "string") {
-				return display;
-			}
+/**
+ * Process SET data by normalizing operator objects.
+ * This function passes through operators like += and -= as-is,
+ * while treating regular values normally.
+ */
+export function processSetOperators(
+	data: Record<string, unknown>,
+): Record<string, unknown> {
+	const processedData: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(data)) {
+		// Operators are passed through as-is
+		if (
+			value &&
+			typeof value === "object" &&
+			("+=" in value || "-=" in value)
+		) {
+			processedData[key] = value;
+		} else {
+			processedData[key] = value;
+		}
+	}
+	return processedData;
+}
 
-			return display(ctx);
-		},
-		[__type]: ctx.orm.tables[tb].schema,
-	});
+/**
+ * Generate SET assignments for query display.
+ * Handles regular assignments as well as += and -= operators.
+ */
+export function generateSetAssignments(
+	data: Record<string, unknown>,
+	ctx: DisplayContext,
+): string[] {
+	const assignments: string[] = [];
+	for (const [key, value] of Object.entries(data)) {
+		if (value && typeof value === "object" && "+=" in value) {
+			assignments.push(
+				`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
+			);
+		} else if (value && typeof value === "object" && "-=" in value) {
+			assignments.push(
+				`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
+			);
+		} else {
+			assignments.push(`${key} = ${ctx.var(value)}`);
+		}
+	}
+	return assignments;
 }

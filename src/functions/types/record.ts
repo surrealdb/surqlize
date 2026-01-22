@@ -1,4 +1,4 @@
-import type { SelectOneQuery } from "../../query/select";
+import type { SelectQuery } from "../../query/select";
 import type { RecordType } from "../../types";
 import {
 	type Workable,
@@ -41,7 +41,7 @@ export type Functions = {
 	select<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-	>(this: Workable<C, RecordType<Tb>>): SelectOneQuery<C["orm"], C, Tb>;
+	>(this: Workable<C, RecordType<Tb>>): SelectQuery<C["orm"], C, Tb>;
 
 	to<
 		C extends WorkableContext,

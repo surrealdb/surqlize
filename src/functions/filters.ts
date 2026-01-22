@@ -22,8 +22,6 @@ export const ComparisonKind = t.union([
 	t.literal("=="),
 	t.literal("?="),
 	t.literal("*="),
-	t.literal("~"),
-	t.literal("!~"),
 	t.literal("?~"),
 	t.literal("*~"),
 	t.literal("<"),

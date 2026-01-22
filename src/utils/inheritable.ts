@@ -3,6 +3,7 @@ import type { DisplayContext } from "./display";
 import {
 	type Workable,
 	type WorkableContext,
+	__ctx,
 	__display,
 	__type,
 	isWorkable,
@@ -65,6 +66,7 @@ export function inheritableIntoWorkable<
 	) as Record<string, AbstractType>;
 
 	return {
+		[__ctx]: converted[Object.keys(converted)[0]][__ctx],
 		[__type]: new ObjectType(fieldTypes),
 		[__display]: (ctx: DisplayContext) => {
 			const innerDisplays = Object.entries(converted).map(

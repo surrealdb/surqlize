@@ -64,6 +64,8 @@ export const functions = {
 
 	at,
 
+	val,
+
 	len<C extends WorkableContext>(this: Workable<C, ArrayType>) {
 		return databaseFunction(this[__ctx], t.number(), "array::len", this);
 	},
@@ -160,6 +162,13 @@ export type Functions = {
 		n: IntoWorkable<C, NumberType>,
 	): Actionable<C, OptionType<T>>;
 
+	val<C extends WorkableContext, T extends AbstractType[]>(
+		this: Workable<C, ArrayType<T>>,
+	): Actionable<C, OptionType<UnionType<T>>>;
+	val<C extends WorkableContext, T extends AbstractType>(
+		this: Workable<C, ArrayType<T>>,
+	): Actionable<C, OptionType<T>>;
+
 	len<C extends WorkableContext>(
 		this: Workable<C, ArrayType>,
 	): Actionable<C, NumberType>;
@@ -181,4 +190,25 @@ function at<C extends WorkableContext, T extends AbstractType>(
 ) {
 	const v = intoWorkable(this[__ctx], t.number(), n);
 	return databaseFunction(this[__ctx], this[__type], "array::at", this, v);
+}
+
+function val<C extends WorkableContext, T extends AbstractType[]>(
+	this: Workable<C, ArrayType<T>>,
+): Actionable<C, OptionType<UnionType<T>>>;
+function val<C extends WorkableContext, T extends AbstractType>(
+	this: Workable<C, ArrayType<T>>,
+): Actionable<C, OptionType<T>>;
+function val<C extends WorkableContext, T extends AbstractType>(
+	this: Workable<C, ArrayType<T>>,
+) {
+	// Call at() with literal 0 to get the first element
+	// Type assertion is safe as we're calling the at() function with correct parameters
+	type AtFunction = (
+		this: Workable<C, ArrayType<T>>,
+		n: IntoWorkable<C, LiteralType<0>>,
+	) => unknown;
+	return (at as AtFunction).call(
+		this,
+		intoWorkable(this[__ctx], t.literal(0), 0),
+	);
 }
