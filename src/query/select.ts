@@ -40,18 +40,15 @@ export class SelectQuery<
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
-	constructor(
-		orm: O,
-		subject: T | RecordId<T> | Workable<C, RecordType<T>>,
-	) {
+	constructor(orm: O, subject: T | RecordId<T> | Workable<C, RecordType<T>>) {
 		super();
 		this[__ctx] = {
 			orm,
 			id: Symbol(),
 		} as C;
-		
+
 		this.subject = subject;
-		
+
 		if (typeof subject === "string") {
 			this.tb = subject;
 		} else if (isWorkable(subject)) {
@@ -121,12 +118,13 @@ export class SelectQuery<
 			contextId: this[__ctx].id,
 		});
 
-		const thing = typeof this.subject === "string"
-			? ctx.var(new Table(this.tb))
-			: isWorkable(this.subject)
-				? this.subject[__display](ctx)
-				: ctx.var(this.subject);
-		
+		const thing =
+			typeof this.subject === "string"
+				? ctx.var(new Table(this.tb))
+				: isWorkable(this.subject)
+					? this.subject[__display](ctx)
+					: ctx.var(this.subject);
+
 		const start = this._start && ctx.var(this._start);
 		const limit = this._limit && ctx.var(this._limit);
 
@@ -144,4 +142,3 @@ export class SelectQuery<
 		return `(${query})`;
 	}
 }
-

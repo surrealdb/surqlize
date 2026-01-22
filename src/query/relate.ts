@@ -210,4 +210,3 @@ export class RelateQuery<
 		return `(${query})`;
 	}
 }
-

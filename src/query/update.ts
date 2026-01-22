@@ -64,18 +64,15 @@ export class UpdateQuery<
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
-	constructor(
-		orm: O,
-		subject: T | RecordId<T> | Workable<C, RecordType<T>>,
-	) {
+	constructor(orm: O, subject: T | RecordId<T> | Workable<C, RecordType<T>>) {
 		super();
 		this[__ctx] = {
 			orm,
 			id: Symbol(),
 		} as C;
-		
+
 		this.subject = subject;
-		
+
 		if (typeof subject === "string") {
 			this.tb = subject;
 		} else if (isWorkable(subject)) {
@@ -212,12 +209,13 @@ export class UpdateQuery<
 			contextId: this[__ctx].id,
 		});
 
-		const thing = typeof this.subject === "string"
-			? ctx.var(new Table(this.tb))
-			: isWorkable(this.subject)
-				? this.subject[__display](ctx)
-				: ctx.var(this.subject);
-		
+		const thing =
+			typeof this.subject === "string"
+				? ctx.var(new Table(this.tb))
+				: isWorkable(this.subject)
+					? this.subject[__display](ctx)
+					: ctx.var(this.subject);
+
 		let query = /* surql */ `UPDATE ${thing}`;
 
 		if (this._content) {
@@ -278,4 +276,3 @@ export class UpdateQuery<
 		return `(${query})`;
 	}
 }
-
