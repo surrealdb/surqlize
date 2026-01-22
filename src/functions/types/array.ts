@@ -201,5 +201,14 @@ function val<C extends WorkableContext, T extends AbstractType>(
 function val<C extends WorkableContext, T extends AbstractType>(
 	this: Workable<C, ArrayType<T>>,
 ) {
-	return (at as any).call(this, intoWorkable(this[__ctx], t.literal(0), 0));
+	// Call at() with literal 0 to get the first element
+	// Type assertion is safe as we're calling the at() function with correct parameters
+	type AtFunction = (
+		this: Workable<C, ArrayType<T>>,
+		n: IntoWorkable<C, LiteralType<0>>,
+	) => unknown;
+	return (at as AtFunction).call(
+		this,
+		intoWorkable(this[__ctx], t.literal(0), 0),
+	);
 }

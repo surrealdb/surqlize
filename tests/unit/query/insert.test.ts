@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import Surreal from "surrealdb";
+import { Surreal } from "surrealdb";
 import { __display, displayContext, orm, t, table } from "../../../src";
 
 describe("INSERT queries", () => {

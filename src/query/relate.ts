@@ -100,7 +100,11 @@ export class RelateQuery<
 		return this;
 	}
 
-	content(data: E["infer"]): this {
+	content(
+		data: E extends ObjectType
+			? Omit<E["infer"], "id" | "in" | "out">
+			: E["infer"],
+	): this {
 		if (this._set) {
 			throw new Error("Cannot use both content() and set() on the same query");
 		}

@@ -1,4 +1,4 @@
-import Surreal, { RecordId } from "surrealdb";
+import { RecordId, Surreal } from "surrealdb";
 import { __display, __type, displayContext, edge, orm, t, table } from "./src";
 
 const user = table("user", {
@@ -57,7 +57,8 @@ db.select("user").return((user) =>
 	}),
 );
 
-const bla = db.select("foo").then.at(0).eq({ title: "Hello, World!" } as any);
+// Demo of fluent .then API
+db.select("foo").then.at(0);
 
 db.lookup.to;
 
@@ -86,7 +87,7 @@ const createUser = db.create("user").set({
 	tags: ["developer", "typescript"],
 });
 
-const createWithId = db.create("user", "alice123").content({
+const createWithId = db.create("user", "alice123").set({
 	name: { first: "Alice", last: "Smith" },
 	age: 30,
 	email: "alice@example.com",
@@ -99,7 +100,7 @@ const createWithId = db.create("user", "alice123").content({
 	},
 	props: ["test", 123, true],
 	tags: ["developer", "typescript"],
-} as any);
+});
 
 // INSERT examples
 const insertSingle = db.insert("user", {
@@ -239,7 +240,7 @@ const relateWithContent = db
 	.content({
 		created: new Date(),
 		updated: new Date(),
-	} as any);
+	});
 
 const relateWithSet = db
 	.relate(

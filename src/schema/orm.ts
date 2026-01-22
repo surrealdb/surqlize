@@ -1,4 +1,4 @@
-import type Surreal from "surrealdb";
+import type { Surreal } from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
 import { CreateQuery } from "../query/create";
 import { DeleteQuery } from "../query/delete";

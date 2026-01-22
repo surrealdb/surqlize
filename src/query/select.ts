@@ -54,7 +54,7 @@ export class SelectQuery<
 		} else if (isWorkable(subject)) {
 			this.tb = subject[__type].tb;
 		} else {
-			this.tb = subject.tb;
+			this.tb = String(subject.table) as T;
 		}
 	}
 

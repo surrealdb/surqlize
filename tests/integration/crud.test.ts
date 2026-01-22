@@ -3,7 +3,7 @@ import { RecordId } from "surrealdb";
 import { withTestDb } from "./setup";
 
 describe("CRUD Integration Tests", () => {
-	const getTestDb = withTestDb();
+	const getTestDb = withTestDb({ perTest: true });
 
 	describe("CREATE operations", () => {
 		test("creates a single user record", async () => {
@@ -43,17 +43,17 @@ describe("CRUD Integration Tests", () => {
 			expect(result[0].name.first).toBe("Alice");
 		});
 
-		test("creates a user with content", async () => {
+		test("creates a user with set", async () => {
 			const { db } = getTestDb();
 			const result = await db
 				.create("user")
-				.content({
+				.set({
 					name: { first: "Bob", last: "Jones" },
 					age: 35,
 					email: "bob@example.com",
 					created: new Date(),
 					updated: new Date(),
-				} as any)
+				})
 				.execute();
 
 			expect(result[0].name.first).toBe("Bob");
@@ -218,7 +218,8 @@ describe("CRUD Integration Tests", () => {
 			const result = await surreal.select(
 				new RecordId("user", "delete_test_1"),
 			);
-			expect(result).toBeNull();
+			// In SurrealDB v2, select returns undefined for non-existent records
+			expect(result).toBeFalsy();
 		});
 
 		test("deletes with WHERE clause", async () => {
@@ -248,6 +249,7 @@ describe("CRUD Integration Tests", () => {
 			const result = await db
 				.delete("user")
 				.where(($this) => $this.age.gt(100))
+				.return("before")
 				.execute();
 
 			expect(result.length).toBeGreaterThanOrEqual(2);

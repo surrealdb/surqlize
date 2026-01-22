@@ -1,13 +1,54 @@
-import Surreal from "surrealdb";
+import { Surreal } from "surrealdb";
 import { edge, orm, t, table } from "../../src";
 
-export interface TestDb {
-	db: ReturnType<typeof createTestOrm>;
-	surreal: Surreal;
-	cleanup: () => Promise<void>;
+export type TestDb = Awaited<ReturnType<typeof setupTestDb>>;
+
+export async function setupTestDb() {
+	const surreal = new Surreal();
+	const url = process.env.SURREAL_URL || "http://localhost:8000";
+
+	// Generate a unique namespace and database for this test run
+	// Using both unique namespace and database ensures complete isolation
+	const timestamp = Date.now();
+	const random = Math.random().toString(36).substring(7);
+	const namespace = `test_${timestamp}_${random}`;
+	const database = `db_${timestamp}_${random}`;
+
+	await surreal.connect(url);
+
+	// Sign in as root user (required in v2)
+	await surreal.signin({
+		username: "root",
+		password: "root",
+	});
+
+	// In v2, we need to explicitly define the namespace first
+	await surreal.query(`DEFINE NAMESPACE IF NOT EXISTS ${namespace}`);
+
+	// Use the namespace, then define the database
+	await surreal.use({ namespace });
+	await surreal.query(`DEFINE DATABASE IF NOT EXISTS ${database}`);
+
+	// Now use both namespace and database
+	await surreal.use({ namespace, database });
+
+	// Pass the connected surreal instance to the ORM
+	const db = orm(surreal, ...createTestSchema());
+
+	const cleanup = async () => {
+		try {
+			// Delete the namespace to clean up all data
+			await surreal.query(`REMOVE NAMESPACE ${namespace}`);
+			await surreal.close();
+		} catch (error) {
+			console.error("Cleanup error:", error);
+		}
+	};
+
+	return { db, surreal, cleanup };
 }
 
-export function createTestOrm() {
+function createTestSchema() {
 	const user = table("user", {
 		name: t.object({
 			first: t.string(),
@@ -32,33 +73,7 @@ export function createTestOrm() {
 		updated: t.date(),
 	});
 
-	return orm(new Surreal(), user, post, authored);
-}
-
-export async function setupTestDb(): Promise<TestDb> {
-	const surreal = new Surreal();
-	const url = process.env.SURREAL_URL || "http://localhost:8000";
-
-	// Generate a unique namespace and database for this test run
-	const namespace = `test_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-	const database = "test";
-
-	await surreal.connect(url);
-	await surreal.use({ namespace, database });
-
-	const db = createTestOrm();
-
-	const cleanup = async () => {
-		try {
-			// Delete the namespace to clean up all data
-			await surreal.query(`REMOVE NAMESPACE ${namespace}`);
-			await surreal.close();
-		} catch (error) {
-			console.error("Cleanup error:", error);
-		}
-	};
-
-	return { db, surreal, cleanup };
+	return [user, post, authored] as const;
 }
 
 export async function seedTestData(surreal: Surreal) {

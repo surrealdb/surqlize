@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Table } from "surrealdb";
-import Surreal from "surrealdb";
+import { Surreal } from "surrealdb";
 import { __display, displayContext, orm, t, table } from "../../../src";
 
 describe("CREATE queries", () => {
@@ -46,7 +46,7 @@ describe("CREATE queries", () => {
 			name: "Bob",
 			age: 35,
 			email: "bob@example.com",
-		} as any);
+		});
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -76,7 +76,7 @@ describe("CREATE queries", () => {
 				name: "Dave",
 				age: 45,
 			})
-			.return((record: any) => record.name);
+			.return((record) => record.name);
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -124,14 +124,16 @@ describe("CREATE queries", () => {
 	});
 
 	test("throws error when using both SET and CONTENT", () => {
-		const query = db.create("user").set({ name: "Test" } as any);
-		expect(() => query.content({ name: "Test2" } as any)).toThrow();
+		const query = db.create("user").set({ name: "Test" });
+		expect(() =>
+			query.content({ name: "Test2", age: 30, email: "test@test.com" }),
+		).toThrow();
 	});
 
 	test("generates CREATE with partial fields", () => {
 		const query = db.create("user").set({
 			name: "Henry",
-		} as any);
+		});
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 

@@ -59,7 +59,7 @@ npm install surqlize
 ## Quick start
 
 ```typescript
-import Surreal from "surrealdb";
+import { Surreal } from "surrealdb";
 import { orm, table, t } from "surqlize";
 
 // Define a table schema

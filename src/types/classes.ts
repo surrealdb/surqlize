@@ -100,7 +100,32 @@ export class DateType extends AbstractType<Date> {
 	name = "date" as const;
 	expected = "Date";
 	validate(value: unknown): value is this["infer"] {
-		return value instanceof Date;
+		// Accept both JavaScript Date and SurrealDB DateTime objects
+		if (value instanceof Date) return true;
+		// Check if it's a DateTime object from SurrealDB v2
+		if (
+			value &&
+			typeof value === "object" &&
+			"toDate" in value &&
+			typeof (value as Record<string, unknown>).toDate === "function"
+		) {
+			return true;
+		}
+		return false;
+	}
+
+	parse(value: unknown): this["infer"] {
+		if (value instanceof Date) return value;
+		// Convert DateTime to Date if needed
+		if (
+			value &&
+			typeof value === "object" &&
+			"toDate" in value &&
+			typeof (value as Record<string, unknown>).toDate === "function"
+		) {
+			return (value as { toDate: () => Date }).toDate();
+		}
+		throw new TypeParseError(this.name, this.expected, value);
 	}
 }
 
@@ -154,7 +179,7 @@ export class RecordType<
 	validate(value: unknown): value is this["infer"] {
 		if (!(value instanceof RecordId)) return false;
 		if (this.tb === undefined) return true;
-		return value.tb === this.tb;
+		return String(value.table) === this.tb;
 	}
 }
 

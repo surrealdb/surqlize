@@ -1,4 +1,3 @@
-import type { Prettify } from "surrealdb";
 import {
 	type DisplayContext,
 	type Workable,
@@ -8,6 +7,11 @@ import {
 	__type,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+
+// Utility type to expand type aliases for better readability
+type Prettify<T> = {
+	[K in keyof T]: T[K];
+} & {};
 
 export type Walkable<
 	C extends WorkableContext,
