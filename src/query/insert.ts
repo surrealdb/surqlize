@@ -22,11 +22,11 @@ import {
 	sanitizeWorkable,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
-
-type SetValue<T extends AbstractType> =
-	| T["infer"]
-	| { "+=": T["infer"] }
-	| { "-=": T["infer"] };
+import {
+	type SetValue,
+	generateSetAssignments,
+	processSetOperators,
+} from "./utils.ts";
 
 type SetData<T extends ObjectType> = {
 	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
@@ -116,22 +116,9 @@ export class InsertQuery<
 			throw new Error("Cannot use both ignore() and onDuplicate()");
 		}
 
-		// Process operators like UPDATE does
-		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(
+		const processedData = processSetOperators(
 			updates as Record<string, unknown>,
-		)) {
-			if (
-				value &&
-				typeof value === "object" &&
-				("+=" in value || "-=" in value)
-			) {
-				processedData[key] = value;
-			} else {
-				processedData[key] = value;
-			}
-		}
-
+		);
 		this._onDuplicate = processedData;
 		return this;
 	}
@@ -202,20 +189,7 @@ export class InsertQuery<
 
 		// ON DUPLICATE KEY UPDATE
 		if (this._onDuplicate) {
-			const assignments: string[] = [];
-			for (const [key, value] of Object.entries(this._onDuplicate)) {
-				if (value && typeof value === "object" && "+=" in value) {
-					assignments.push(
-						`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
-					);
-				} else if (value && typeof value === "object" && "-=" in value) {
-					assignments.push(
-						`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
-					);
-				} else {
-					assignments.push(`${key} = ${ctx.var(value)}`);
-				}
-			}
+			const assignments = generateSetAssignments(this._onDuplicate, ctx);
 			query += /* surql */ ` ON DUPLICATE KEY UPDATE ${assignments.join(", ")}`;
 		}
 

@@ -24,11 +24,11 @@ import {
 	sanitizeWorkable,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
-
-type SetValue<T extends AbstractType> =
-	| T["infer"]
-	| { "+=": T["infer"] }
-	| { "-=": T["infer"] };
+import {
+	type SetValue,
+	generateSetAssignments,
+	processSetOperators,
+} from "./utils.ts";
 
 type SetData<T extends ObjectType> = {
 	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
@@ -80,22 +80,7 @@ export class RelateQuery<
 			throw new Error("Cannot use both set() and content() on the same query");
 		}
 
-		// Process operators
-		const processedData: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(
-			data as Record<string, unknown>,
-		)) {
-			if (
-				value &&
-				typeof value === "object" &&
-				("+=" in value || "-=" in value)
-			) {
-				processedData[key] = value;
-			} else {
-				processedData[key] = value;
-			}
-		}
-
+		const processedData = processSetOperators(data as Record<string, unknown>);
 		this._set = { ...this._set, ...processedData };
 		return this;
 	}
@@ -182,20 +167,7 @@ export class RelateQuery<
 		if (this._content) {
 			query += /* surql */ ` CONTENT ${ctx.var(this._content)}`;
 		} else if (this._set) {
-			const assignments: string[] = [];
-			for (const [key, value] of Object.entries(this._set)) {
-				if (value && typeof value === "object" && "+=" in value) {
-					assignments.push(
-						`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
-					);
-				} else if (value && typeof value === "object" && "-=" in value) {
-					assignments.push(
-						`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
-					);
-				} else {
-					assignments.push(`${key} = ${ctx.var(value)}`);
-				}
-			}
+			const assignments = generateSetAssignments(this._set, ctx);
 			query += /* surql */ ` SET ${assignments.join(", ")}`;
 		}
 
