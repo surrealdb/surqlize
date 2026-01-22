@@ -27,38 +27,37 @@ import {
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 import {
-	type SetValue,
-	generateSetAssignments,
-	processSetOperators,
-} from "./utils.ts";
-
-type SetData<T extends ObjectType> = {
-	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
-};
-
-type JsonPatchOp =
-	| { op: "add"; path: string; value: unknown }
-	| { op: "remove"; path: string }
-	| { op: "replace"; path: string; value: unknown }
-	| { op: "move"; from: string; path: string }
-	| { op: "copy"; from: string; path: string }
-	| { op: "test"; path: string; value: unknown };
+	type JsonPatchOp,
+	type ModificationMode,
+	type ModificationState,
+	type SetData,
+	applyContent,
+	applyMerge,
+	applyPatch,
+	applyReplace,
+	applySet,
+	displayModificationClause,
+} from "./modification-methods.ts";
 
 export class UpsertQuery<
-	O extends Orm,
-	C extends WorkableContext<O>,
-	T extends keyof O["tables"] & string,
-	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, ArrayType<E>> {
+		O extends Orm,
+		C extends WorkableContext<O>,
+		T extends keyof O["tables"] & string,
+		E extends AbstractType = O["tables"][T]["schema"],
+	>
+	extends Query<C, ArrayType<E>>
+	implements ModificationState
+{
 	readonly [__ctx]: C;
-	private _set?: Record<string, unknown>;
-	private _content?: unknown;
-	private _merge?: unknown;
-	private _patch?: JsonPatchOp[];
+	_set?: Record<string, unknown>;
+	_content?: unknown;
+	_merge?: unknown;
+	_patch?: JsonPatchOp[];
+	_replace?: unknown;
+	_modificationMode?: ModificationMode;
 	private _filter?: Workable<C>;
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
 	private _timeout?: string;
-	private _modificationMode?: "set" | "content" | "merge" | "patch";
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
@@ -88,38 +87,28 @@ export class UpsertQuery<
 		return t.array(this.schema);
 	}
 
-	private _checkModificationMode(mode: typeof this._modificationMode) {
-		if (this._modificationMode && this._modificationMode !== mode) {
-			throw new Error(
-				`Cannot use ${mode}() when ${this._modificationMode}() has already been used`,
-			);
-		}
-		this._modificationMode = mode;
-	}
-
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		this._checkModificationMode("set");
-
-		const processedData = processSetOperators(data as Record<string, unknown>);
-		this._set = { ...this._set, ...processedData };
+		applySet(this, data as Record<string, unknown>);
 		return this;
 	}
 
 	content(data: Partial<E["infer"]>): this {
-		this._checkModificationMode("content");
-		this._content = data;
+		applyContent(this, data);
 		return this;
 	}
 
 	merge(data: Partial<E["infer"]>): this {
-		this._checkModificationMode("merge");
-		this._merge = data;
+		applyMerge(this, data);
 		return this;
 	}
 
 	patch(operations: JsonPatchOp[]): this {
-		this._checkModificationMode("patch");
-		this._patch = operations;
+		applyPatch(this, operations);
+		return this;
+	}
+
+	replace(data: Partial<E["infer"]>): this {
+		applyReplace(this, data);
 		return this;
 	}
 
@@ -189,18 +178,7 @@ export class UpsertQuery<
 
 		let query = /* surql */ `UPSERT ${thing}`;
 
-		if (this._content) {
-			query += /* surql */ ` CONTENT ${ctx.var(this._content)}`;
-		} else if (this._merge) {
-			query += /* surql */ ` MERGE ${ctx.var(this._merge)}`;
-		} else if (this._patch) {
-			query += /* surql */ ` PATCH ${ctx.var(this._patch)}`;
-		} else if (this._set) {
-			const assignments = generateSetAssignments(this._set, ctx);
-			if (assignments.length > 0) {
-				query += /* surql */ ` SET ${assignments.join(", ")}`;
-			}
-		}
+		query += displayModificationClause(this, ctx);
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
