@@ -196,8 +196,12 @@ const paginatedUsers = db
   .start(10)
   .limit(20);
 
-// Select a single record
-const specificUser = db.select(new RecordId("user", "john"));
+// Select a single record by ID (returns array with 0 or 1 item)
+const specificUser = await db.select(new RecordId("user", "john"));
+// To get the first item, use .val() or .at(0):
+const specificUser = await db.select(new RecordId("user", "john")).then.val();
+// Or get a specific item:
+const specificUser = await db.select(new RecordId("user", "john")).then.at(0);
 
 // Nested queries (JOIN-like)
 const postsWithAuthors = db.select("post").return((post) => ({
@@ -453,7 +457,7 @@ await db.relate("authored", userQuery, postQuery);
 ### DELETE statements
 
 ```typescript
-// Delete single record
+// Delete single record (returns array with 0 or 1 item)
 await db.delete("user", "alice");
 
 // Bulk delete with WHERE
@@ -469,6 +473,38 @@ const deleted = await db.delete("user")
 const deletedNames = await db.delete("user")
   .where((u) => u.email.endsWith("@spam.com"))
   .return((u) => ({ name: u.name }));
+```
+
+## Accessing Single Records
+
+All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:
+
+```typescript
+// .val() - Returns the first item or undefined
+const user = await db.select("user", "alice").then.val();
+// user: User | undefined
+
+// .at(index) - Returns the item at the specified index or undefined
+const firstUser = await db.select("user").then.at(0);
+const secondUser = await db.select("user").then.at(1);
+const lastUser = await db.select("user").then.at(-1); // negative indexing supported
+
+// Working with arrays directly
+const users = await db.select("user", "alice");
+// users: User[]
+if (users.length > 0) {
+  const user = users[0];
+}
+
+// Use with update, delete, and upsert
+const updated = await db.update("user", "alice")
+  .set({ age: 31 })
+  .return("after")
+  .then.val();
+
+const deleted = await db.delete("user", "alice")
+  .return("before")
+  .then.val();
 ```
 
 ## Filtering operations

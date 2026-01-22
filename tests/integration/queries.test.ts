@@ -157,19 +157,22 @@ describe("Complex Queries Integration Tests", () => {
 			const result = await db.select(new RecordId("user", "alice")).execute();
 
 			expect(result).toBeDefined();
-			if (result) {
-				expect(result.id.id).toBe("alice");
-				expect(result).toHaveProperty("name");
+			expect(Array.isArray(result)).toBe(true);
+			expect(result.length).toBeGreaterThan(0);
+			if (result.length > 0) {
+				expect(result[0].id.id).toBe("alice");
+				expect(result[0]).toHaveProperty("name");
 			}
 		});
 
-		test("returns null for non-existent record", async () => {
+		test("returns empty array for non-existent record", async () => {
 			const { db } = getTestDb();
 			const result = await db
 				.select(new RecordId("user", "nonexistent"))
 				.execute();
 
-			expect(result).toBeNull();
+			expect(Array.isArray(result)).toBe(true);
+			expect(result.length).toBe(0);
 		});
 	});
 
@@ -271,7 +274,8 @@ describe("Complex Queries Integration Tests", () => {
 				.select(new RecordId("user", "batch_test"))
 				.execute();
 
-			expect(selectResult?.age).toBe(31);
+			expect(Array.isArray(selectResult)).toBe(true);
+			expect(selectResult[0]?.age).toBe(31);
 		});
 	});
 });

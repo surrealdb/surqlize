@@ -64,6 +64,10 @@ export const functions = {
 
 	at,
 
+	val<C extends WorkableContext>(this: Workable<C, ArrayType>) {
+		return at.call(this, intoWorkable(this[__ctx], t.literal(0), 0));
+	},
+
 	len<C extends WorkableContext>(this: Workable<C, ArrayType>) {
 		return databaseFunction(this[__ctx], t.number(), "array::len", this);
 	},
@@ -158,6 +162,13 @@ export type Functions = {
 	at<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 		n: IntoWorkable<C, NumberType>,
+	): Actionable<C, OptionType<T>>;
+
+	val<C extends WorkableContext, T extends AbstractType[]>(
+		this: Workable<C, ArrayType<T>>,
+	): Actionable<C, OptionType<UnionType<T>>>;
+	val<C extends WorkableContext, T extends AbstractType>(
+		this: Workable<C, ArrayType<T>>,
 	): Actionable<C, OptionType<T>>;
 
 	len<C extends WorkableContext>(

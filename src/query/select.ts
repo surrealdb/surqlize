@@ -37,16 +37,28 @@ export class SelectQuery<
 	private _limit?: number;
 	private _filter?: Workable<C>;
 	private _entry?: Workable<C, E>;
+	private tb: T;
+	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
 	constructor(
 		orm: O,
-		readonly tb: T,
+		subject: T | RecordId<T> | Workable<C, RecordType<T>>,
 	) {
 		super();
 		this[__ctx] = {
 			orm,
 			id: Symbol(),
 		} as C;
+		
+		this.subject = subject;
+		
+		if (typeof subject === "string") {
+			this.tb = subject;
+		} else if (isWorkable(subject)) {
+			this.tb = subject[__type].tb;
+		} else {
+			this.tb = subject.tb;
+		}
 	}
 
 	get entry(): E {
@@ -109,7 +121,12 @@ export class SelectQuery<
 			contextId: this[__ctx].id,
 		});
 
-		const thing = ctx.var(new Table(this.tb));
+		const thing = typeof this.subject === "string"
+			? ctx.var(new Table(this.tb))
+			: isWorkable(this.subject)
+				? this.subject[__display](ctx)
+				: ctx.var(this.subject);
+		
 		const start = this._start && ctx.var(this._start);
 		const limit = this._limit && ctx.var(this._limit);
 
@@ -128,74 +145,3 @@ export class SelectQuery<
 	}
 }
 
-export class SelectOneQuery<
-	O extends Orm,
-	C extends WorkableContext<O>,
-	T extends keyof O["tables"] & string,
-	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, UnionType<(E | NoneType)[]>> {
-	readonly [__ctx]: C;
-	private _entry?: Workable<C, E>;
-	private tb: T;
-
-	constructor(
-		orm: O,
-		readonly subject: RecordId<T> | Workable<C, RecordType<T>>,
-	) {
-		super();
-		this[__ctx] = {
-			orm,
-			id: Symbol(),
-		} as C;
-
-		if (isWorkable(subject)) {
-			this.tb = subject[__type].tb;
-		} else {
-			this.tb = subject.tb;
-		}
-	}
-
-	get entry(): E {
-		return (this._entry?.[__type] ??
-			this[__ctx].orm.tables[this.tb].schema) as E;
-	}
-
-	get [__type]() {
-		return t.union([this.entry, t.none()]);
-	}
-
-	[__display](inp: DisplayContext) {
-		const ctx = displayContext({
-			...inp,
-			contextId: this[__ctx].id,
-		});
-
-		const thing = isWorkable(this.subject)
-			? this.subject[__display](ctx)
-			: ctx.var(this.subject);
-
-		const predicates = this._entry
-			? /* surql */ `VALUE ${this._entry[__display](ctx)}`
-			: "*";
-
-		return /* surql */ `(SELECT ${predicates} FROM ${thing})`;
-	}
-
-	return<
-		P extends Inheritable<C>,
-		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): SelectOneQuery<O, C, T, R> {
-		const tb = actionable({
-			[__ctx]: this[__ctx],
-			[__type]: this.entry,
-			[__display]: ({ contextId }) => {
-				return contextId === this[__ctx].id ? "$this" : "$parent";
-			},
-		}) as Actionable<C, E>;
-
-		(this as unknown as SelectOneQuery<O, C, T, R>)._entry = sanitizeWorkable(
-			inheritableIntoWorkable(cb(tb)) as unknown as Workable<C, R>,
-		);
-		return this as unknown as SelectOneQuery<O, C, T, R>;
-	}
-}

@@ -36,16 +36,28 @@ export class DeleteQuery<
 	private _filter?: Workable<C>;
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
 	private _timeout?: string;
+	private tb: T;
+	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
 	constructor(
 		orm: O,
-		readonly tb: T,
+		subject: T | RecordId<T> | Workable<C, RecordType<T>>,
 	) {
 		super();
 		this[__ctx] = {
 			orm,
 			id: Symbol(),
 		} as C;
+		
+		this.subject = subject;
+		
+		if (typeof subject === "string") {
+			this.tb = subject;
+		} else if (isWorkable(subject)) {
+			this.tb = subject[__type].tb;
+		} else {
+			this.tb = subject.tb;
+		}
 	}
 
 	get schema(): E {
@@ -113,7 +125,12 @@ export class DeleteQuery<
 			contextId: this[__ctx].id,
 		});
 
-		const thing = ctx.var(new Table(this.tb));
+		const thing = typeof this.subject === "string"
+			? ctx.var(new Table(this.tb))
+			: isWorkable(this.subject)
+				? this.subject[__display](ctx)
+				: ctx.var(this.subject);
+		
 		let query = /* surql */ `DELETE ${thing}`;
 
 		if (this._filter)
@@ -135,104 +152,3 @@ export class DeleteQuery<
 	}
 }
 
-export class DeleteOneQuery<
-	O extends Orm,
-	C extends WorkableContext<O>,
-	T extends keyof O["tables"] & string,
-	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, UnionType<(E | NoneType)[]>> {
-	readonly [__ctx]: C;
-	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
-	private _timeout?: string;
-	private tb: T;
-
-	constructor(
-		orm: O,
-		readonly subject: RecordId<T> | Workable<C, RecordType<T>>,
-	) {
-		super();
-		this[__ctx] = {
-			orm,
-			id: Symbol(),
-		} as C;
-
-		if (isWorkable(subject)) {
-			this.tb = subject[__type].tb;
-		} else {
-			this.tb = subject.tb;
-		}
-	}
-
-	get schema(): E {
-		return this[__ctx].orm.tables[this.tb].schema as E;
-	}
-
-	get [__type]() {
-		return t.union([this.schema, t.none()]);
-	}
-
-	return(mode: "none" | "before" | "after" | "diff"): this;
-	return<
-		P extends Inheritable<C>,
-		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): DeleteOneQuery<O, C, T, R>;
-	return(
-		value:
-			| "none"
-			| "before"
-			| "after"
-			| "diff"
-			| ((tb: Actionable<C, E>) => Inheritable<C>),
-	): this {
-		if (typeof value === "function") {
-			const tb = actionable({
-				[__ctx]: this[__ctx],
-				[__type]: this.schema,
-				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$this" : "$parent";
-				},
-			}) as Actionable<C, E>;
-
-			const predicable = value(tb);
-			const workable = inheritableIntoWorkable<C, typeof predicable>(
-				predicable,
-			) as unknown as Workable<C, E>;
-			this._return = sanitizeWorkable(workable);
-		} else {
-			this._return = value;
-		}
-		return this;
-	}
-
-	timeout(duration: string): this {
-		this._timeout = duration;
-		return this;
-	}
-
-	[__display](inp: DisplayContext) {
-		const ctx = displayContext({
-			...inp,
-			contextId: this[__ctx].id,
-		});
-
-		const thing = isWorkable(this.subject)
-			? this.subject[__display](ctx)
-			: ctx.var(this.subject);
-
-		let query = /* surql */ `DELETE ${thing}`;
-
-		if (this._return) {
-			if (typeof this._return === "string") {
-				query += /* surql */ ` RETURN ${this._return.toUpperCase()}`;
-			} else {
-				query += /* surql */ ` RETURN ${this._return[__display](ctx)}`;
-			}
-		}
-
-		if (this._timeout) {
-			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;
-		}
-
-		return `(${query})`;
-	}
-}
