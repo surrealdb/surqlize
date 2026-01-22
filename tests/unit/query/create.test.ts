@@ -123,10 +123,74 @@ describe("CREATE queries", () => {
 		expect(result).toContain("TIMEOUT");
 	});
 
+	test("generates CREATE with MERGE", () => {
+		const query = db.create("user").merge({
+			email: "newemail@example.com",
+		});
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("CREATE");
+		expect(result).toContain("MERGE");
+	});
+
+	test("generates CREATE with PATCH", () => {
+		const query = db.create("user").patch([
+			{ op: "add", path: "/name", value: "John" },
+			{ op: "replace", path: "/age", value: 30 },
+		]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("CREATE");
+		expect(result).toContain("PATCH");
+	});
+
+	test("generates CREATE with REPLACE", () => {
+		const query = db.create("user").replace({
+			name: "Replaced",
+			age: 99,
+			email: "replaced@example.com",
+		});
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("CREATE");
+		expect(result).toContain("REPLACE");
+	});
+
 	test("throws error when using both SET and CONTENT", () => {
 		const query = db.create("user").set({ name: "Test" });
 		expect(() =>
 			query.content({ name: "Test2", age: 30, email: "test@test.com" }),
+		).toThrow();
+	});
+
+	test("throws error when using both SET and MERGE", () => {
+		const query = db.create("user").set({ name: "Test" });
+		expect(() => query.merge({ email: "test@example.com" })).toThrow();
+	});
+
+	test("throws error when using both CONTENT and MERGE", () => {
+		const query = db
+			.create("user")
+			.content({ name: "Test", age: 30, email: "test@test.com" });
+		expect(() => query.merge({ email: "test@example.com" })).toThrow();
+	});
+
+	test("throws error when using both MERGE and PATCH", () => {
+		const query = db.create("user").merge({ name: "Test" });
+		expect(() =>
+			query.patch([{ op: "add", path: "/age", value: 30 }]),
+		).toThrow();
+	});
+
+	test("throws error when using both PATCH and REPLACE", () => {
+		const query = db
+			.create("user")
+			.patch([{ op: "add", path: "/age", value: 30 }]);
+		expect(() =>
+			query.replace({ name: "Test", age: 30, email: "test@test.com" }),
 		).toThrow();
 	});
 

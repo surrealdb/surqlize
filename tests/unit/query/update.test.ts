@@ -81,6 +81,31 @@ describe("UPDATE queries", () => {
 		expect(result).toContain("MERGE");
 	});
 
+	test("generates UPDATE with PATCH", () => {
+		const query = db.update("user", "alice").patch([
+			{ op: "add", path: "/age", value: 30 },
+			{ op: "replace", path: "/email", value: "newemail@example.com" },
+		]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("UPDATE");
+		expect(result).toContain("PATCH");
+	});
+
+	test("generates UPDATE with REPLACE", () => {
+		const query = db.update("user", "alice").replace({
+			name: "Alice",
+			age: 30,
+			email: "alice@example.com",
+		});
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("UPDATE");
+		expect(result).toContain("REPLACE");
+	});
+
 	test("generates UPDATE with RETURN after", () => {
 		const query = db.update("user", "alice").set({ age: 32 }).return("after");
 		const ctx = displayContext();
@@ -132,5 +157,28 @@ describe("UPDATE queries", () => {
 	test("throws error when using both SET and MERGE", () => {
 		const query = db.update("user", "alice").set({ age: 30 });
 		expect(() => query.merge({ email: "test@example.com" })).toThrow();
+	});
+
+	test("throws error when using both MERGE and PATCH", () => {
+		const query = db.update("user", "alice").merge({ age: 30 });
+		expect(() =>
+			query.patch([{ op: "add", path: "/email", value: "test@example.com" }]),
+		).toThrow();
+	});
+
+	test("throws error when using both PATCH and REPLACE", () => {
+		const query = db
+			.update("user", "alice")
+			.patch([{ op: "add", path: "/age", value: 30 }]);
+		expect(() =>
+			query.replace({ name: "Test", age: 30, email: "test@example.com" }),
+		).toThrow();
+	});
+
+	test("throws error when using both CONTENT and REPLACE", () => {
+		const query = db.update("user", "alice").content({ age: 30 });
+		expect(() =>
+			query.replace({ name: "Test", age: 30, email: "test@example.com" }),
+		).toThrow();
 	});
 });

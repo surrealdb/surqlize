@@ -23,24 +23,34 @@ import {
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 import {
-	type SetValue,
-	generateSetAssignments,
-	processSetOperators,
-} from "./utils.ts";
-
-type SetData<T extends ObjectType> = {
-	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
-};
+	type JsonPatchOp,
+	type ModificationMode,
+	type ModificationState,
+	type SetData,
+	applyContent,
+	applyMerge,
+	applyPatch,
+	applyReplace,
+	applySet,
+	displayModificationClause,
+} from "./modification-methods.ts";
 
 export class CreateQuery<
-	O extends Orm,
-	C extends WorkableContext<O>,
-	T extends keyof O["tables"] & string,
-	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, ArrayType<E>> {
+		O extends Orm,
+		C extends WorkableContext<O>,
+		T extends keyof O["tables"] & string,
+		E extends AbstractType = O["tables"][T]["schema"],
+	>
+	extends Query<C, ArrayType<E>>
+	implements ModificationState
+{
 	readonly [__ctx]: C;
-	private _set?: Record<string, unknown>;
-	private _content?: unknown;
+	_set?: Record<string, unknown>;
+	_content?: unknown;
+	_merge?: unknown;
+	_patch?: JsonPatchOp[];
+	_replace?: unknown;
+	_modificationMode?: ModificationMode;
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C>;
 	private _timeout?: string;
 	private _id?: string;
@@ -67,22 +77,29 @@ export class CreateQuery<
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		if (this._content) {
-			throw new Error("Cannot use both set() and content() on the same query");
-		}
-
-		const processedData = processSetOperators(data as Record<string, unknown>);
-		this._set = { ...this._set, ...processedData };
+		applySet(this, data as Record<string, unknown>);
 		return this;
 	}
 
 	content(
 		data: E extends ObjectType ? Omit<E["infer"], "id"> : E["infer"],
 	): this {
-		if (this._set) {
-			throw new Error("Cannot use both content() and set() on the same query");
-		}
-		this._content = data;
+		applyContent(this, data);
+		return this;
+	}
+
+	merge(data: Partial<E["infer"]>): this {
+		applyMerge(this, data);
+		return this;
+	}
+
+	patch(operations: JsonPatchOp[]): this {
+		applyPatch(this, operations);
+		return this;
+	}
+
+	replace(data: Partial<E["infer"]>): this {
+		applyReplace(this, data);
 		return this;
 	}
 
@@ -138,12 +155,7 @@ export class CreateQuery<
 
 		let query = /* surql */ `CREATE ${target}`;
 
-		if (this._content) {
-			query += /* surql */ ` CONTENT ${ctx.var(this._content)}`;
-		} else if (this._set) {
-			const assignments = generateSetAssignments(this._set, ctx);
-			query += /* surql */ ` SET ${assignments.join(", ")}`;
-		}
+		query += displayModificationClause(this, ctx);
 
 		if (this._return) {
 			if (typeof this._return === "string") {

@@ -150,6 +150,55 @@ describe("RELATE queries", () => {
 		expect(result).toContain("TIMEOUT");
 	});
 
+	test("generates RELATE with MERGE", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.merge({
+				created: new Date("2024-01-01"),
+			});
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("RELATE");
+		expect(result).toContain("MERGE");
+	});
+
+	test("generates RELATE with PATCH", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.patch([{ op: "add", path: "/created", value: new Date("2024-01-01") }]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("RELATE");
+		expect(result).toContain("PATCH");
+	});
+
+	test("generates RELATE with REPLACE", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.replace({
+				created: new Date("2024-01-01"),
+			});
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("RELATE");
+		expect(result).toContain("REPLACE");
+	});
+
 	test("throws error when using both SET and CONTENT", () => {
 		const query = db
 			.relate(
@@ -159,5 +208,40 @@ describe("RELATE queries", () => {
 			)
 			.set({ created: new Date() });
 		expect(() => query.content({ created: new Date() })).toThrow();
+	});
+
+	test("throws error when using both SET and MERGE", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.set({ created: new Date() });
+		expect(() => query.merge({ created: new Date() })).toThrow();
+	});
+
+	test("throws error when using both CONTENT and PATCH", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.content({ created: new Date() });
+		expect(() =>
+			query.patch([{ op: "add", path: "/created", value: new Date() }]),
+		).toThrow();
+	});
+
+	test("throws error when using both MERGE and REPLACE", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.merge({ created: new Date() });
+		expect(() => query.replace({ created: new Date() })).toThrow();
 	});
 });
