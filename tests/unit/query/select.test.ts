@@ -437,7 +437,7 @@ describe("SELECT clause ordering", () => {
 		expect(result).toContain("FETCH tags");
 		expect(result).toContain("TIMEOUT");
 
-		// Verify correct ordering: WHERE < SPLIT < GROUP < ORDER < START < LIMIT < FETCH < TIMEOUT
+		// Verify correct ordering: WHERE < SPLIT < GROUP < ORDER < LIMIT < START < FETCH < TIMEOUT
 		const whereIdx = result.indexOf("WHERE");
 		const splitIdx = result.indexOf("SPLIT");
 		const groupIdx = result.indexOf("GROUP BY");
@@ -450,9 +450,9 @@ describe("SELECT clause ordering", () => {
 		expect(whereIdx).toBeLessThan(splitIdx);
 		expect(splitIdx).toBeLessThan(groupIdx);
 		expect(groupIdx).toBeLessThan(orderIdx);
-		expect(orderIdx).toBeLessThan(startIdx);
-		expect(startIdx).toBeLessThan(limitIdx);
-		expect(limitIdx).toBeLessThan(fetchIdx);
+		expect(orderIdx).toBeLessThan(limitIdx);
+		expect(limitIdx).toBeLessThan(startIdx);
+		expect(startIdx).toBeLessThan(fetchIdx);
 		expect(fetchIdx).toBeLessThan(timeoutIdx);
 	});
 
@@ -522,9 +522,9 @@ describe("SELECT clause ordering", () => {
 		expect(whereIdx).toBeLessThan(splitIdx);
 		expect(splitIdx).toBeLessThan(groupIdx);
 		expect(groupIdx).toBeLessThan(orderIdx);
-		expect(orderIdx).toBeLessThan(startIdx);
-		expect(startIdx).toBeLessThan(limitIdx);
-		expect(limitIdx).toBeLessThan(fetchIdx);
+		expect(orderIdx).toBeLessThan(limitIdx);
+		expect(limitIdx).toBeLessThan(startIdx);
+		expect(startIdx).toBeLessThan(fetchIdx);
 		expect(fetchIdx).toBeLessThan(timeoutIdx);
 	});
 

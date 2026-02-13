@@ -283,8 +283,8 @@ export class SelectQuery<
 		}
 
 		// LIMIT / START
-		if (start) query += /* surql */ ` START ${start}`;
 		if (limit) query += /* surql */ ` LIMIT ${limit}`;
+		if (start) query += /* surql */ ` START ${start}`;
 
 		// FETCH
 		if (this._fetch && this._fetch.length > 0) {
