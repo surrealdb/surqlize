@@ -37,6 +37,15 @@ export class SelectQuery<
 	private _limit?: number;
 	private _filter?: Workable<C>;
 	private _entry?: Workable<C, E>;
+	private _orderBy?: Array<{
+		field: Workable<C> | string;
+		direction?: "ASC" | "DESC";
+		collate?: boolean;
+		numeric?: boolean;
+	}>;
+	private _groupBy?: string[] | "ALL";
+	private _split?: string[];
+	private _fetch?: string[];
 	private _timeout?: string;
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
@@ -113,6 +122,103 @@ export class SelectQuery<
 		return this;
 	}
 
+	orderBy(
+		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		direction?: "ASC" | "DESC",
+	): this {
+		if (!this._orderBy) this._orderBy = [];
+
+		if (typeof field === "string") {
+			this._orderBy.push({ field, direction });
+		} else {
+			const record = actionable({
+				[__ctx]: this[__ctx],
+				[__type]: this.entry,
+				[__display]: ({ contextId }) => {
+					return contextId === this[__ctx].id ? "$this" : "$parent";
+				},
+			}) as Actionable<C, E>;
+			this._orderBy.push({
+				field: sanitizeWorkable(field(record)),
+				direction,
+			});
+		}
+
+		return this;
+	}
+
+	orderByNumeric(
+		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		direction?: "ASC" | "DESC",
+	): this {
+		if (!this._orderBy) this._orderBy = [];
+
+		if (typeof field === "string") {
+			this._orderBy.push({ field, direction, numeric: true });
+		} else {
+			const record = actionable({
+				[__ctx]: this[__ctx],
+				[__type]: this.entry,
+				[__display]: ({ contextId }) => {
+					return contextId === this[__ctx].id ? "$this" : "$parent";
+				},
+			}) as Actionable<C, E>;
+			this._orderBy.push({
+				field: sanitizeWorkable(field(record)),
+				direction,
+				numeric: true,
+			});
+		}
+
+		return this;
+	}
+
+	orderByCollate(
+		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		direction?: "ASC" | "DESC",
+	): this {
+		if (!this._orderBy) this._orderBy = [];
+
+		if (typeof field === "string") {
+			this._orderBy.push({ field, direction, collate: true });
+		} else {
+			const record = actionable({
+				[__ctx]: this[__ctx],
+				[__type]: this.entry,
+				[__display]: ({ contextId }) => {
+					return contextId === this[__ctx].id ? "$this" : "$parent";
+				},
+			}) as Actionable<C, E>;
+			this._orderBy.push({
+				field: sanitizeWorkable(field(record)),
+				direction,
+				collate: true,
+			});
+		}
+
+		return this;
+	}
+
+	groupBy(...fields: string[]): this {
+		this._groupBy = fields;
+		return this;
+	}
+
+	groupAll(): this {
+		this._groupBy = "ALL";
+		return this;
+	}
+
+	split(...fields: string[]): this {
+		this._split = fields;
+		return this;
+	}
+
+	fetch(...fields: string[]): this {
+		this._fetch = fields;
+		return this;
+	}
+
 	timeout(duration: string): this {
 		this._timeout = duration;
 		return this;
@@ -139,12 +245,53 @@ export class SelectQuery<
 			: "*";
 		let query = /* surql */ `SELECT ${predicates} FROM ${thing}`;
 
+		// WHERE
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
+		// SPLIT
+		if (this._split && this._split.length > 0) {
+			query += /* surql */ ` SPLIT ${this._split.join(", ")}`;
+		}
+
+		// GROUP BY / GROUP ALL
+		if (this._groupBy) {
+			if (this._groupBy === "ALL") {
+				query += " GROUP ALL";
+			} else {
+				query += /* surql */ ` GROUP BY ${this._groupBy.join(", ")}`;
+			}
+		}
+
+		// ORDER BY
+		if (this._orderBy && this._orderBy.length > 0) {
+			const orderParts = this._orderBy.map((spec) => {
+				let part: string;
+				if (typeof spec.field === "string") {
+					part = spec.field;
+				} else {
+					part = spec.field[__display](ctx);
+				}
+
+				if (spec.collate) part += " COLLATE";
+				if (spec.numeric) part += " NUMERIC";
+				if (spec.direction) part += ` ${spec.direction}`;
+
+				return part;
+			});
+			query += /* surql */ ` ORDER BY ${orderParts.join(", ")}`;
+		}
+
+		// LIMIT / START
 		if (start) query += /* surql */ ` START ${start}`;
 		if (limit) query += /* surql */ ` LIMIT ${limit}`;
 
+		// FETCH
+		if (this._fetch && this._fetch.length > 0) {
+			query += /* surql */ ` FETCH ${this._fetch.join(", ")}`;
+		}
+
+		// TIMEOUT
 		if (this._timeout) {
 			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;
 		}
