@@ -122,14 +122,14 @@ export class SelectQuery<
 		return this;
 	}
 
-	orderBy(
+	private _addOrderBy(
 		field: string | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
+		opts?: { collate?: boolean; numeric?: boolean },
 	): this {
 		if (!this._orderBy) this._orderBy = [];
-
 		if (typeof field === "string") {
-			this._orderBy.push({ field, direction });
+			this._orderBy.push({ field, direction, ...opts });
 		} else {
 			const record = actionable({
 				[__ctx]: this[__ctx],
@@ -141,62 +141,31 @@ export class SelectQuery<
 			this._orderBy.push({
 				field: sanitizeWorkable(field(record)),
 				direction,
+				...opts,
 			});
 		}
-
 		return this;
+	}
+
+	orderBy(
+		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		direction?: "ASC" | "DESC",
+	): this {
+		return this._addOrderBy(field, direction);
 	}
 
 	orderByNumeric(
 		field: string | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
-		if (!this._orderBy) this._orderBy = [];
-
-		if (typeof field === "string") {
-			this._orderBy.push({ field, direction, numeric: true });
-		} else {
-			const record = actionable({
-				[__ctx]: this[__ctx],
-				[__type]: this.entry,
-				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$this" : "$parent";
-				},
-			}) as Actionable<C, E>;
-			this._orderBy.push({
-				field: sanitizeWorkable(field(record)),
-				direction,
-				numeric: true,
-			});
-		}
-
-		return this;
+		return this._addOrderBy(field, direction, { numeric: true });
 	}
 
 	orderByCollate(
 		field: string | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
-		if (!this._orderBy) this._orderBy = [];
-
-		if (typeof field === "string") {
-			this._orderBy.push({ field, direction, collate: true });
-		} else {
-			const record = actionable({
-				[__ctx]: this[__ctx],
-				[__type]: this.entry,
-				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$this" : "$parent";
-				},
-			}) as Actionable<C, E>;
-			this._orderBy.push({
-				field: sanitizeWorkable(field(record)),
-				direction,
-				collate: true,
-			});
-		}
-
-		return this;
+		return this._addOrderBy(field, direction, { collate: true });
 	}
 
 	groupBy(...fields: string[]): this {
