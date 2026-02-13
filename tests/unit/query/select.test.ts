@@ -206,9 +206,7 @@ describe("SELECT ORDER BY", () => {
 	});
 
 	test("generates ORDER BY with callback for nested fields", () => {
-		const query = db
-			.select("user")
-			.orderBy((user) => user.name.last, "ASC");
+		const query = db.select("user").orderBy((user) => user.name.last, "ASC");
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -276,15 +274,11 @@ describe("SELECT ORDER BY", () => {
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
-		expect(result).toContain(
-			"ORDER BY email COLLATE ASC, age NUMERIC DESC",
-		);
+		expect(result).toContain("ORDER BY email COLLATE ASC, age NUMERIC DESC");
 	});
 
 	test("generates ORDER BY with callback and NUMERIC", () => {
-		const query = db
-			.select("user")
-			.orderByNumeric((user) => user.age, "DESC");
+		const query = db.select("user").orderByNumeric((user) => user.age, "DESC");
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 

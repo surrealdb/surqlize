@@ -284,9 +284,7 @@ const orderByName = db
 const orderByNumeric = db.select("user").orderByNumeric("age", "DESC");
 
 // ORDER BY COLLATE
-const orderByCollate = db
-	.select("user")
-	.orderByCollate("email", "ASC");
+const orderByCollate = db.select("user").orderByCollate("email", "ASC");
 
 // GROUP BY
 const groupByAuthor = db.select("post").groupBy("author");
