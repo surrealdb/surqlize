@@ -213,6 +213,89 @@ const postsWithAuthors = db.select("post").return((post) => ({
 }));
 ```
 
+#### Sorting with ORDER BY
+
+```typescript
+// Order by single field
+const sorted = db.select("user")
+  .orderBy("age", "DESC");
+
+// Order by multiple fields
+const multiSort = db.select("user")
+  .orderBy("lastName", "ASC")
+  .orderBy("firstName", "ASC");
+
+// Order by with callback (for nested fields)
+const nestedSort = db.select("user")
+  .orderBy(user => user.name.last, "ASC");
+
+// Numeric sorting
+const numericSort = db.select("user")
+  .orderByNumeric("age", "DESC");
+
+// Collation sorting
+const collateSort = db.select("user")
+  .orderByCollate("name", "ASC");
+```
+
+#### Grouping with GROUP BY
+
+```typescript
+// Group by field(s)
+const grouped = db.select("post")
+  .groupBy("author");
+
+// Group all (for table-wide aggregates)
+const totalCount = db.select("user")
+  .groupAll();
+```
+
+#### Loading relations with FETCH
+
+```typescript
+// Fetch linked records
+const withAuthor = db.select("post")
+  .fetch("author");
+
+// Fetch multiple relations
+const deepFetch = db.select("post")
+  .fetch("author", "comments");
+```
+
+#### Splitting arrays with SPLIT
+
+```typescript
+// Split array field into multiple records
+const splitTags = db.select("post")
+  .split("tags");
+
+// Split multiple arrays
+const multiSplit = db.select("post")
+  .split("tags", "categories");
+```
+
+#### Setting query timeout
+
+```typescript
+// Set timeout duration
+const withTimeout = db.select("user")
+  .where(user => user.age.gt(18))
+  .timeout("5s");
+```
+
+#### Combining clauses
+
+```typescript
+// Complex query with multiple clauses
+const complexQuery = db.select("post")
+  .where(post => post.title.startsWith("Hello"))
+  .split("tags")
+  .orderBy("created", "DESC")
+  .limit(20)
+  .fetch("author")
+  .timeout("10s");
+```
+
 ### CREATE statements
 
 Create a new record with a specific id or a generated id.

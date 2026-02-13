@@ -51,12 +51,6 @@ const query = db.select("post").return((post) => ({
 
 db.select("user").where(($this) => $this.name.first.eq("John"));
 
-db.select("user").return((user) =>
-	user.extend({
-		fullName: user.name.first.join(" ", user.name.last),
-	}),
-);
-
 // Demo of fluent .then API
 db.select("foo").then.at(0);
 
@@ -273,7 +267,77 @@ const relateWithReturn = db
 		created: edge.created,
 	}));
 
+// ============================================
+// SELECT CLAUSE EXAMPLES
+// ============================================
+
+// ORDER BY - single field
+const orderByAge = db.select("user").orderBy("age", "DESC");
+
+// ORDER BY - multiple fields via callback
+const orderByName = db
+	.select("user")
+	.orderBy((user) => user.name.last, "ASC")
+	.orderBy((user) => user.name.first, "ASC");
+
+// ORDER BY NUMERIC
+const orderByNumeric = db.select("user").orderByNumeric("age", "DESC");
+
+// ORDER BY COLLATE
+const orderByCollate = db.select("user").orderByCollate("email", "ASC");
+
+// GROUP BY
+const groupByAuthor = db.select("post").groupBy("author");
+
+// GROUP ALL
+const groupAll = db.select("user").groupAll();
+
+// SPLIT
+const splitTags = db.select("user").split("tags");
+
+// FETCH
+const fetchAuthor = db.select("post").fetch("author");
+
+// TIMEOUT
+const timedQuery = db
+	.select("user")
+	.where(($this) => $this.age.gt(18))
+	.timeout("5s");
+
+// Combined: all clauses in correct SurrealQL order
+const complexSelect = db
+	.select("user")
+	.where(($this) => $this.age.gte(18))
+	.split("tags")
+	.groupBy("email")
+	.orderBy("age", "DESC")
+	.start(10)
+	.limit(20)
+	.fetch("metadata")
+	.timeout("10s");
+
 // Display generated queries
+console.log("\n=== SELECT: ORDER BY ===");
+console.log(orderByAge[__display](displayContext()));
+console.log("\n=== SELECT: ORDER BY (nested) ===");
+console.log(orderByName[__display](displayContext()));
+console.log("\n=== SELECT: ORDER BY NUMERIC ===");
+console.log(orderByNumeric[__display](displayContext()));
+console.log("\n=== SELECT: ORDER BY COLLATE ===");
+console.log(orderByCollate[__display](displayContext()));
+console.log("\n=== SELECT: GROUP BY ===");
+console.log(groupByAuthor[__display](displayContext()));
+console.log("\n=== SELECT: GROUP ALL ===");
+console.log(groupAll[__display](displayContext()));
+console.log("\n=== SELECT: SPLIT ===");
+console.log(splitTags[__display](displayContext()));
+console.log("\n=== SELECT: FETCH ===");
+console.log(fetchAuthor[__display](displayContext()));
+console.log("\n=== SELECT: TIMEOUT ===");
+console.log(timedQuery[__display](displayContext()));
+console.log("\n=== SELECT: COMBINED ===");
+console.log(complexSelect[__display](displayContext()));
+
 console.log("\n=== CREATE ===");
 console.log(createUser[__display](displayContext()));
 

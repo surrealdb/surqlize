@@ -12,7 +12,7 @@
 		"typescript": "^5.0.0"
 	},
 	"dependencies": {
-		"surrealdb": "2.0.0-alpha.16"
+		"surrealdb": "2.0.0-alpha.18"
 	},
 	"scripts": {
 		"all": "bun test && bun type-check && biome check .",
