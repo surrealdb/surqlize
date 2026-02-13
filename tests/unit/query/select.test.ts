@@ -387,11 +387,11 @@ describe("SELECT FETCH", () => {
 	});
 
 	test("generates FETCH with multiple fields", () => {
-		const query = db.select("post").fetch("author", "comments");
+		const query = db.select("post").fetch("author", "title");
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
-		expect(result).toContain("FETCH author, comments");
+		expect(result).toContain("FETCH author, title");
 	});
 
 	test("generates FETCH with nested paths", () => {

@@ -4,6 +4,7 @@ import {
 	type AbstractType,
 	type ArrayType,
 	type NoneType,
+	type ObjectType,
 	type RecordType,
 	type UnionType,
 	t,
@@ -25,6 +26,13 @@ import {
 	sanitizeWorkable,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
+
+type FieldKeys<
+	O extends Orm,
+	T extends keyof O["tables"] & string,
+> = O["tables"][T]["schema"] extends ObjectType<infer F>
+	? keyof F & string
+	: string;
 
 export class SelectQuery<
 	O extends Orm,
@@ -123,7 +131,7 @@ export class SelectQuery<
 	}
 
 	private _addOrderBy(
-		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		field: FieldKeys<O, T> | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
 		opts?: { collate?: boolean; numeric?: boolean },
 	): this {
@@ -148,27 +156,27 @@ export class SelectQuery<
 	}
 
 	orderBy(
-		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		field: FieldKeys<O, T> | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
 		return this._addOrderBy(field, direction);
 	}
 
 	orderByNumeric(
-		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		field: FieldKeys<O, T> | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
 		return this._addOrderBy(field, direction, { numeric: true });
 	}
 
 	orderByCollate(
-		field: string | ((record: Actionable<C, E>) => Workable<C>),
+		field: FieldKeys<O, T> | ((record: Actionable<C, E>) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
 		return this._addOrderBy(field, direction, { collate: true });
 	}
 
-	groupBy(...fields: string[]): this {
+	groupBy(...fields: FieldKeys<O, T>[]): this {
 		this._groupBy = fields;
 		return this;
 	}
@@ -178,12 +186,12 @@ export class SelectQuery<
 		return this;
 	}
 
-	split(...fields: string[]): this {
+	split(...fields: FieldKeys<O, T>[]): this {
 		this._split = fields;
 		return this;
 	}
 
-	fetch(...fields: string[]): this {
+	fetch(...fields: (FieldKeys<O, T> | `${FieldKeys<O, T>}.${string}`)[]): this {
 		this._fetch = fields;
 		return this;
 	}
