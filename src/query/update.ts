@@ -88,6 +88,9 @@ export class UpdateQuery<
 	}
 
 	get [__type](): ArrayType<E> {
+		if (this._return && typeof this._return !== "string") {
+			return t.array(this._return[__type]) as ArrayType<E>;
+		}
 		return t.array(this.schema);
 	}
 
@@ -197,7 +200,7 @@ export class UpdateQuery<
 			if (typeof this._return === "string") {
 				query += /* surql */ ` RETURN ${this._return.toUpperCase()}`;
 			} else {
-				query += /* surql */ ` RETURN ${this._return[__display](ctx)}`;
+				query += /* surql */ ` RETURN VALUE ${this._return[__display](ctx)}`;
 			}
 		}
 

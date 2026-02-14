@@ -242,32 +242,6 @@ describe("Modification methods integration tests", () => {
 			expect(result[0]![0]).toBe("Update");
 			expect(result[0]![1]).toBe(31);
 		});
-
-		test("delete with array return callback", async () => {
-			const { db } = getTestDb();
-
-			await db
-				.create("user", "arr_delete")
-				.set({
-					name: { first: "Delete", last: "User" },
-					age: 50,
-					email: "arr_delete@example.com",
-					created: new Date(),
-					updated: new Date(),
-				})
-				.execute();
-
-			const result = await db
-				.delete("user", "arr_delete")
-				.return((record) => [record.name.first, record.age])
-				.execute();
-
-			expect(result).toBeDefined();
-			expect(result.length).toBe(1);
-			expect(Array.isArray(result[0])).toBe(true);
-			expect(result[0]![0]).toBe("Delete");
-			expect(result[0]![1]).toBe(50);
-		});
 	});
 
 	describe("DELETE with RETURN", () => {

@@ -260,9 +260,7 @@ describe("Complex Queries Integration Tests", () => {
 		});
 	});
 
-	// Skipped: return projections on UPDATE currently produce an ObjectType result
-	// but SurrealDB returns the raw object fields. Requires parse/type coercion work.
-	describe.skip("Complex UPDATE scenarios", () => {
+	describe("Complex UPDATE scenarios", () => {
 		test("updates with projection return", async () => {
 			const { db } = getTestDb();
 
