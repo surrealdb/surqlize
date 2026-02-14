@@ -1,3 +1,4 @@
+export * from "./error";
 export * from "./functions/standalone";
 export * from "./query/batch";
 export * from "./query/create";

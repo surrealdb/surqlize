@@ -1,3 +1,4 @@
+import { OrmError } from "../error";
 import { type GetFunctions, getFunctions } from "../functions";
 import type { AbstractType, ArrayType, ObjectType, StringType } from "../types";
 import { type Workable, type WorkableContext, workableGet } from "./workable";
@@ -24,6 +25,12 @@ export type Actionable<
 	T extends AbstractType,
 > = ActionableProps<C, T> & Workable<C, T> & GetFunctions<C, T>;
 
+/**
+ * Wrap a {@link Workable} in a `Proxy` that provides property access,
+ * function bindings, and type-safe field traversal.
+ *
+ * @throws {OrmError} If a looked-up property exists in the function map but is not callable.
+ */
 export function actionable<
 	C extends WorkableContext = WorkableContext,
 	T extends AbstractType = StringType,
@@ -50,7 +57,7 @@ export function actionable<
 					});
 				}
 
-				throw new Error(`Property ${prop} is not a function`);
+				throw new OrmError(`Property ${prop} is not a function`);
 			}
 
 			return val;

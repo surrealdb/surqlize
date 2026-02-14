@@ -9,6 +9,11 @@ export abstract class AbstractType<T = unknown> {
 	accept = undefined as unknown as T;
 	abstract validate(value: unknown): value is T;
 
+	/**
+	 * Validate and return `value`, or throw if it does not match this type.
+	 *
+	 * @throws {TypeParseError} If `value` fails validation.
+	 */
 	parse(value: unknown): T {
 		if (!this.validate(value))
 			throw new TypeParseError(this.name, this.expected, value);
@@ -114,6 +119,11 @@ export class DateType extends AbstractType<Date> {
 		return false;
 	}
 
+	/**
+	 * Parse a value into a `Date`, converting SurrealDB `DateTime` objects.
+	 *
+	 * @throws {TypeParseError} If `value` is not a `Date` or `DateTime`.
+	 */
 	parse(value: unknown): this["infer"] {
 		if (value instanceof Date) return value;
 		// Convert DateTime to Date if needed
@@ -217,6 +227,11 @@ export class ObjectType<
 		return true;
 	}
 
+	/**
+	 * Validate every field of `value` against the object schema.
+	 *
+	 * @throws {TypeParseError} If `value` is not an object or a field fails validation.
+	 */
 	parse(value: unknown): this["infer"] {
 		if (typeof value !== "object" || value === null)
 			throw new TypeParseError(this.name, this.expected, value);
@@ -281,6 +296,12 @@ export class ArrayType<
 		return true;
 	}
 
+	/**
+	 * Validate every element of `value` against the array or tuple schema.
+	 *
+	 * @throws {TypeParseError} If `value` is not an array, has the wrong length
+	 *   (tuple), or an element fails validation.
+	 */
 	parse(value: unknown): this["infer"] {
 		if (!Array.isArray(value))
 			throw new TypeParseError(this.name, this.expected, value);

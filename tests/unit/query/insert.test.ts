@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { Surreal } from "surrealdb";
-import { __display, displayContext, orm, t, table } from "../../../src";
+import {
+	__display,
+	displayContext,
+	OrmError,
+	orm,
+	t,
+	table,
+} from "../../../src";
 
 describe("INSERT queries", () => {
 	const user = table("user", {
@@ -105,5 +112,98 @@ describe("INSERT queries", () => {
 
 		expect(result).toContain("INSERT");
 		expect(result).toContain("TIMEOUT");
+	});
+
+	describe("validation errors", () => {
+		test("fields() throws OrmError when data was passed to constructor", () => {
+			const query = db.insert("user", {
+				name: "Alice",
+				age: 25,
+				email: "a@b.com",
+			});
+			expect(() => query.fields(["name", "age"])).toThrow(
+				"Cannot use fields() with object-style insert",
+			);
+
+			try {
+				query.fields(["name"]);
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
+		});
+
+		test("values() throws OrmError when data was passed to constructor", () => {
+			const query = db.insert("user", {
+				name: "Alice",
+				age: 25,
+				email: "a@b.com",
+			});
+			// Need to bypass the fields check by testing data check first
+			expect(() => query.values(["Alice", 25])).toThrow(
+				"Cannot use values() with object-style insert",
+			);
+
+			try {
+				query.values(["Alice", 25]);
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
+		});
+
+		test("values() throws OrmError when fields() has not been called", () => {
+			const query = db.insert("user");
+			expect(() => query.values(["Alice", 25])).toThrow(
+				"Must call fields() before values()",
+			);
+
+			try {
+				db.insert("user").values(["Alice", 25]);
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
+		});
+
+		test("values() throws OrmError when row length mismatches field count", () => {
+			const query = db.insert("user").fields(["name", "age"]);
+			expect(() => query.values(["Alice"])).toThrow(
+				"Value row length (1) does not match fields length (2)",
+			);
+
+			try {
+				db.insert("user").fields(["name", "age"]).values(["Alice"]);
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
+		});
+
+		test("ignore() throws OrmError after onDuplicate()", () => {
+			const query = db
+				.insert("user", { name: "Alice", age: 25, email: "a@b.com" })
+				.onDuplicate({ age: { "+=": 1 } });
+			expect(() => query.ignore()).toThrow(
+				"Cannot use both ignore() and onDuplicate()",
+			);
+
+			try {
+				query.ignore();
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
+		});
+
+		test("onDuplicate() throws OrmError after ignore()", () => {
+			const query = db
+				.insert("user", { name: "Alice", age: 25, email: "a@b.com" })
+				.ignore();
+			expect(() => query.onDuplicate({ age: { "+=": 1 } })).toThrow(
+				"Cannot use both ignore() and onDuplicate()",
+			);
+
+			try {
+				query.onDuplicate({ age: { "+=": 1 } });
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
+		});
 	});
 });

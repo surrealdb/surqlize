@@ -1,5 +1,6 @@
 import type { SurrealSession } from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
+import { OrmError } from "../error";
 import type { Query } from "../query/abstract";
 import { BatchQuery } from "../query/batch";
 import { CreateQuery } from "../query/create";
@@ -247,6 +248,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * @param from - The source record(s).
 	 * @param to - The target record(s).
 	 * @returns A {@link RelateQuery} that can be further chained or awaited.
+	 * @throws {OrmError} If `edge` does not refer to an {@link EdgeSchema}.
 	 */
 	relate<
 		C extends WorkableContext<this>,
@@ -286,7 +288,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 
 		// Validate it's an EdgeSchema
 		if (!(edgeSchema instanceof EdgeSchema)) {
-			throw new Error(`"${edge}" is not an edge table`);
+			throw new OrmError(`"${edge}" is not an edge table`);
 		}
 
 		return new RelateQuery(this, edge, from, to);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayContext } from "../../../src";
+import { displayContext, OrmError } from "../../../src";
 import {
 	applyContent,
 	applyMerge,
@@ -25,16 +25,28 @@ describe("checkModificationMode", () => {
 		expect(() => checkModificationMode("set", "set")).not.toThrow();
 	});
 
-	test("throws when modes conflict", () => {
+	test("throws OrmError when modes conflict", () => {
 		expect(() => checkModificationMode("set", "content")).toThrow(
 			"Cannot use content() when set() has already been used",
 		);
+
+		try {
+			checkModificationMode("set", "content");
+		} catch (err) {
+			expect(err).toBeInstanceOf(OrmError);
+		}
 	});
 
 	test("throws with correct mode names in message", () => {
 		expect(() => checkModificationMode("merge", "patch")).toThrow(
 			"Cannot use patch() when merge() has already been used",
 		);
+
+		try {
+			checkModificationMode("merge", "patch");
+		} catch (err) {
+			expect(err).toBeInstanceOf(OrmError);
+		}
 	});
 });
 

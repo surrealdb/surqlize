@@ -1,3 +1,4 @@
+import { OrmError, TypeParseError } from "../error";
 import { type AbstractType, ObjectType } from "../types";
 import type { DisplayContext } from "./display";
 import {
@@ -44,12 +45,19 @@ export type InheritableForWorkable<
 	P extends Inheritable<C> = Inheritable<C>,
 > = InheritableIntoWorkable<C, P> extends Workable<C, T> ? P : never;
 
+/**
+ * Convert an {@link Inheritable} value (a workable or a plain object of
+ * workables) into a single {@link Workable}.
+ *
+ * @throws {TypeParseError} If `value` is not an object.
+ * @throws {OrmError} If `value` is an empty object with no keys.
+ */
 export function inheritableIntoWorkable<
 	C extends WorkableContext,
 	T extends Inheritable<C>,
 >(value: T): InheritableIntoWorkable<C, T> {
 	if (typeof value !== "object" || value === null) {
-		throw new Error("Invalid Predicable value: must be an object");
+		throw new TypeParseError("inheritable", "object", value);
 	}
 
 	if (isWorkable(value)) {
@@ -68,7 +76,7 @@ export function inheritableIntoWorkable<
 	) as Record<string, AbstractType>;
 
 	const firstKey = Object.keys(converted)[0];
-	if (!firstKey) throw new Error("Cannot convert empty object to workable");
+	if (!firstKey) throw new OrmError("Cannot convert empty object to workable");
 
 	return {
 		[__ctx]: converted[firstKey]![__ctx],
