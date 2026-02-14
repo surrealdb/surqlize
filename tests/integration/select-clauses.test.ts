@@ -112,7 +112,7 @@ describe("SELECT clause integration tests", () => {
 	});
 
 	describe("FETCH", () => {
-		test("fetches record references inline", async () => {
+		test("fetches and resolves record references", async () => {
 			const { db } = getTestDb();
 			const result = await db
 				.select("post")
@@ -123,7 +123,11 @@ describe("SELECT clause integration tests", () => {
 			expect(result.length).toBeGreaterThan(0);
 			for (const post of result) {
 				expect(post).toHaveProperty("title");
-				expect(post).toHaveProperty("author");
+				// author is resolved from RecordId to the full user object
+				expect(post.author).toHaveProperty("name");
+				expect(post.author).toHaveProperty("age");
+				expect(post.author).toHaveProperty("email");
+				expect(post.author.name).toHaveProperty("first");
 			}
 		});
 	});

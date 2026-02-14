@@ -3,8 +3,8 @@ import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
 	type ArrayType,
-	type ObjectType,
-	type RecordType,
+	ObjectType,
+	RecordType,
 	t,
 } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
@@ -32,6 +32,25 @@ type FieldKeys<
 	? keyof F & string
 	: string;
 
+/** Resolve a single field type: if it's a RecordType referencing a known table, replace with that table's schema. */
+type ResolveField<O extends Orm, F extends AbstractType> =
+	F extends RecordType<infer Tb>
+		? Tb extends keyof O["tables"] & string
+			? O["tables"][Tb]["schema"]
+			: F
+		: F;
+
+/** Transform an ObjectType by resolving RecordType fields that appear in the Fields union. */
+type FetchedSchema<
+	O extends Orm,
+	E extends AbstractType,
+	Fields extends string,
+> = E extends ObjectType<infer S>
+	? ObjectType<{
+			[K in keyof S]: K extends Fields ? ResolveField<O, S[K]> : S[K];
+		}>
+	: E;
+
 /**
  * A fluent SELECT query builder. Supports WHERE, ORDER BY, GROUP BY, SPLIT,
  * FETCH, LIMIT, START, TIMEOUT, and return projections via `.return()`.
@@ -56,6 +75,7 @@ export class SelectQuery<
 	private _groupBy?: string[] | "ALL";
 	private _split?: string[];
 	private _fetch?: string[];
+	private _fetchResolvedType?: AbstractType;
 	private _timeout?: string;
 	private tb: T;
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
@@ -79,7 +99,8 @@ export class SelectQuery<
 	}
 
 	get entry(): E {
-		return (this._entry?.[__type] ??
+		return (this._fetchResolvedType ??
+			this._entry?.[__type] ??
 			this[__ctx].orm.tables[this.tb].schema) as E;
 	}
 
@@ -193,12 +214,35 @@ export class SelectQuery<
 		return this;
 	}
 
-	fetch(...fields: (FieldKeys<O, T> | `${FieldKeys<O, T>}.${string}`)[]): this {
+	fetch<F extends FieldKeys<O, T>>(
+		...fields: (F | `${F}.${string}`)[]
+	): SelectQuery<O, C, T, FetchedSchema<O, E, F>> {
 		this._fetch = fields;
-		// FETCH resolves RecordId references into full objects, which changes
-		// the result shape away from the schema. Skip parse to avoid errors.
-		this._skipParse = true;
-		return this;
+
+		// Build a resolved schema where fetched RecordType fields are replaced
+		// with the referenced table's ObjectType schema, so parse() validates
+		// the resolved objects instead of expecting RecordIds.
+		const currentSchema = this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb].schema;
+		if (currentSchema instanceof ObjectType) {
+			const resolved = { ...currentSchema.schema };
+			for (const field of fields) {
+				// Only resolve top-level field names (ignore "field.nested" paths)
+				const topLevel = field.includes(".")
+					? field.split(".")[0]
+					: field;
+				const fieldType = resolved[topLevel];
+				if (fieldType instanceof RecordType && fieldType.tb) {
+					const targetTable =
+						this[__ctx].orm.tables[fieldType.tb as string];
+					if (targetTable) {
+						resolved[topLevel] = targetTable.schema;
+					}
+				}
+			}
+			this._fetchResolvedType = new ObjectType(resolved);
+		}
+
+		return this as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, F>>;
 	}
 
 	timeout(duration: string): this {
