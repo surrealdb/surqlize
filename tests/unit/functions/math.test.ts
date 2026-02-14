@@ -13,7 +13,7 @@ describe("Math standalone functions", () => {
 
 	test("math.sum() generates math::sum", () => {
 		const query = db.select("user").return((user) => ({
-			total: math.sum(user, user.age),
+			total: math.sum(user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -23,7 +23,7 @@ describe("Math standalone functions", () => {
 
 	test("math.mean() generates math::mean", () => {
 		const query = db.select("user").return((user) => ({
-			avg: math.mean(user, user.age),
+			avg: math.mean(user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

@@ -20,7 +20,7 @@ describe("Type functions", () => {
 
 	test("type.isString() generates type::is_string", () => {
 		const query = db.select("user").return((user) => ({
-			check: typeFn.isString(user, user.email),
+			check: typeFn.isString(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -30,7 +30,7 @@ describe("Type functions", () => {
 
 	test("type.of() generates type::of", () => {
 		const query = db.select("user").return((user) => ({
-			typeOf: typeFn.of(user, user.email),
+			typeOf: typeFn.of(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

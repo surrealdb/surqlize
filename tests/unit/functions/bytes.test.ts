@@ -13,7 +13,7 @@ describe("Bytes functions", () => {
 
 	test("bytes.len() generates bytes::len", () => {
 		const query = db.select("user").return((user) => ({
-			size: bytes.len(user, user.email),
+			size: bytes.len(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

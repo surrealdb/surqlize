@@ -26,61 +26,34 @@ export const time = {
 
 	// Conversion functions
 
-	fromMillis<C extends WorkableContext>(
-		source: ContextSource<C>,
-		ms: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_millis", ms);
+	fromMillis<C extends WorkableContext>(ms: Workable<C>) {
+		return standaloneFn(ms, t.date(), "time::from_millis", ms);
 	},
-	fromMicros<C extends WorkableContext>(
-		source: ContextSource<C>,
-		us: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_micros", us);
+	fromMicros<C extends WorkableContext>(us: Workable<C>) {
+		return standaloneFn(us, t.date(), "time::from_micros", us);
 	},
-	fromNanos<C extends WorkableContext>(
-		source: ContextSource<C>,
-		ns: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_nanos", ns);
+	fromNanos<C extends WorkableContext>(ns: Workable<C>) {
+		return standaloneFn(ns, t.date(), "time::from_nanos", ns);
 	},
-	fromSecs<C extends WorkableContext>(
-		source: ContextSource<C>,
-		s: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_secs", s);
+	fromSecs<C extends WorkableContext>(s: Workable<C>) {
+		return standaloneFn(s, t.date(), "time::from_secs", s);
 	},
-	fromUnix<C extends WorkableContext>(
-		source: ContextSource<C>,
-		s: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_unix", s);
+	fromUnix<C extends WorkableContext>(s: Workable<C>) {
+		return standaloneFn(s, t.date(), "time::from_unix", s);
 	},
-	fromUlid<C extends WorkableContext>(
-		source: ContextSource<C>,
-		ulid: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_ulid", ulid);
+	fromUlid<C extends WorkableContext>(ulid: Workable<C>) {
+		return standaloneFn(ulid, t.date(), "time::from_ulid", ulid);
 	},
-	fromUuid<C extends WorkableContext>(
-		source: ContextSource<C>,
-		uuid: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::from_uuid", uuid);
+	fromUuid<C extends WorkableContext>(uuid: Workable<C>) {
+		return standaloneFn(uuid, t.date(), "time::from_uuid", uuid);
 	},
 
 	// Aggregation functions
 
-	timeMin<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::min", arr);
+	timeMin<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.date(), "time::min", arr);
 	},
-	timeMax<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.date(), "time::max", arr);
+	timeMax<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.date(), "time::max", arr);
 	},
 };

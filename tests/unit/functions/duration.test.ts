@@ -20,7 +20,7 @@ describe("Duration functions", () => {
 
 	test("duration.fromDays() generates duration::from_days", () => {
 		const query = db.select("user").return((user) => ({
-			dur: duration.fromDays(user, user.age),
+			dur: duration.fromDays(user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

@@ -13,7 +13,7 @@ describe("Crypto functions", () => {
 
 	test("crypto.md5() generates crypto::md5", () => {
 		const query = db.select("user").return((user) => ({
-			hash: crypto.md5(user, user.email),
+			hash: crypto.md5(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -23,7 +23,7 @@ describe("Crypto functions", () => {
 
 	test("crypto.sha256() generates crypto::sha256", () => {
 		const query = db.select("user").return((user) => ({
-			hash: crypto.sha256(user, user.email),
+			hash: crypto.sha256(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

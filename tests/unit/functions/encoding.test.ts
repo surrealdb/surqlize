@@ -20,7 +20,7 @@ describe("Encoding functions", () => {
 
 	test("encoding.base64Encode() generates encoding::base64::encode", () => {
 		const query = db.select("user").return((user) => ({
-			encoded: encoding.base64Encode(user, user.email),
+			encoded: encoding.base64Encode(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

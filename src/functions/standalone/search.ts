@@ -1,23 +1,27 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { type ContextSource, standaloneFn } from "./index";
+import { standaloneFn } from "./index";
 
 export const search = {
 	analyze<C extends WorkableContext>(
-		source: ContextSource<C>,
 		analyzer: Workable<C>,
 		value: Workable<C>,
 	) {
-		return standaloneFn(source, t.string(), "search::analyze", analyzer, value);
+		return standaloneFn(
+			analyzer,
+			t.string(),
+			"search::analyze",
+			analyzer,
+			value,
+		);
 	},
 	highlight<C extends WorkableContext>(
-		source: ContextSource<C>,
 		prefix: Workable<C>,
 		suffix: Workable<C>,
 		fieldRef: Workable<C>,
 	) {
 		return standaloneFn(
-			source,
+			prefix,
 			t.string(),
 			"search::highlight",
 			prefix,
@@ -25,16 +29,10 @@ export const search = {
 			fieldRef,
 		);
 	},
-	offsets<C extends WorkableContext>(
-		source: ContextSource<C>,
-		fieldRef: Workable<C>,
-	) {
-		return standaloneFn(source, t.string(), "search::offsets", fieldRef);
+	offsets<C extends WorkableContext>(fieldRef: Workable<C>) {
+		return standaloneFn(fieldRef, t.string(), "search::offsets", fieldRef);
 	},
-	score<C extends WorkableContext>(
-		source: ContextSource<C>,
-		fieldRef: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "search::score", fieldRef);
+	score<C extends WorkableContext>(fieldRef: Workable<C>) {
+		return standaloneFn(fieldRef, t.number(), "search::score", fieldRef);
 	},
 };

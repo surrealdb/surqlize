@@ -13,7 +13,7 @@ describe("Count functions", () => {
 
 	test("count() generates count()", () => {
 		const query = db.select("user").return((user) => ({
-			total: count.count(user),
+			total: count(user),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -23,7 +23,7 @@ describe("Count functions", () => {
 
 	test("count(value) generates count(", () => {
 		const query = db.select("user").return((user) => ({
-			total: count.count(user, user.age),
+			total: count(user, user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

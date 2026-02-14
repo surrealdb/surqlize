@@ -13,7 +13,7 @@ describe("Vector functions", () => {
 
 	test("vector.dot() generates vector::dot", () => {
 		const query = db.select("user").return((user) => ({
-			dotProduct: vector.dot(user, user.age, user.age),
+			dotProduct: vector.dot(user.age, user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

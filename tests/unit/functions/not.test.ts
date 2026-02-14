@@ -13,7 +13,7 @@ describe("Not function", () => {
 
 	test("not_() generates not(", () => {
 		const query = db.select("user").return((user) => ({
-			negated: not_.not(user, user.age),
+			negated: not_(user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

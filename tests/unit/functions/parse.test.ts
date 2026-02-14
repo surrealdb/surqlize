@@ -13,7 +13,7 @@ describe("Parse functions", () => {
 
 	test("parse.emailHost() generates parse::email::host", () => {
 		const query = db.select("user").return((user) => ({
-			host: parse.emailHost(user, user.email),
+			host: parse.emailHost(user.email),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

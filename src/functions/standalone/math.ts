@@ -5,111 +5,65 @@ import { type ContextSource, standaloneConst, standaloneFn } from "./index";
 export const math = {
 	// Aggregation functions (single array param)
 
-	max<C extends WorkableContext>(source: ContextSource<C>, arr: Workable<C>) {
-		return standaloneFn(source, t.number(), "math::max", arr);
+	max<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::max", arr);
 	},
-	min<C extends WorkableContext>(source: ContextSource<C>, arr: Workable<C>) {
-		return standaloneFn(source, t.number(), "math::min", arr);
+	min<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::min", arr);
 	},
-	mean<C extends WorkableContext>(source: ContextSource<C>, arr: Workable<C>) {
-		return standaloneFn(source, t.number(), "math::mean", arr);
+	mean<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::mean", arr);
 	},
-	median<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::median", arr);
+	median<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::median", arr);
 	},
-	sum<C extends WorkableContext>(source: ContextSource<C>, arr: Workable<C>) {
-		return standaloneFn(source, t.number(), "math::sum", arr);
+	sum<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::sum", arr);
 	},
-	product<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::product", arr);
+	product<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::product", arr);
 	},
-	stddev<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::stddev", arr);
+	stddev<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::stddev", arr);
 	},
-	variance<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::variance", arr);
+	variance<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::variance", arr);
 	},
-	mode<C extends WorkableContext>(source: ContextSource<C>, arr: Workable<C>) {
-		return standaloneFn(source, t.number(), "math::mode", arr);
+	mode<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::mode", arr);
 	},
-	spread<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::spread", arr);
+	spread<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::spread", arr);
 	},
-	interquartile<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::interquartile", arr);
+	interquartile<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::interquartile", arr);
 	},
-	midhinge<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::midhinge", arr);
+	midhinge<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::midhinge", arr);
 	},
-	trimean<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::trimean", arr);
+	trimean<C extends WorkableContext>(arr: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::trimean", arr);
 	},
 
 	// Aggregation functions with extra param
 
-	bottom<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-		count: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::bottom", arr, count);
+	bottom<C extends WorkableContext>(arr: Workable<C>, count: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::bottom", arr, count);
 	},
-	top<C extends WorkableContext>(
-		source: ContextSource<C>,
-		arr: Workable<C>,
-		count: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "math::top", arr, count);
+	top<C extends WorkableContext>(arr: Workable<C>, count: Workable<C>) {
+		return standaloneFn(arr, t.number(), "math::top", arr, count);
 	},
 	nearestrank<C extends WorkableContext>(
-		source: ContextSource<C>,
 		arr: Workable<C>,
 		percentile: Workable<C>,
 	) {
-		return standaloneFn(
-			source,
-			t.number(),
-			"math::nearestrank",
-			arr,
-			percentile,
-		);
+		return standaloneFn(arr, t.number(), "math::nearestrank", arr, percentile);
 	},
 	percentile<C extends WorkableContext>(
-		source: ContextSource<C>,
 		arr: Workable<C>,
 		percentile: Workable<C>,
 	) {
-		return standaloneFn(
-			source,
-			t.number(),
-			"math::percentile",
-			arr,
-			percentile,
-		);
+		return standaloneFn(arr, t.number(), "math::percentile", arr, percentile);
 	},
 
 	// Constants

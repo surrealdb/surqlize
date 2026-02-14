@@ -10,20 +10,15 @@ export const rand = {
 		return standaloneFn(source, t.bool(), "rand::bool");
 	},
 	randEnum<C extends WorkableContext>(
-		source: ContextSource<C>,
-		...values: Workable<C>[]
+		...values: [Workable<C>, ...Workable<C>[]]
 	) {
-		return standaloneFn(source, t.string(), "rand::enum", ...values);
+		return standaloneFn(values[0], t.string(), "rand::enum", ...values);
 	},
 	float<C extends WorkableContext>(source: ContextSource<C>) {
 		return standaloneFn(source, t.number(), "rand::float");
 	},
-	floatRange<C extends WorkableContext>(
-		source: ContextSource<C>,
-		min: Workable<C>,
-		max: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "rand::float", min, max);
+	floatRange<C extends WorkableContext>(min: Workable<C>, max: Workable<C>) {
+		return standaloneFn(min, t.number(), "rand::float", min, max);
 	},
 	guid<C extends WorkableContext>(source: ContextSource<C>) {
 		return standaloneFn(source, t.string(), "rand::guid");
@@ -31,12 +26,8 @@ export const rand = {
 	int<C extends WorkableContext>(source: ContextSource<C>) {
 		return standaloneFn(source, t.number(), "rand::int");
 	},
-	intRange<C extends WorkableContext>(
-		source: ContextSource<C>,
-		min: Workable<C>,
-		max: Workable<C>,
-	) {
-		return standaloneFn(source, t.number(), "rand::int", min, max);
+	intRange<C extends WorkableContext>(min: Workable<C>, max: Workable<C>) {
+		return standaloneFn(min, t.number(), "rand::int", min, max);
 	},
 	string<C extends WorkableContext>(source: ContextSource<C>) {
 		return standaloneFn(source, t.string(), "rand::string");
