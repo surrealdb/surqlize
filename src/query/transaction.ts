@@ -1,4 +1,4 @@
-import type { Surreal, SurrealTransaction } from "surrealdb";
+import type { SurrealSession, SurrealTransaction } from "surrealdb";
 import type { CreateSchemaLookup } from "../schema/lookup.ts";
 import { type AnyTable, type MappedTables, Orm } from "../schema/orm.ts";
 
@@ -17,10 +17,10 @@ export class Transaction<T extends AnyTable[] = AnyTable[]> extends Orm<T> {
 		tables: MappedTables<T>,
 		lookup: CreateSchemaLookup<T>,
 	) {
-		// Cast SurrealTransaction as Surreal — safe because the only method
-		// Query.execute() calls on it is .query(), which both Surreal and
+		// Cast SurrealTransaction as SurrealSession — safe because the only method
+		// Query.execute() calls on it is .query(), which both SurrealSession and
 		// SurrealTransaction inherit from SurrealQueryable.
-		super(transaction as unknown as Surreal, tables, lookup);
+		super(transaction as unknown as SurrealSession, tables, lookup);
 		this._transaction = transaction;
 	}
 

@@ -34,8 +34,6 @@
 
 # Surqlize
 
-> **⚠️ Experimental**: This project is in early development and the API may change significantly.
-
 A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fluent query builder, comprehensive CRUD operations, and first-class support for graph relationships, and database functions.
 
 ## Features
@@ -958,6 +956,75 @@ const query = db
 type Result = t.infer<typeof query>;
 ```
 
+## Multi-session support
+
+Surqlize accepts any `SurrealSession` (or `Surreal`, which extends it), enabling multiple ORM instances scoped to different sessions over a single connection. Each session maintains its own namespace, database, authentication state, and variables.
+
+### Multiple databases over one connection
+
+```typescript
+import { Surreal } from "surrealdb";
+import { orm, table, t } from "surqlize";
+
+const user = table("user", { name: t.string(), age: t.number() });
+
+const surreal = new Surreal();
+await surreal.connect("ws://localhost:8000");
+await surreal.signin({ username: "root", password: "root" });
+
+// Create separate sessions for different tenants
+const tenantA = await surreal.newSession();
+await tenantA.signin({ username: "root", password: "root" });
+await tenantA.use({ namespace: "app", database: "tenant_a" });
+
+const tenantB = await surreal.newSession();
+await tenantB.signin({ username: "root", password: "root" });
+await tenantB.use({ namespace: "app", database: "tenant_b" });
+
+// Same schema, same connection, different databases
+const dbA = orm(tenantA, user);
+const dbB = orm(tenantB, user);
+
+await dbA.create("user").set({ name: "Alice", age: 30 });
+await dbB.create("user").set({ name: "Bob", age: 25 });
+```
+
+### Forking sessions
+
+Use `forkSession()` to clone an existing session (inheriting its namespace, database, auth, and variables) and then diverge:
+
+```typescript
+const surreal = new Surreal();
+await surreal.connect("ws://localhost:8000");
+await surreal.signin({ username: "root", password: "root" });
+await surreal.use({ namespace: "app", database: "main" });
+
+// Fork inherits namespace, database, auth, and variables
+const session = await surreal.forkSession();
+await session.authenticate(userToken);
+
+const db = orm(session, user);
+const users = await db.select("user");
+
+// Clean up when done
+await session.closeSession();
+```
+
+### Disposable sessions
+
+Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `await using` for automatic cleanup:
+
+```typescript
+{
+  await using session = await surreal.forkSession();
+  await session.authenticate(userToken);
+
+  const db = orm(session, user);
+  const users = await db.select("user");
+  // session automatically disposed when scope exits
+}
+```
+
 ## Comparison with other ORMs
 
 | Feature | Surqlize | SurrealDB.js | Prisma | Drizzle | TypeORM |
@@ -987,6 +1054,7 @@ This project is in active development. Planned features include:
 - [ ] **Additional SurrealDB functions** - Math, time, crypto, geo, and more
 - [x] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
 - [x] **Transaction support** - Batch and interactive transactions
+- [x] **Multi-session support** - Multiple sessions over a single connection
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [ ] **Advanced graph traversal** - Path finding, recursive queries, graph algorithms
 - [ ] **Performance optimizations** - Query caching, connection pooling

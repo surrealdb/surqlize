@@ -1,4 +1,4 @@
-import type { Surreal } from "surrealdb";
+import type { SurrealSession } from "surrealdb";
 import type { DisplayContext } from "../utils/display.ts";
 import { displayContext } from "../utils/display.ts";
 import { __display } from "../utils/workable.ts";
@@ -20,7 +20,7 @@ export type BatchResult<Q extends Query<any, any>[]> = {
 // biome-ignore lint/suspicious/noExplicitAny: required for generic constraint flexibility
 export class BatchQuery<Q extends Query<any, any>[]> {
 	constructor(
-		private readonly surreal: Surreal,
+		private readonly surreal: SurrealSession,
 		private readonly queries: Q,
 	) {}
 
