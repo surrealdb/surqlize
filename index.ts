@@ -369,3 +369,47 @@ console.log("\n=== RELATE CARTESIAN ===");
 console.log(relateCartesian[__display](displayContext()));
 console.log("\n=== RELATE WITH RETURN ===");
 console.log(relateWithReturn[__display](displayContext()));
+
+// ============================================
+// TRANSACTION EXAMPLES
+// ============================================
+
+// Batch: multiple queries in a single atomic operation
+const batchOp = db.batch(
+	db.create("user").set({
+		name: { first: "Alice", last: "Smith" },
+		age: 30,
+		email: "alice@example.com",
+		created: new Date(),
+		updated: new Date(),
+		metadata: {
+			bio: "Software Engineer",
+			avatar: "avatar.jpg",
+			eq: { value: true },
+		},
+		props: ["test", 123, true],
+		tags: ["developer", "typescript"],
+	}),
+	db.update("user", "bob").set({ age: 31 }),
+	db.select("user"),
+);
+
+// Transaction (callback form) — auto-commits on success, auto-cancels on error
+// const result = await db.transaction(async (tx) => {
+//   const user = await tx.create("user").set({ name: { first: "Alice", last: "Smith" }, ... });
+//   await tx.update("user", user.id).set({ age: 31 });
+//   return user;
+// });
+
+// Transaction (manual form) — explicit commit/cancel
+// const tx = await db.transaction();
+// try {
+//   const user = await tx.create("user").set({ ... });
+//   await tx.commit();
+// } catch (e) {
+//   await tx.cancel();
+//   throw e;
+// }
+
+console.log("\n=== BATCH ===");
+console.log(batchOp.toString());

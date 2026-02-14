@@ -558,6 +558,78 @@ const deletedNames = await db.delete("user")
   .return((u) => ({ name: u.name }));
 ```
 
+## Batch
+
+Execute multiple queries as a single atomic operation in one round-trip. No intermediate results are available — all queries succeed or all fail together.
+
+```typescript
+// Multiple queries in a single atomic operation
+const [user, updated, allUsers] = await db.batch(
+  db.create("user").set({ name: "Alice", age: 30 }),
+  db.update("user", "bob").set({ age: 31 }),
+  db.select("user"),
+);
+// Results are fully typed as a tuple
+```
+
+You can also inspect the generated SurrealQL before executing:
+
+```typescript
+const b = db.batch(
+  db.create("user").set({ name: "Alice" }),
+  db.update("user", "bob").set({ age: 31 }),
+);
+
+console.log(b.toString());
+// BEGIN TRANSACTION; CREATE user SET name = $_v0; UPDATE user:bob SET age = $_v1; COMMIT TRANSACTION;
+
+// Execute when ready
+const [created, updated] = await b;
+```
+
+## Transactions
+
+Open a server-side transaction, execute queries one-by-one with intermediate results, and decide whether to commit or cancel based on the outcomes.
+
+### Callback form (auto-commit/cancel)
+
+The callback form automatically commits on success and cancels on error:
+
+```typescript
+const result = await db.transaction(async (tx) => {
+  const user = await tx.create("user").set({
+    name: "Alice",
+    age: 30,
+  });
+
+  // Use intermediate results to make decisions
+  if (user.age > 25) {
+    await tx.update("user", user.id).set({ status: "senior" });
+  }
+
+  return user;
+});
+// Transaction is committed automatically
+```
+
+### Manual form (explicit commit/cancel)
+
+For full control, use the manual form:
+
+```typescript
+const tx = await db.transaction();
+try {
+  const user = await tx.create("user").set({ name: "Alice" });
+  await tx.relate("authored", user.id, new RecordId("post", "hello"));
+  await tx.commit();
+} catch (e) {
+  await tx.cancel();
+  throw e;
+}
+```
+
+The transaction object (`tx`) has all the same query-builder methods as the main `db` instance — `select`, `create`, `insert`, `update`, `upsert`, `delete`, and `relate`.
+
 ## Accessing Single Records
 
 All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:
@@ -913,8 +985,8 @@ type Result = t.infer<typeof query>;
 This project is in active development. Planned features include:
 
 - [ ] **Additional SurrealDB functions** - Math, time, crypto, geo, and more
-- [ ] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
-- [ ] **Transaction support** - BEGIN, COMMIT, CANCEL transactions
+- [x] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
+- [x] **Transaction support** - Batch and interactive transactions
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [ ] **Advanced graph traversal** - Path finding, recursive queries, graph algorithms
 - [ ] **Performance optimizations** - Query caching, connection pooling
