@@ -134,6 +134,23 @@ describe("RELATE queries", () => {
 		expect(result).toContain("RETURN");
 	});
 
+	test("generates RELATE with array RETURN callback", () => {
+		const query = db
+			.relate(
+				"authored",
+				new RecordId("user", "alice"),
+				new RecordId("post", "post1"),
+			)
+			.return((edge) => [edge.in, edge.out]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("RELATE");
+		expect(result).toContain("RETURN");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+	});
+
 	test("generates RELATE with TIMEOUT", () => {
 		const query = db
 			.relate(

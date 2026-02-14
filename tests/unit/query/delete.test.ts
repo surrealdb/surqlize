@@ -54,6 +54,19 @@ describe("DELETE queries", () => {
 		expect(result).toContain("RETURN");
 	});
 
+	test("generates DELETE with array RETURN callback", () => {
+		const query = db
+			.delete("user", "alice")
+			.return((record) => [record.name, record.age]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("DELETE");
+		expect(result).toContain("RETURN");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+	});
+
 	test("generates DELETE with TIMEOUT", () => {
 		const query = db.delete("user", "alice").timeout("5s");
 		const ctx = displayContext();

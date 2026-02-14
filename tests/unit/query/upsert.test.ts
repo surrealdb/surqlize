@@ -104,6 +104,20 @@ describe("UPSERT queries", () => {
 		expect(result).toContain("RETURN AFTER");
 	});
 
+	test("generates UPSERT with array RETURN callback", () => {
+		const query = db
+			.upsert("user", "alice")
+			.set({ age: 31 })
+			.return((record) => [record.name, record.age]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("UPSERT");
+		expect(result).toContain("RETURN");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+	});
+
 	test("generates UPSERT with TIMEOUT", () => {
 		const query = db.upsert("user", "alice").set({ age: 31 }).timeout("10s");
 		const ctx = displayContext();

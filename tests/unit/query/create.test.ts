@@ -83,6 +83,23 @@ describe("CREATE queries", () => {
 		// RETURN with callback generates a different format
 	});
 
+	test("generates CREATE with array RETURN callback", () => {
+		const query = db
+			.create("user")
+			.set({
+				name: "Eve",
+				age: 50,
+			})
+			.return((record) => [record.name, record.age]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("CREATE");
+		expect(result).toContain("RETURN");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+	});
+
 	test("generates CREATE with += operator", () => {
 		const query = db.create("user").set({
 			name: "Eve",
