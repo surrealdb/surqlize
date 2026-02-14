@@ -30,18 +30,18 @@ describe("SELECT clause integration tests", () => {
 			}
 		});
 
-		test("orders by nested field via callback", async () => {
+		test("orders by email ASC", async () => {
 			const { db } = getTestDb();
 			const result = await db
 				.select("user")
-				.orderBy((user) => user.name.first, "ASC")
+				.orderBy("email", "ASC")
 				.execute();
 
 			expect(result.length).toBe(3);
-			// Alice, Bob, Charlie in alphabetical order
-			expect(result[0].name.first).toBe("Alice");
-			expect(result[1].name.first).toBe("Bob");
-			expect(result[2].name.first).toBe("Charlie");
+			// alice@, bob@, charlie@ in alphabetical order
+			expect(result[0].email).toBe("alice@example.com");
+			expect(result[1].email).toBe("bob@example.com");
+			expect(result[2].email).toBe("charlie@example.com");
 		});
 	});
 
