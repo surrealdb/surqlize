@@ -91,7 +91,7 @@ export class NeverType extends AbstractType<never> {
 	expected = "never";
 
 	validate(_: unknown): _ is never {
-		// biome-ignore lint/style/noArguments: No other way to do this check
+		// biome-ignore lint/complexity/noArguments: No other way to do this check
 		return arguments.length === 0;
 	}
 }
@@ -211,7 +211,7 @@ export class ObjectType<
 	validate(value: unknown): value is this["infer"] {
 		if (typeof value !== "object" || value === null) return false;
 		for (const key in this.schema) {
-			if (!this.schema[key].validate((value as this["infer"])[key]))
+			if (!this.schema[key]!.validate((value as this["infer"])[key]))
 				return false;
 		}
 		return true;
@@ -221,7 +221,7 @@ export class ObjectType<
 		if (typeof value !== "object" || value === null)
 			throw new TypeParseError(this.name, this.expected, value);
 		for (const key in this.schema) {
-			this.schema[key].parse((value as this["infer"])[key]);
+			this.schema[key]!.parse((value as this["infer"])[key]);
 		}
 
 		return value as this["infer"];
@@ -229,7 +229,7 @@ export class ObjectType<
 
 	get(prop: string | number): [AbstractType, string] {
 		if (prop in this.schema) {
-			return [this.schema[prop as keyof T], `[${JSON.stringify(prop)}]`];
+			return [this.schema[prop as keyof T]!, `[${JSON.stringify(prop)}]`];
 		}
 
 		return [new NoneType(), `[${JSON.stringify(prop)}]`];
@@ -271,7 +271,7 @@ export class ArrayType<
 		if (Array.isArray(this.schema)) {
 			if (this.schema.length !== value.length) return false;
 			for (let i = 0; i < this.schema.length; i++) {
-				if (!this.schema[i].validate(value[i])) return false;
+				if (!this.schema[i]!.validate(value[i])) return false;
 			}
 		} else {
 			for (const item of value) {
@@ -288,7 +288,7 @@ export class ArrayType<
 			if (this.schema.length !== value.length)
 				throw new TypeParseError(this.name, this.expected, value);
 			for (let i = 0; i < this.schema.length; i++) {
-				this.schema[i].parse(value[i]);
+				this.schema[i]!.parse(value[i]);
 			}
 		} else {
 			for (const item of value) {
@@ -299,10 +299,13 @@ export class ArrayType<
 	}
 
 	get(prop: number): [AbstractType, string] {
-		const i = Number.parseInt(prop as unknown as string);
+		const i = Number.parseInt(prop as unknown as string, 10);
 		if (Array.isArray(this.schema)) {
 			if (i in this.schema) {
-				return [this.schema[i as keyof T], `[${JSON.stringify(i)}]`];
+				return [
+					this.schema[i as keyof T] as AbstractType,
+					`[${JSON.stringify(i)}]`,
+				];
 			}
 		} else {
 			return [

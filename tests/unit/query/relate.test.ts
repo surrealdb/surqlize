@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RecordId } from "surrealdb";
-import { Surreal } from "surrealdb";
+import { RecordId, Surreal } from "surrealdb";
 import { __display, displayContext, edge, orm, t, table } from "../../../src";
 
 describe("RELATE queries", () => {

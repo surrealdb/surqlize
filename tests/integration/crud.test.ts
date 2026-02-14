@@ -22,8 +22,8 @@ describe("CRUD Integration Tests", () => {
 			expect(result).toBeDefined();
 			expect(Array.isArray(result)).toBe(true);
 			expect(result.length).toBeGreaterThan(0);
-			expect(result[0].name.first).toBe("John");
-			expect(result[0].age).toBe(30);
+			expect(result[0]!.name.first).toBe("John");
+			expect(result[0]!.age).toBe(30);
 		});
 
 		test("creates a user with specific ID", async () => {
@@ -39,8 +39,8 @@ describe("CRUD Integration Tests", () => {
 				})
 				.execute();
 
-			expect(result[0].id.id).toBe("test_user_123");
-			expect(result[0].name.first).toBe("Alice");
+			expect(result[0]!.id.id).toBe("test_user_123");
+			expect(result[0]!.name.first).toBe("Alice");
 		});
 
 		test("creates a user with set", async () => {
@@ -56,8 +56,8 @@ describe("CRUD Integration Tests", () => {
 				})
 				.execute();
 
-			expect(result[0].name.first).toBe("Bob");
-			expect(result[0].age).toBe(35);
+			expect(result[0]!.name.first).toBe("Bob");
+			expect(result[0]!.age).toBe(35);
 		});
 	});
 
@@ -76,7 +76,7 @@ describe("CRUD Integration Tests", () => {
 
 			expect(result).toBeDefined();
 			expect(result.length).toBeGreaterThan(0);
-			expect(result[0].name.first).toBe("Charlie");
+			expect(result[0]!.name.first).toBe("Charlie");
 		});
 
 		test("inserts multiple records", async () => {
@@ -101,8 +101,8 @@ describe("CRUD Integration Tests", () => {
 				.execute();
 
 			expect(result.length).toBe(2);
-			expect(result[0].name.first).toBe("Dave");
-			expect(result[1].name.first).toBe("Eve");
+			expect(result[0]!.name.first).toBe("Dave");
+			expect(result[1]!.name.first).toBe("Eve");
 		});
 	});
 
@@ -122,7 +122,7 @@ describe("CRUD Integration Tests", () => {
 				})
 				.execute();
 
-			expect(createResult[0].age).toBe(40);
+			expect(createResult[0]!.age).toBe(40);
 
 			// Now update the user
 			const updateResult = await db
@@ -130,8 +130,8 @@ describe("CRUD Integration Tests", () => {
 				.set({ age: 41 })
 				.execute();
 
-			expect(updateResult[0].age).toBe(41);
-			expect(updateResult[0].name.first).toBe("Frank");
+			expect(updateResult[0]!.age).toBe(41);
+			expect(updateResult[0]!.name.first).toBe("Frank");
 		});
 
 		test("updates with += operator", async () => {
@@ -155,7 +155,7 @@ describe("CRUD Integration Tests", () => {
 				.set({ age: { "+=": 5 } })
 				.execute();
 
-			expect(result[0].age).toBe(35);
+			expect(result[0]!.age).toBe(35);
 		});
 
 		test("updates with WHERE clause", async () => {
@@ -271,8 +271,8 @@ describe("CRUD Integration Tests", () => {
 				})
 				.execute();
 
-			expect(result[0].name.first).toBe("Upsert");
-			expect(result[0].age).toBe(50);
+			expect(result[0]!.name.first).toBe("Upsert");
+			expect(result[0]!.age).toBe(50);
 		});
 
 		test("updates record if it exists", async () => {
@@ -298,7 +298,7 @@ describe("CRUD Integration Tests", () => {
 				})
 				.execute();
 
-			expect(result[0].age).toBe(26);
+			expect(result[0]!.age).toBe(26);
 		});
 	});
 
@@ -344,8 +344,8 @@ describe("CRUD Integration Tests", () => {
 
 			expect(relateResult).toBeDefined();
 			expect(relateResult.length).toBeGreaterThan(0);
-			expect(relateResult[0].in.id).toBe("author1");
-			expect(relateResult[0].out.id).toBe("post1");
+			expect(relateResult[0]!.in.id).toBe("author1");
+			expect(relateResult[0]!.out.id).toBe("post1");
 		});
 
 		test("creates multiple relationships (cartesian)", async () => {

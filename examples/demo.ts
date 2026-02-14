@@ -56,7 +56,7 @@ db.select("foo").then.at(0);
 
 db.lookup.to;
 
-type a = t.infer<typeof query>;
+type _a = t.infer<typeof query>;
 
 console.log(query[__display](ctx));
 console.log(ctx.variables);
@@ -81,7 +81,7 @@ const createUser = db.create("user").set({
 	tags: ["developer", "typescript"],
 });
 
-const createWithId = db.create("user", "alice123").set({
+const _createWithId = db.create("user", "alice123").set({
 	name: { first: "Alice", last: "Smith" },
 	age: 30,
 	email: "alice@example.com",
@@ -151,7 +151,7 @@ const insertValues = db
 		[{ first: "Grace", last: "Lee" }, 32, "grace@example.com"],
 	);
 
-const insertIgnore = db
+const _insertIgnore = db
 	.insert("user", {
 		name: { first: "Alice", last: "Smith" },
 		age: 30,
@@ -176,17 +176,17 @@ const updateBulk = db
 	.where(($this) => $this.age.lt(18))
 	.set({ opt: "minor" });
 
-const updateOne = db
+const _updateOne = db
 	.update("user", "alice123")
 	.set({ age: 31 })
 	.return("after");
 
-const updateWithOperators = db.update("user", "alice123").set({
+const _updateWithOperators = db.update("user", "alice123").set({
 	age: { "+=": 1 }, // Increment age
 	tags: { "+=": ["senior"] }, // Add tag to array
 });
 
-const updateMerge = db.update("user", "alice123").merge({
+const _updateMerge = db.update("user", "alice123").merge({
 	email: "newemail@example.com",
 });
 
@@ -196,7 +196,7 @@ const deleteBulk = db
 	.where(($this) => $this.age.gt(100))
 	.return("before");
 
-const deleteOne = db.delete("user", "inactive_user").return("before");
+const _deleteOne = db.delete("user", "inactive_user").return("before");
 
 // UPSERT examples
 const upsertUser = db.upsert("user", "alice123").set({
@@ -214,7 +214,7 @@ const upsertUser = db.upsert("user", "alice123").set({
 	tags: ["developer", "typescript"],
 });
 
-const upsertWithIncrement = db.upsert("user", "alice123").set({
+const _upsertWithIncrement = db.upsert("user", "alice123").set({
 	age: { "+=": 1 },
 });
 

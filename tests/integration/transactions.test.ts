@@ -27,7 +27,7 @@ describe("Transaction integration tests", () => {
 				.select(new RecordId("user", "tx_success"))
 				.execute();
 			expect(result.length).toBe(1);
-			expect(result[0].name.first).toBe("Transaction");
+			expect(result[0]!.name.first).toBe("Transaction");
 		});
 
 		test("auto-cancels on error", async () => {
@@ -91,7 +91,7 @@ describe("Transaction integration tests", () => {
 				.select(new RecordId("user", "tx_manual"))
 				.execute();
 			expect(result.length).toBe(1);
-			expect(result[0].name.first).toBe("Manual");
+			expect(result[0]!.name.first).toBe("Manual");
 		});
 
 		test("explicit cancel discards changes", async () => {
@@ -167,9 +167,9 @@ describe("Transaction integration tests", () => {
 				.execute();
 
 			expect(user1.length).toBe(1);
-			expect(user1[0].age).toBe(21);
+			expect(user1[0]!.age).toBe(21);
 			expect(user2.length).toBe(1);
-			expect(user2[0].name.first).toBe("User");
+			expect(user2[0]!.name.first).toBe("User");
 		});
 	});
 });

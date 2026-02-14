@@ -3,12 +3,12 @@ import { displayContext, t } from "../../../src";
 import type { AbstractType } from "../../../src/types/classes";
 import { inheritableIntoWorkable } from "../../../src/utils/inheritable";
 import {
-	type Workable,
-	type WorkableContext,
 	__ctx,
 	__display,
 	__type,
 	isWorkable,
+	type Workable,
+	type WorkableContext,
 } from "../../../src/utils/workable";
 
 describe("inheritableIntoWorkable", () => {

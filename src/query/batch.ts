@@ -47,7 +47,7 @@ export class BatchQuery<Q extends Query<any, any>[]> {
 		// Skip BEGIN (first) and COMMIT (last) results
 		const queryResults = results.slice(1, results.length - 1);
 		return queryResults.map((result, i) => {
-			return this.queries[i].parse(result);
+			return this.queries[i]!.parse(result);
 		}) as BatchResult<Q>;
 	}
 

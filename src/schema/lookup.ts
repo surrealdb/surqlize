@@ -13,16 +13,12 @@ type HasEdgeSchema<T extends readonly (EdgeSchema | TableSchema)[]> =
 		: false;
 
 // Helper type to extract schema information
-type ExtractSchemaInfo<T> = T extends EdgeSchema<
-	infer F,
-	infer V,
-	infer To,
-	EdgeFields
->
-	? { type: "edge"; from: F; via: V; to: To }
-	: T extends TableSchema<infer Tb, TableFields>
-		? { type: "table"; table: Tb }
-		: never;
+type ExtractSchemaInfo<T> =
+	T extends EdgeSchema<infer F, infer V, infer To, EdgeFields>
+		? { type: "edge"; from: F; via: V; to: To }
+		: T extends TableSchema<infer Tb, TableFields>
+			? { type: "table"; table: Tb }
+			: never;
 
 // Helper to get all table names
 type ExtractTableNames<Schemas extends readonly (EdgeSchema | TableSchema)[]> =
@@ -52,41 +48,43 @@ type ExtractNodes<Schemas extends readonly (EdgeSchema | TableSchema)[]> =
 type ToConnections<
 	Node extends string,
 	Schemas extends readonly (EdgeSchema | TableSchema)[],
-> = ExtractSchemaInfo<Schemas[number]> extends
-	| { type: "edge"; from: infer F; via: infer V; to: infer To }
-	| { type: "table"; table: infer _Tb }
-	? F extends string
-		? V extends string
-			? To extends string
-				? Node extends F
-					? readonly [V]
-					: Node extends V
-						? readonly [To]
-						: readonly []
+> =
+	ExtractSchemaInfo<Schemas[number]> extends
+		| { type: "edge"; from: infer F; via: infer V; to: infer To }
+		| { type: "table"; table: infer _Tb }
+		? F extends string
+			? V extends string
+				? To extends string
+					? Node extends F
+						? readonly [V]
+						: Node extends V
+							? readonly [To]
+							: readonly []
+					: readonly []
 				: readonly []
 			: readonly []
-		: readonly []
-	: readonly [];
+		: readonly [];
 
 // Helper to get connections in "from" direction for a node
 type FromConnections<
 	Node extends string,
 	Schemas extends readonly (EdgeSchema | TableSchema)[],
-> = ExtractSchemaInfo<Schemas[number]> extends
-	| { type: "edge"; from: infer F; via: infer V; to: infer To }
-	| { type: "table"; table: infer _Tb }
-	? F extends string
-		? V extends string
-			? To extends string
-				? Node extends To
-					? readonly [V]
-					: Node extends V
-						? readonly [F]
-						: readonly []
+> =
+	ExtractSchemaInfo<Schemas[number]> extends
+		| { type: "edge"; from: infer F; via: infer V; to: infer To }
+		| { type: "table"; table: infer _Tb }
+		? F extends string
+			? V extends string
+				? To extends string
+					? Node extends To
+						? readonly [V]
+						: Node extends V
+							? readonly [F]
+							: readonly []
+					: readonly []
 				: readonly []
 			: readonly []
-		: readonly []
-	: readonly [];
+		: readonly [];
 
 // Utility type to make complex types more readable
 export type Prettify<T> = {
@@ -136,12 +134,12 @@ function addEdgeConnections(lookup: LookupState, schema: EdgeSchema): void {
 	const { from, tb: via, to } = schema;
 
 	// To direction
-	(lookup.to[from] as string[]).push(via);
-	(lookup.to[via] as string[]).push(to);
+	(lookup.to[from]! as string[]).push(via);
+	(lookup.to[via]! as string[]).push(to);
 
 	// From direction
-	(lookup.from[to] as string[]).push(via);
-	(lookup.from[via] as string[]).push(from);
+	(lookup.from[to]! as string[]).push(via);
+	(lookup.from[via]! as string[]).push(from);
 }
 
 // Helper function to create the actual lookup object

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Surreal } from "surrealdb";
-import { Transaction, orm, t, table } from "../../../src";
+import { orm, Transaction, t, table } from "../../../src";
 
 describe("Transaction", () => {
 	test("Transaction has query builder methods from Orm", () => {

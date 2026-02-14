@@ -101,7 +101,7 @@ describe("Error handling integration tests", () => {
 				})
 				.execute();
 
-			expect(result[0].name.first).toBe("Upsert");
+			expect(result[0]!.name.first).toBe("Upsert");
 		});
 
 		test("updates record if it already exists", async () => {
@@ -131,8 +131,8 @@ describe("Error handling integration tests", () => {
 				})
 				.execute();
 
-			expect(result[0].name.first).toBe("Updated");
-			expect(result[0].age).toBe(30);
+			expect(result[0]!.name.first).toBe("Updated");
+			expect(result[0]!.age).toBe(30);
 		});
 	});
 });

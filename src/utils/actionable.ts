@@ -1,30 +1,23 @@
 import { type GetFunctions, getFunctions } from "../functions";
 import type { AbstractType, ArrayType, ObjectType, StringType } from "../types";
-import {
-	type Workable,
-	type WorkableContext,
-	__type,
-	workableGet,
-} from "./workable";
+import { type Workable, type WorkableContext, workableGet } from "./workable";
 
-export type ActionableProps<
-	C extends WorkableContext,
-	T extends AbstractType,
-> = T extends ObjectType<infer O>
-	? { [K in keyof O]: Actionable<C, O[K]> }
-	: T extends ArrayType<infer A>
-		? A extends AbstractType
-			? {
-					[K: number]: Actionable<C, A>;
-				}
-			: A extends AbstractType[]
+export type ActionableProps<C extends WorkableContext, T extends AbstractType> =
+	T extends ObjectType<infer O>
+		? { [K in keyof O]: Actionable<C, O[K]> }
+		: T extends ArrayType<infer A>
+			? A extends AbstractType
 				? {
-						[K in keyof A as K extends keyof Array<unknown>
-							? never
-							: K]: A[K] extends AbstractType ? Actionable<C, A[K]> : never;
+						[K: number]: Actionable<C, A>;
 					}
-				: never
-		: unknown;
+				: A extends AbstractType[]
+					? {
+							[K in keyof A as K extends keyof unknown[]
+								? never
+								: K]: A[K] extends AbstractType ? Actionable<C, A[K]> : never;
+						}
+					: never
+			: unknown;
 
 export type Actionable<
 	C extends WorkableContext,

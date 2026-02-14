@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { displayContext } from "../../../src";
 import {
-	type ModificationState,
 	applyContent,
 	applyMerge,
 	applyPatch,
@@ -10,6 +9,7 @@ import {
 	applyUnset,
 	checkModificationMode,
 	displayModificationClause,
+	type ModificationState,
 } from "../../../src/query/modification-methods";
 
 function createState(): ModificationState {

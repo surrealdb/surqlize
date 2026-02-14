@@ -23,9 +23,9 @@ describe("Complex Queries Integration Tests", () => {
 
 			expect(result).toBeDefined();
 			expect(result.length).toBeGreaterThan(0);
-			expect(result[0]).toHaveProperty("firstName");
-			expect(result[0]).toHaveProperty("email");
-			expect(result[0]).not.toHaveProperty("name");
+			expect(result[0]!).toHaveProperty("firstName");
+			expect(result[0]!).toHaveProperty("email");
+			expect(result[0]!).not.toHaveProperty("name");
 		});
 
 		test("selects with string concatenation", async () => {
@@ -39,7 +39,7 @@ describe("Complex Queries Integration Tests", () => {
 
 			expect(result).toBeDefined();
 			expect(result.length).toBeGreaterThan(0);
-			expect(result[0].fullName).toContain(" ");
+			expect(result[0]!.fullName).toContain(" ");
 		});
 	});
 
@@ -143,11 +143,11 @@ describe("Complex Queries Integration Tests", () => {
 
 			expect(result).toBeDefined();
 			expect(result.length).toBeGreaterThan(0);
-			expect(result[0]).toHaveProperty("title");
-			expect(result[0]).toHaveProperty("author");
+			expect(result[0]!).toHaveProperty("title");
+			expect(result[0]!).toHaveProperty("author");
 
 			// Check nested author data
-			const firstPost = result[0];
+			const firstPost = result[0]!;
 			if (firstPost.author) {
 				expect(firstPost.author).toHaveProperty("name");
 				expect(firstPost.author).toHaveProperty("email");
@@ -164,8 +164,8 @@ describe("Complex Queries Integration Tests", () => {
 			expect(Array.isArray(result)).toBe(true);
 			expect(result.length).toBeGreaterThan(0);
 			if (result.length > 0) {
-				expect(result[0].id.id).toBe("alice");
-				expect(result[0]).toHaveProperty("name");
+				expect(result[0]!.id.id).toBe("alice");
+				expect(result[0]!).toHaveProperty("name");
 			}
 		});
 
@@ -233,8 +233,8 @@ describe("Complex Queries Integration Tests", () => {
 				.execute();
 
 			expect(result).toBeDefined();
-			expect(result[0]).toHaveProperty("first");
-			expect(result[0]).toHaveProperty("last");
+			expect(result[0]!).toHaveProperty("first");
+			expect(result[0]!).toHaveProperty("last");
 		});
 	});
 
@@ -267,14 +267,14 @@ describe("Complex Queries Integration Tests", () => {
 				})
 				.execute();
 
-			expect(createResult[0].age).toBe(30);
+			expect(createResult[0]!.age).toBe(30);
 
 			const updateResult = await db
 				.update("user", "batch_test")
 				.set({ age: 31 })
 				.execute();
 
-			expect(updateResult[0].age).toBe(31);
+			expect(updateResult[0]!.age).toBe(31);
 
 			const selectResult = await db
 				.select(new RecordId("user", "batch_test"))

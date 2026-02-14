@@ -101,11 +101,9 @@ export function record<T extends string | undefined>(
 }
 
 /** Extract the inferred TypeScript type from a type definition or workable. */
-export type infer<T extends AbstractType | Workable> = T extends Workable<
-	WorkableContext,
-	infer T
->
-	? T["infer"]
-	: T extends AbstractType
+export type infer<T extends AbstractType | Workable> =
+	T extends Workable<WorkableContext, infer T>
 		? T["infer"]
-		: never;
+		: T extends AbstractType
+			? T["infer"]
+			: never;

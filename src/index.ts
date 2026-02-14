@@ -1,6 +1,4 @@
-export * from "./types";
-export * from "./schema";
-export * from "./utils";
+export * from "./functions/standalone";
 export * from "./query/batch";
 export * from "./query/create";
 export * from "./query/delete";
@@ -10,4 +8,6 @@ export * from "./query/select";
 export * from "./query/transaction";
 export * from "./query/update";
 export * from "./query/upsert";
-export * from "./functions/standalone";
+export * from "./schema";
+export * from "./types";
+export * from "./utils";
