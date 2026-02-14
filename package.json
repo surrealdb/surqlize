@@ -1,18 +1,40 @@
 {
 	"name": "surqlize",
 	"version": "0.1.0",
-	"module": "index.ts",
+	"description": "A type-safe TypeScript ORM for SurrealDB",
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/surrealdb/surqlize.git"
+	},
+	"homepage": "https://github.com/surrealdb/surqlize",
+	"keywords": [
+		"surrealdb",
+		"orm",
+		"typescript",
+		"query-builder",
+		"database",
+		"surql",
+		"type-safe"
+	],
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": ["dist"],
 	"license": "Apache-2.0",
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",
-		"@types/bun": "latest"
+		"@types/bun": "latest",
+		"tsup": "^8.5.1"
 	},
 	"peerDependencies": {
+		"surrealdb": "^2.0.0-alpha.18",
 		"typescript": "^5.0.0"
-	},
-	"dependencies": {
-		"surrealdb": "2.0.0-alpha.18"
 	},
 	"scripts": {
 		"all": "bun test && bun type-check && biome check .",
@@ -22,6 +44,8 @@
 		"type-check": "tsc --noEmit",
 		"qc": "biome check .",
 		"qa": "biome check . --write",
+		"build": "tsup",
+		"prepublishOnly": "bun run build",
 		"qau": "biome check . --write --unsafe"
 	}
 }

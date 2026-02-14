@@ -19,7 +19,7 @@ import {
 } from "../../utils";
 import type { Actionable } from "../../utils/actionable";
 import type { At } from "../../utils/types";
-import { comparingFilter, joiningFilter, prefixedFilter } from "../filters";
+import { comparingFilter } from "../filters";
 import { databaseFunction } from "../utils";
 
 export const functions = {

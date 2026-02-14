@@ -108,7 +108,7 @@ describe("CRUD Integration Tests", () => {
 
 	describe("UPDATE operations", () => {
 		test("updates a specific record", async () => {
-			const { db, surreal } = getTestDb();
+			const { db } = getTestDb();
 
 			// First create a user
 			const createResult = await db
@@ -307,7 +307,7 @@ describe("CRUD Integration Tests", () => {
 			const { db } = getTestDb();
 
 			// Create a user and a post
-			const userResult = await db
+			await db
 				.create("user", "author1")
 				.set({
 					name: { first: "Author", last: "One" },
@@ -318,7 +318,7 @@ describe("CRUD Integration Tests", () => {
 				})
 				.execute();
 
-			const postResult = await db
+			await db
 				.create("post", "post1")
 				.set({
 					title: "First Post",

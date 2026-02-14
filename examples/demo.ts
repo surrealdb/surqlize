@@ -1,5 +1,5 @@
 import { RecordId, Surreal } from "surrealdb";
-import { __display, __type, displayContext, edge, orm, t, table } from "./src";
+import { __display, __type, displayContext, edge, orm, t, table } from "../src";
 
 const user = table("user", {
 	name: t.object({
