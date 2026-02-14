@@ -50,7 +50,7 @@ export type InheritableIntoWorkable<
 > =
 	P extends Workable<C, infer T>
 		? Workable<C, T>
-		: P extends readonly any[]
+		: P extends readonly unknown[]
 			? Workable<C, InheritableIntoType<C, P>>
 			: P extends InheritableObject<C>
 				? Workable<C, InheritableIntoType<C, P>>
