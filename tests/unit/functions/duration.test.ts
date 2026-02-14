@@ -1,0 +1,30 @@
+import { describe, expect, test } from "bun:test";
+import { Surreal } from "surrealdb";
+import {
+	__display,
+	displayContext,
+	duration,
+	orm,
+	t,
+	table,
+} from "../../../src";
+
+describe("Duration functions", () => {
+	const user = table("user", {
+		age: t.number(),
+		email: t.string(),
+		created: t.date(),
+	});
+
+	const db = orm(new Surreal(), user);
+
+	test("duration.fromDays() generates duration::from_days", () => {
+		const query = db.select("user").return((user) => ({
+			dur: duration.fromDays(user.age),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("duration::from_days");
+	});
+});

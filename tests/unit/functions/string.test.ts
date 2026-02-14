@@ -62,4 +62,104 @@ describe("String functions", () => {
 
 		expect(result).toContain("string::join");
 	});
+
+	test("capitalize() generates string::capitalize function", () => {
+		const query = db.select("user").return((user) => ({
+			capitalized: user.email.capitalize(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::capitalize");
+	});
+
+	test("lowercase() generates string::lowercase function", () => {
+		const query = db.select("user").return((user) => ({
+			lower: user.email.lowercase(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::lowercase");
+	});
+
+	test("uppercase() generates string::uppercase function", () => {
+		const query = db.select("user").return((user) => ({
+			upper: user.email.uppercase(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::uppercase");
+	});
+
+	test("trim() generates string::trim function", () => {
+		const query = db.select("user").return((user) => ({
+			trimmed: user.email.trim(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::trim");
+	});
+
+	test("contains() generates string::contains function", () => {
+		const query = db.select("user").return((user) => ({
+			hasTest: user.email.contains("test"),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::contains");
+	});
+
+	test("replace() generates string::replace function", () => {
+		const query = db.select("user").return((user) => ({
+			replaced: user.email.replace("a", "b"),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::replace");
+	});
+
+	test("reverse() generates string::reverse function", () => {
+		const query = db.select("user").return((user) => ({
+			reversed: user.email.reverse(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::reverse");
+	});
+
+	test("split() generates string::split function", () => {
+		const query = db.select("user").return((user) => ({
+			parts: user.email.split(","),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::split");
+	});
+
+	test("words() generates string::words function", () => {
+		const query = db.select("user").return((user) => ({
+			wordList: user.email.words(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::words");
+	});
+
+	test("isEmail() generates string::is_email function", () => {
+		const query = db.select("user").return((user) => ({
+			valid: user.email.isEmail(),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("string::is_email");
+	});
 });

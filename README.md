@@ -700,13 +700,25 @@ db.select("user").where((user) =>
 db.select("user").where((user) =>
   user.email.startsWith("admin@")
   user.name.endsWith("son")
+  user.email.contains("@example.com")
+  user.email.isEmail()
 );
 
 db.select("user").return((user) => ({
   fullName: user.firstName.join(" ", user.lastName),
   nameLength: user.name.len(),
+  upper: user.name.uppercase(),
+  lower: user.email.lowercase(),
+  trimmed: user.name.trim(),
+  slug: user.name.slug(),
+  words: user.name.words(),
+  reversed: user.name.reverse(),
+  replaced: user.email.replace("@old.com", "@new.com"),
+  parts: user.email.split("@"),
 }));
 ```
+
+Additional string functions include `capitalize`, `repeat`, `slice`, `matches`, distance functions (`distanceLevenshtein`, `distanceHamming`, etc.), HTML functions (`htmlEncode`, `htmlSanitize`), validation (`isUrl`, `isDomain`, `isUuid`, etc.), semver operations, and similarity scoring.
 
 ### Array functions
 
@@ -725,14 +737,68 @@ db.select("user").where((user) =>
   user.tags.allInside(allowedTags)   // All elements are in allowedTags
   user.tags.anyInside(popularTags)   // Any element is in popularTags
   user.tags.noneInside(bannedTags)   // No elements are in bannedTags
+  
+  // Empty check
+  user.tags.isEmpty()                // Array is empty
 );
 
 db.select("post").return((post) => ({
   title: post.title,
-  firstTag: post.tags.at(0),  // Get element at index
-  tagCount: post.tags.len(),   // Array length
+  firstTag: post.tags.at(0),      // Get element at index
+  tagCount: post.tags.len(),       // Array length
+  first: post.tags.first(),        // First element
+  last: post.tags.last(),          // Last element
+  sorted: post.tags.sort(),        // Sort array
+  unique: post.tags.distinct(),    // Unique values
+  flat: post.tags.flatten(),       // Flatten nested arrays
+  reversed: post.tags.reverse(),   // Reverse array
 }));
 ```
+
+Additional array functions include mutation (`add`, `append`, `prepend`, `push`, `pop`, `insert`, `remove`, `fill`, `swap`), set operations (`combine`, `complement`, `concat`, `difference`, `intersect`, `union`, `transpose`), boolean operations (`booleanAnd`, `booleanOr`, `logicalAnd`, etc.), and search functions (`findIndex`, `filterIndex`, `max`, `min`).
+
+### Number functions
+
+```typescript
+db.select("user").return((user) => ({
+  absAge: user.age.abs(),
+  rounded: user.age.round(),
+  ceiling: user.age.ceil(),
+  floored: user.age.floor(),
+  squareRoot: user.age.sqrt(),
+  squared: user.age.pow(2),
+  fixed: user.age.fixed(2),
+  clamped: user.age.clamp(0, 100),
+  radians: user.age.deg2rad(),
+  sine: user.age.sin(),
+  cosine: user.age.cos(),
+  naturalLog: user.age.ln(),
+  log10: user.age.log10(),
+}));
+```
+
+Additional number functions include `tan`, `cot`, `acos`, `asin`, `atan`, `acot`, `log`, `log2`, `rad2deg`, `sign`, `lerp`, `lerpangle`.
+
+### Date functions
+
+```typescript
+db.select("user").return((user) => ({
+  year: user.created.year(),
+  month: user.created.month(),
+  day: user.created.day(),
+  hour: user.created.hour(),
+  minute: user.created.minute(),
+  second: user.created.second(),
+  weekDay: user.created.wday(),
+  dayOfYear: user.created.yday(),
+  unix: user.created.unix(),
+  millis: user.created.millis(),
+  formatted: user.created.format("%Y-%m-%d"),
+  isLeap: user.created.isLeapYear(),
+}));
+```
+
+Additional date functions include `week`, `micros`, `nano`, and rounding functions (`timeCeil`, `timeFloor`, `timeRound`).
 
 ### Option functions
 
@@ -779,6 +845,42 @@ type Result = t.infer<typeof query>;
 //   author: { name: string; email: string } | undefined;
 // }>
 ```
+
+## Standalone functions
+
+Standalone functions are not called on a field but used independently within query callbacks. Functions with value parameters extract the query context automatically from the first value. Zero-arg functions and constants require an explicit context source (any `Workable` from the callback).
+
+```typescript
+import { count, math, time, crypto, rand, parse } from "surqlize";
+
+// Count and aggregation
+db.select("user")
+  .groupAll()
+  .return((user) => ({
+    total: count(user),
+    adults: count(user, user.age.gte(18)),
+    avgAge: math.mean(user.age),
+    totalAge: math.sum(user.age),
+    maxAge: math.max(user.age),
+  }));
+
+// Time and crypto
+db.select("user").return((user) => ({
+  now: time.now(user),
+  emailHash: crypto.sha256(user.email),
+  randomId: rand.uuid(user),
+  emailDomain: parse.emailHost(user.email),
+}));
+
+// Math constants (zero-arg, need context source)
+db.select("user").return((user) => ({
+  pi: math.pi(user),
+  e: math.e(user),
+  tau: math.tau(user),
+}));
+```
+
+Available standalone function families: `count`, `math` (aggregation + constants), `time`, `crypto`, `rand`, `duration`, `type_`, `encoding`, `geo`, `http`, `meta`, `object`, `parse`, `search`, `session`, `set_`, `sleep`, `value`, `vector`, `bytes`, `not_`.
 
 ## Advanced Features
 
@@ -1051,7 +1153,7 @@ Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `awa
 
 This project is in active development. Planned features include:
 
-- [ ] **Additional SurrealDB functions** - Math, time, crypto, geo, and more
+- [x] **SurrealDB functions** - All 25 built-in function families (string, array, math, time, crypto, rand, and more)
 - [x] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
 - [x] **Transaction support** - Batch and interactive transactions
 - [x] **Multi-session support** - Multiple sessions over a single connection
