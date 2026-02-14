@@ -183,4 +183,5 @@ jobs:
         run: bun /tmp/smoke-test/bun-esm.ts
 
       - name: Smoke test - Deno
-        run: deno run --allow-read --allow-env --allow-net --node-modules-dir=auto /tmp/smoke-test/deno-esm.ts
+        working-directory: /tmp/smoke-test
+        run: deno run --allow-read --allow-env --allow-net --node-modules-dir=manual deno-esm.ts
