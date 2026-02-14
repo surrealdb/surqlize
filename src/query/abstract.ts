@@ -29,6 +29,8 @@ export abstract class Query<
 	abstract [__type]: T;
 
 	type = undefined as unknown as T["infer"];
+	/** When true, execute() skips schema parsing (used by RETURN DIFF and FETCH). */
+	protected _skipParse = false;
 	/** Type-guard that checks whether a value matches this query's result type. */
 	validate(value: unknown): value is T["infer"] {
 		return this[__type].validate(value);
@@ -105,6 +107,8 @@ export abstract class Query<
 			query,
 			ctx.variables,
 		);
+		// Skip parse for RETURN DIFF (JsonPatchOp[]) and FETCH (resolved records)
+		if (this._skipParse) return result as this["type"];
 		return this.parse(result);
 	}
 }

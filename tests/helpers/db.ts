@@ -5,7 +5,7 @@ export type TestDb = Awaited<ReturnType<typeof setupTestDb>>;
 
 export async function setupTestDb() {
 	const surreal = new Surreal();
-	const url = process.env.SURREAL_URL || "http://localhost:8000";
+	const url = process.env.SURREAL_URL || "ws://localhost:8000";
 
 	// Generate a unique namespace and database for this test run
 	// Using both unique namespace and database ensures complete isolation

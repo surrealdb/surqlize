@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { RecordId } from "surrealdb";
 import { t } from "../../../src";
+import { TypeParseError } from "../../../src/error";
+import { NoneType, UnionType } from "../../../src/types/classes";
 
 describe("Type builders", () => {
 	describe("string()", () => {
@@ -239,6 +242,162 @@ describe("Type builders", () => {
 			expect(type).toBeDefined();
 			expect(type.name).toBe("record");
 			expect(type.tb).toBe("user");
+		});
+	});
+
+	describe("parse()", () => {
+		test("StringType.parse() returns valid string", () => {
+			expect(t.string().parse("hello")).toBe("hello");
+		});
+
+		test("StringType.parse() throws for non-string", () => {
+			expect(() => t.string().parse(42)).toThrow(TypeParseError);
+		});
+
+		test("NumberType.parse() returns valid number", () => {
+			expect(t.number().parse(42)).toBe(42);
+		});
+
+		test("NumberType.parse() throws for non-number", () => {
+			expect(() => t.number().parse("42")).toThrow(TypeParseError);
+		});
+
+		test("BoolType.parse() returns valid boolean", () => {
+			expect(t.bool().parse(true)).toBe(true);
+		});
+
+		test("BoolType.parse() throws for non-boolean", () => {
+			expect(() => t.bool().parse(1)).toThrow(TypeParseError);
+		});
+
+		test("ObjectType.parse() returns valid object", () => {
+			const type = t.object({ name: t.string() });
+			const val = { name: "Alice" };
+			expect(type.parse(val)).toBe(val);
+		});
+
+		test("ObjectType.parse() throws for null", () => {
+			const type = t.object({ name: t.string() });
+			expect(() => type.parse(null)).toThrow(TypeParseError);
+		});
+
+		test("ObjectType.parse() throws for invalid nested field", () => {
+			const type = t.object({ name: t.string(), age: t.number() });
+			expect(() => type.parse({ name: "Alice", age: "30" })).toThrow(
+				TypeParseError,
+			);
+		});
+
+		test("ArrayType.parse() returns valid array", () => {
+			const type = t.array(t.string());
+			const val = ["a", "b"];
+			expect(type.parse(val)).toBe(val);
+		});
+
+		test("ArrayType.parse() throws for non-array", () => {
+			expect(() => t.array(t.string()).parse("not array")).toThrow(
+				TypeParseError,
+			);
+		});
+
+		test("ArrayType.parse() throws for tuple length mismatch", () => {
+			const type = t.array([t.string(), t.number()]);
+			expect(() => type.parse(["hello"])).toThrow(TypeParseError);
+		});
+
+		test("DateType.parse() returns Date passthrough", () => {
+			const date = new Date();
+			expect(t.date().parse(date)).toBe(date);
+		});
+
+		test("DateType.parse() converts object with toDate()", () => {
+			const fakeDateTime = {
+				toDate: () => new Date("2024-01-01"),
+			};
+			const result = t.date().parse(fakeDateTime);
+			expect(result).toBeInstanceOf(Date);
+			expect(result.getFullYear()).toBe(2024);
+		});
+
+		test("DateType.parse() throws for invalid value", () => {
+			expect(() => t.date().parse("2024-01-01")).toThrow(TypeParseError);
+		});
+	});
+
+	describe("get()", () => {
+		test("ObjectType.get() returns correct type for known key", () => {
+			const type = t.object({ name: t.string(), age: t.number() });
+			const [fieldType, path] = type.get("name");
+			expect(fieldType.name).toBe("string");
+			expect(path).toBe('["name"]');
+		});
+
+		test("ObjectType.get() returns NoneType for unknown key", () => {
+			const type = t.object({ name: t.string() });
+			const [fieldType, path] = type.get("unknown");
+			expect(fieldType).toBeInstanceOf(NoneType);
+			expect(path).toBe('["unknown"]');
+		});
+
+		test("ArrayType.get() returns element type for tuple index", () => {
+			const type = t.array([t.string(), t.number()]);
+			const [fieldType] = type.get(0);
+			expect(fieldType.name).toBe("string");
+			const [fieldType2] = type.get(1);
+			expect(fieldType2.name).toBe("number");
+		});
+
+		test("ArrayType.get() returns UnionType for homogeneous array index", () => {
+			const type = t.array(t.string());
+			const [fieldType] = type.get(0);
+			expect(fieldType).toBeInstanceOf(UnionType);
+		});
+
+		test("ArrayType.get() returns NoneType for out-of-range tuple index", () => {
+			const type = t.array([t.string()]);
+			const [fieldType] = type.get(99);
+			expect(fieldType).toBeInstanceOf(NoneType);
+		});
+
+		test("AbstractType.get() returns NoneType by default", () => {
+			const type = t.string();
+			const [fieldType, path] = type.get("anything");
+			expect(fieldType).toBeInstanceOf(NoneType);
+			expect(path).toBe('["anything"]');
+		});
+	});
+
+	describe("RecordType validation", () => {
+		test("validates RecordId without table constraint", () => {
+			const type = t.record();
+			expect(type.validate(new RecordId("user", "alice"))).toBe(true);
+			expect(type.validate(new RecordId("post", "1"))).toBe(true);
+		});
+
+		test("validates RecordId with matching table", () => {
+			const type = t.record("user");
+			expect(type.validate(new RecordId("user", "alice"))).toBe(true);
+		});
+
+		test("rejects RecordId with wrong table", () => {
+			const type = t.record("user");
+			expect(type.validate(new RecordId("post", "1"))).toBe(false);
+		});
+
+		test("rejects non-RecordId values", () => {
+			const type = t.record("user");
+			expect(type.validate("user:alice")).toBe(false);
+			expect(type.validate(42)).toBe(false);
+			expect(type.validate(null)).toBe(false);
+		});
+	});
+
+	describe("NeverType", () => {
+		test("validate() returns false when called with an argument", () => {
+			const type = t.never();
+			expect(type.validate(undefined)).toBe(false);
+			expect(type.validate(null)).toBe(false);
+			expect(type.validate("anything")).toBe(false);
 		});
 	});
 
