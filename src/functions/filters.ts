@@ -51,7 +51,7 @@ export function joiningFilter<C extends WorkableContext>(
 		[__ctx]: ctx,
 		[__type]: t.bool(),
 		[__display](ctx) {
-			return params.map((p) => p[__display](ctx)).join(` ${kind} `);
+			return `(${params.map((p) => p[__display](ctx)).join(` ${kind} `)})`;
 		},
 	});
 }

@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { RecordId, Surreal, Table } from "surrealdb";
-import { __display, displayContext, orm, t, table } from "../../../src";
+import {
+	__display,
+	and,
+	displayContext,
+	or,
+	orm,
+	t,
+	table,
+} from "../../../src";
 
 describe("SELECT queries", () => {
 	const user = table("user", {
@@ -540,5 +548,141 @@ describe("SELECT clause ordering", () => {
 		expect(result).not.toContain("TIMEOUT");
 		expect(result).toContain("ORDER BY age DESC");
 		expect(result).toContain("LIMIT");
+	});
+});
+
+describe("SELECT compound WHERE", () => {
+	const user = table("user", {
+		name: t.object({
+			first: t.string(),
+			last: t.string(),
+		}),
+		age: t.number(),
+		email: t.string(),
+		role: t.string(),
+		tags: t.array(t.string()),
+	});
+
+	const db = orm(new Surreal(), user);
+
+	test("standalone and() with two conditions", () => {
+		const query = db
+			.select("user")
+			.where(($this) =>
+				and($this.age.gte(18), $this.email.endsWith("@example.com")),
+			);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("WHERE");
+		expect(result).toContain("AND");
+		expect(result).toMatch(/\(.+AND.+\)/);
+	});
+
+	test("standalone or() with two conditions", () => {
+		const query = db
+			.select("user")
+			.where(($this) => or($this.role.eq("admin"), $this.role.eq("moderator")));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("WHERE");
+		expect(result).toContain("OR");
+		expect(result).toMatch(/\(.+OR.+\)/);
+	});
+
+	test("nested and(a, or(b, c)) produces correct parens", () => {
+		const query = db
+			.select("user")
+			.where(($this) =>
+				and(
+					$this.age.gte(18),
+					or($this.role.eq("admin"), $this.role.eq("moderator")),
+				),
+			);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		// Should contain nested parens: (age >= 18 AND (role = "admin" OR role = "moderator"))
+		expect(result).toContain("AND");
+		expect(result).toContain("OR");
+		// Inner OR should be wrapped in its own parens inside the AND
+		expect(result).toMatch(/\(.+ AND \(.+ OR .+\)\)/);
+	});
+
+	test("nested or(a, and(b, c)) produces correct parens", () => {
+		const query = db
+			.select("user")
+			.where(($this) =>
+				or(
+					$this.age.lt(18),
+					and($this.role.eq("admin"), $this.email.endsWith("@example.com")),
+				),
+			);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		// Should contain nested parens: (age < 18 OR (role = "admin" AND email...))
+		expect(result).toContain("OR");
+		expect(result).toContain("AND");
+		expect(result).toMatch(/\(.+ OR \(.+ AND .+\)\)/);
+	});
+
+	test("standalone and() with three or more conditions", () => {
+		const query = db
+			.select("user")
+			.where(($this) =>
+				and($this.age.gte(18), $this.age.lte(65), $this.role.eq("active")),
+			);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		// Should have two ANDs: (a AND b AND c)
+		const andCount = (result.match(/AND/g) || []).length;
+		expect(andCount).toBe(2);
+		expect(result).toMatch(/\(.+ AND .+ AND .+\)/);
+	});
+
+	test("standalone or() with three or more conditions", () => {
+		const query = db
+			.select("user")
+			.where(($this) =>
+				or(
+					$this.role.eq("admin"),
+					$this.role.eq("moderator"),
+					$this.role.eq("owner"),
+				),
+			);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		// Should have two ORs: (a OR b OR c)
+		const orCount = (result.match(/OR/g) || []).length;
+		expect(orCount).toBe(2);
+		expect(result).toMatch(/\(.+ OR .+ OR .+\)/);
+	});
+
+	test("existing .and() chaining still works with parens", () => {
+		const query = db
+			.select("user")
+			.where(($this) => $this.age.gt(18).and($this.age.lt(65)));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("WHERE");
+		expect(result).toContain("AND");
+		expect(result).toMatch(/\(.+AND.+\)/);
+	});
+
+	test("existing .or() chaining still works with parens", () => {
+		const query = db
+			.select("user")
+			.where(($this) => $this.role.eq("admin").or($this.role.eq("moderator")));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("WHERE");
+		expect(result).toContain("OR");
+		expect(result).toMatch(/\(.+OR.+\)/);
 	});
 });
