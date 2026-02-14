@@ -169,7 +169,7 @@ describe("Modification methods integration tests", () => {
 			expect(result[0].age).toBe(31);
 		});
 
-		test("return('diff') returns changes", async () => {
+		test("return('diff') returns JSON patches", async () => {
 			const { db } = getTestDb();
 
 			await db
@@ -190,6 +190,7 @@ describe("Modification methods integration tests", () => {
 				.execute();
 
 			expect(result).toBeDefined();
+			expect(Array.isArray(result)).toBe(true);
 		});
 	});
 
