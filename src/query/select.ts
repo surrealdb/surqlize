@@ -15,42 +15,40 @@ import {
 	inheritableIntoWorkable,
 } from "../utils/inheritable.ts";
 import {
-	type Workable,
-	type WorkableContext,
 	__ctx,
 	__display,
 	__type,
 	isWorkable,
 	sanitizeWorkable,
+	type Workable,
+	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 
-type FieldKeys<
-	O extends Orm,
-	T extends keyof O["tables"] & string,
-> = O["tables"][T]["schema"] extends ObjectType<infer F>
-	? keyof F & string
-	: string;
+type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
+	O["tables"][T]["schema"] extends ObjectType<infer F>
+		? keyof F & string
+		: string;
 
 /** Resolve a single field type: if it's a RecordType referencing a known table, replace with that table's schema. */
-type ResolveField<O extends Orm, F extends AbstractType> = F extends RecordType<
-	infer Tb
->
-	? Tb extends keyof O["tables"] & string
-		? O["tables"][Tb]["schema"]
-		: F
-	: F;
+type ResolveField<O extends Orm, F extends AbstractType> =
+	F extends RecordType<infer Tb>
+		? Tb extends keyof O["tables"] & string
+			? O["tables"][Tb]["schema"]
+			: F
+		: F;
 
 /** Transform an ObjectType by resolving RecordType fields that appear in the Fields union. */
 type FetchedSchema<
 	O extends Orm,
 	E extends AbstractType,
 	Fields extends string,
-> = E extends ObjectType<infer S>
-	? ObjectType<{
-			[K in keyof S]: K extends Fields ? ResolveField<O, S[K]> : S[K];
-		}>
-	: E;
+> =
+	E extends ObjectType<infer S>
+		? ObjectType<{
+				[K in keyof S]: K extends Fields ? ResolveField<O, S[K]> : S[K];
+			}>
+		: E;
 
 /**
  * A fluent SELECT query builder. Supports WHERE, ORDER BY, GROUP BY, SPLIT,
@@ -102,7 +100,7 @@ export class SelectQuery<
 	get entry(): E {
 		return (this._fetchResolvedType ??
 			this._entry?.[__type] ??
-			this[__ctx].orm.tables[this.tb].schema) as E;
+			this[__ctx].orm.tables[this.tb]!.schema) as E;
 	}
 
 	get [__type](): ArrayType<E> {
@@ -134,7 +132,7 @@ export class SelectQuery<
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
-			[__type]: this[__ctx].orm.tables[this.tb].schema,
+			[__type]: this[__ctx].orm.tables[this.tb]!.schema,
 			[__display]: ({ contextId }) => {
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
@@ -224,12 +222,12 @@ export class SelectQuery<
 		// with the referenced table's ObjectType schema, so parse() validates
 		// the resolved objects instead of expecting RecordIds.
 		const currentSchema =
-			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb].schema;
+			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb]!.schema;
 		if (currentSchema instanceof ObjectType) {
 			const resolved = { ...currentSchema.schema };
 			for (const field of fields) {
 				// Only resolve top-level field names (ignore "field.nested" paths)
-				const topLevel = field.includes(".") ? field.split(".")[0] : field;
+				const topLevel = field.includes(".") ? field.split(".")[0]! : field;
 				const fieldType = resolved[topLevel];
 				if (fieldType instanceof RecordType && fieldType.tb) {
 					const targetTable = this[__ctx].orm.tables[fieldType.tb as string];

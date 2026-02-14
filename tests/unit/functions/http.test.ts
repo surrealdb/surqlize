@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Surreal } from "surrealdb";
-import { http, __display, displayContext, orm, t, table } from "../../../src";
+import { __display, displayContext, http, orm, t, table } from "../../../src";
 
 describe("HTTP functions", () => {
 	const resource = table("resource", {

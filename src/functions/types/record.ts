@@ -1,12 +1,6 @@
 import type { SelectQuery } from "../../query/select";
 import type { RecordType } from "../../types";
-import {
-	type Workable,
-	type WorkableContext,
-	__ctx,
-	__display,
-	__type,
-} from "../../utils";
+import { __ctx, type Workable, type WorkableContext } from "../../utils";
 
 export const functions = {
 	select<

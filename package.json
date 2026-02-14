@@ -25,10 +25,12 @@
 			"import": "./dist/index.js"
 		}
 	},
-	"files": ["dist"],
+	"files": [
+		"dist"
+	],
 	"license": "Apache-2.0",
 	"devDependencies": {
-		"@biomejs/biome": "1.9.4",
+		"@biomejs/biome": "^2.3.15",
 		"@types/bun": "latest",
 		"tsup": "^8.5.1"
 	},

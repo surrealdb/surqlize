@@ -11,7 +11,7 @@ import type { Transaction } from "../query/transaction";
 import { UpdateQuery } from "../query/update";
 import { UpsertQuery } from "../query/upsert";
 import type { ArrayType, RecordType } from "../types";
-import { type Workable, type WorkableContext, isWorkable } from "../utils";
+import { isWorkable, type Workable, type WorkableContext } from "../utils";
 import { EdgeSchema } from "./edge";
 import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
 import type { TableSchema } from "./table";

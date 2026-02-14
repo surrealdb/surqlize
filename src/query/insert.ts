@@ -14,18 +14,18 @@ import {
 	inheritableIntoWorkable,
 } from "../utils/inheritable.ts";
 import {
-	type Workable,
-	type WorkableContext,
 	__ctx,
 	__display,
 	__type,
 	sanitizeWorkable,
+	type Workable,
+	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 import {
-	type SetValue,
 	generateSetAssignments,
 	processSetOperators,
+	type SetValue,
 } from "./utils.ts";
 
 type SetData<T extends ObjectType> = {
@@ -65,7 +65,7 @@ export class InsertQuery<
 	}
 
 	get schema(): E {
-		return this[__ctx].orm.tables[this.tb].schema as unknown as E;
+		return this[__ctx].orm.tables[this.tb]!.schema as unknown as E;
 	}
 
 	get [__type](): ArrayType<E> {

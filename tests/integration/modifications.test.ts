@@ -19,8 +19,8 @@ describe("Modification methods integration tests", () => {
 				})
 				.execute();
 
-			expect(result[0].name.first).toBe("Content");
-			expect(result[0].age).toBe(25);
+			expect(result[0]!.name.first).toBe("Content");
+			expect(result[0]!.age).toBe(25);
 		});
 	});
 
@@ -46,10 +46,10 @@ describe("Modification methods integration tests", () => {
 				.merge({ email: "merged@example.com" })
 				.execute();
 
-			expect(result[0].email).toBe("merged@example.com");
+			expect(result[0]!.email).toBe("merged@example.com");
 			// Other fields should be preserved
-			expect(result[0].name.first).toBe("Original");
-			expect(result[0].age).toBe(30);
+			expect(result[0]!.name.first).toBe("Original");
+			expect(result[0]!.age).toBe(30);
 		});
 	});
 
@@ -73,7 +73,7 @@ describe("Modification methods integration tests", () => {
 				.set({ age: { "+=": 5 } })
 				.execute();
 
-			expect(result[0].age).toBe(35);
+			expect(result[0]!.age).toBe(35);
 		});
 
 		test("-= decrements a number", async () => {
@@ -95,7 +95,7 @@ describe("Modification methods integration tests", () => {
 				.set({ age: { "-=": 10 } })
 				.execute();
 
-			expect(result[0].age).toBe(20);
+			expect(result[0]!.age).toBe(20);
 		});
 	});
 
@@ -143,7 +143,7 @@ describe("Modification methods integration tests", () => {
 				.return("before")
 				.execute();
 
-			expect(result[0].age).toBe(30);
+			expect(result[0]!.age).toBe(30);
 		});
 
 		test("return('after') returns post-update state", async () => {
@@ -166,7 +166,7 @@ describe("Modification methods integration tests", () => {
 				.return("after")
 				.execute();
 
-			expect(result[0].age).toBe(31);
+			expect(result[0]!.age).toBe(31);
 		});
 
 		test("return('diff') returns JSON patches", async () => {
@@ -214,7 +214,7 @@ describe("Modification methods integration tests", () => {
 				.return("before")
 				.execute();
 
-			expect(result[0].name.first).toBe("Delete");
+			expect(result[0]!.name.first).toBe("Delete");
 		});
 	});
 

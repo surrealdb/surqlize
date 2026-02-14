@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Surreal } from "surrealdb";
-import { crypto, __display, displayContext, orm, t, table } from "../../../src";
+import { __display, crypto, displayContext, orm, t, table } from "../../../src";
 
 describe("Crypto functions", () => {
 	const user = table("user", {

@@ -1,12 +1,12 @@
 import { type AbstractType, ObjectType } from "../types";
 import type { DisplayContext } from "./display";
 import {
-	type Workable,
-	type WorkableContext,
 	__ctx,
 	__display,
 	__type,
 	isWorkable,
+	type Workable,
+	type WorkableContext,
 } from "./workable";
 
 export type InheritableObject<C extends WorkableContext> = {
@@ -21,20 +21,22 @@ export type Inheritable<C extends WorkableContext> =
 export type InheritableIntoType<
 	C extends WorkableContext,
 	T extends Inheritable<C>,
-> = T extends Workable<C, infer U>
-	? U
-	: T extends InheritableObject<C>
-		? ObjectType<{ [K in keyof T]: InheritableIntoType<C, T[K]> }>
-		: never;
+> =
+	T extends Workable<C, infer U>
+		? U
+		: T extends InheritableObject<C>
+			? ObjectType<{ [K in keyof T]: InheritableIntoType<C, T[K]> }>
+			: never;
 
 export type InheritableIntoWorkable<
 	C extends WorkableContext,
 	P extends Inheritable<C>,
-> = P extends Workable<C, infer T>
-	? Workable<C, T>
-	: P extends InheritableObject<C>
-		? Workable<C, InheritableIntoType<C, P>>
-		: never;
+> =
+	P extends Workable<C, infer T>
+		? Workable<C, T>
+		: P extends InheritableObject<C>
+			? Workable<C, InheritableIntoType<C, P>>
+			: never;
 
 export type InheritableForWorkable<
 	C extends WorkableContext,
@@ -65,8 +67,11 @@ export function inheritableIntoWorkable<
 		Object.entries(converted).map(([key, val]) => [key, val[__type]]),
 	) as Record<string, AbstractType>;
 
+	const firstKey = Object.keys(converted)[0];
+	if (!firstKey) throw new Error("Cannot convert empty object to workable");
+
 	return {
-		[__ctx]: converted[Object.keys(converted)[0]][__ctx],
+		[__ctx]: converted[firstKey]![__ctx],
 		[__type]: new ObjectType(fieldTypes),
 		[__display]: (ctx: DisplayContext) => {
 			const innerDisplays = Object.entries(converted).map(

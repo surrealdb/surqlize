@@ -16,7 +16,7 @@ describe("SELECT clause integration tests", () => {
 
 			expect(result.length).toBe(3);
 			for (let i = 1; i < result.length; i++) {
-				expect(result[i].age).toBeGreaterThanOrEqual(result[i - 1].age);
+				expect(result[i]!.age).toBeGreaterThanOrEqual(result[i - 1]!.age);
 			}
 		});
 
@@ -26,7 +26,7 @@ describe("SELECT clause integration tests", () => {
 
 			expect(result.length).toBe(3);
 			for (let i = 1; i < result.length; i++) {
-				expect(result[i].age).toBeLessThanOrEqual(result[i - 1].age);
+				expect(result[i]!.age).toBeLessThanOrEqual(result[i - 1]!.age);
 			}
 		});
 
@@ -36,9 +36,9 @@ describe("SELECT clause integration tests", () => {
 
 			expect(result.length).toBe(3);
 			// alice@, bob@, charlie@ in alphabetical order
-			expect(result[0].email).toBe("alice@example.com");
-			expect(result[1].email).toBe("bob@example.com");
-			expect(result[2].email).toBe("charlie@example.com");
+			expect(result[0]!.email).toBe("alice@example.com");
+			expect(result[1]!.email).toBe("bob@example.com");
+			expect(result[2]!.email).toBe("charlie@example.com");
 		});
 	});
 
@@ -60,7 +60,7 @@ describe("SELECT clause integration tests", () => {
 				.execute();
 
 			expect(offset.length).toBe(all.length - 1);
-			expect(offset[0].age).toBe(all[1].age);
+			expect(offset[0]!.age).toBe(all[1]!.age);
 		});
 
 		test("LIMIT + START together for pagination", async () => {
@@ -91,7 +91,7 @@ describe("SELECT clause integration tests", () => {
 				expect(user.age).toBeGreaterThanOrEqual(25);
 			}
 			if (result.length === 2) {
-				expect(result[0].age).toBeGreaterThanOrEqual(result[1].age);
+				expect(result[0]!.age).toBeGreaterThanOrEqual(result[1]!.age);
 			}
 		});
 	});

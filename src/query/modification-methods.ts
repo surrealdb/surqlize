@@ -1,9 +1,9 @@
 import type { ObjectType } from "../types";
 import type { DisplayContext } from "../utils/display.ts";
 import {
-	type SetValue,
 	generateSetAssignments,
 	processSetOperators,
+	type SetValue,
 } from "./utils.ts";
 
 // Shared types

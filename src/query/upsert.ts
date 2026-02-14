@@ -15,26 +15,26 @@ import {
 	inheritableIntoWorkable,
 } from "../utils/inheritable.ts";
 import {
-	type Workable,
-	type WorkableContext,
 	__ctx,
 	__display,
 	__type,
 	isWorkable,
 	sanitizeWorkable,
+	type Workable,
+	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 import {
-	type JsonPatchOp,
-	type ModificationMode,
-	type ModificationState,
-	type SetData,
 	applyContent,
 	applyMerge,
 	applyPatch,
 	applyReplace,
 	applySet,
 	displayModificationClause,
+	type JsonPatchOp,
+	type ModificationMode,
+	type ModificationState,
+	type SetData,
 } from "./modification-methods.ts";
 
 /**
@@ -83,7 +83,7 @@ export class UpsertQuery<
 	}
 
 	get schema(): E {
-		return this[__ctx].orm.tables[this.tb].schema as unknown as E;
+		return this[__ctx].orm.tables[this.tb]!.schema as unknown as E;
 	}
 
 	get [__type](): ArrayType<E> {
@@ -118,7 +118,7 @@ export class UpsertQuery<
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
-			[__type]: this[__ctx].orm.tables[this.tb].schema,
+			[__type]: this[__ctx].orm.tables[this.tb]!.schema,
 			[__display]: ({ contextId }) => {
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
