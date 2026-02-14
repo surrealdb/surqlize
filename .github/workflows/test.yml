@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -123,3 +126,65 @@ jobs:
         run: bun run test:integration
         env:
           SURREAL_URL: ws://localhost:8000
+
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb', '**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build package
+        run: bun run build
+
+      - name: Pack and install in isolated directory
+        run: |
+          npm pack
+          mkdir -p /tmp/smoke-test
+          cp surqlize-*.tgz /tmp/smoke-test/
+          cd /tmp/smoke-test
+          npm init -y
+          npm install surqlize-*.tgz surrealdb
+
+      - name: Copy smoke test scripts
+        run: cp tests/smoke/* /tmp/smoke-test/
+
+      - name: Smoke test - Node.js ESM
+        run: node /tmp/smoke-test/node-esm.mjs
+
+      - name: Smoke test - Node.js CJS
+        run: node /tmp/smoke-test/node-cjs.cjs
+
+      - name: Smoke test - Bun
+        run: bun /tmp/smoke-test/bun-esm.ts
+
+      - name: Smoke test - Deno
+        working-directory: /tmp/smoke-test
+        run: deno run --allow-read --allow-env --allow-net --node-modules-dir=manual deno-esm.ts
