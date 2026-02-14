@@ -65,6 +65,18 @@ describe("Error handling integration tests", () => {
 		test("select by ID returns empty array", async () => {
 			const { db } = getTestDb();
 
+			// Create a record to ensure the table exists.
+			await db
+				.create("user", "exists")
+				.set({
+					name: { first: "Exists", last: "User" },
+					age: 30,
+					email: "exists@example.com",
+					created: new Date(),
+					updated: new Date(),
+				})
+				.execute();
+
 			const result = await db
 				.select(new RecordId("user", "does_not_exist"))
 				.execute();
