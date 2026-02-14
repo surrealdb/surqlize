@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayContext, TypeParseError, t } from "../../../src";
+import { displayContext, OrmError, TypeParseError, t } from "../../../src";
 import type { AbstractType } from "../../../src/types/classes";
 import { inheritableIntoWorkable } from "../../../src/utils/inheritable";
 import {
@@ -92,6 +92,82 @@ describe("inheritableIntoWorkable", () => {
 			inheritableIntoWorkable(null as never);
 		} catch (err) {
 			expect(err).toBeInstanceOf(TypeParseError);
+		}
+	});
+
+	test("converts flat array of workables into ArrayType workable", () => {
+		const arr = [
+			makeWorkable("$this.name", t.string()),
+			makeWorkable("$this.age", t.number()),
+		];
+
+		const result = inheritableIntoWorkable(arr);
+		expect(isWorkable(result)).toBe(true);
+		expect(result[__type].name).toBe("array");
+	});
+
+	test("flat array display renders [val, val] format", () => {
+		const arr = [makeWorkable("A", t.string()), makeWorkable("B", t.number())];
+
+		const result = inheritableIntoWorkable(arr);
+		const dCtx = displayContext();
+		const display = result[__display](dCtx);
+		expect(display).toBe("[A, B]");
+	});
+
+	test("single-element array works correctly", () => {
+		const arr = [makeWorkable("$this.name", t.string())];
+
+		const result = inheritableIntoWorkable(arr);
+		expect(isWorkable(result)).toBe(true);
+		expect(result[__type].name).toBe("array");
+
+		const dCtx = displayContext();
+		const display = result[__display](dCtx);
+		expect(display).toBe("[$this.name]");
+	});
+
+	test("array with nested object is recursively converted", () => {
+		const arr = [
+			makeWorkable("A", t.string()),
+			{
+				inner: makeWorkable("B", t.number()),
+			},
+		];
+
+		const result = inheritableIntoWorkable(arr);
+		expect(isWorkable(result)).toBe(true);
+		expect(result[__type].name).toBe("array");
+
+		const dCtx = displayContext();
+		const display = result[__display](dCtx);
+		expect(display).toBe("[A, { inner: B }]");
+	});
+
+	test("array with nested array is recursively converted", () => {
+		const arr = [
+			makeWorkable("A", t.string()),
+			[makeWorkable("B", t.number()), makeWorkable("C", t.bool())],
+		];
+
+		const result = inheritableIntoWorkable(arr);
+		expect(isWorkable(result)).toBe(true);
+		expect(result[__type].name).toBe("array");
+
+		const dCtx = displayContext();
+		const display = result[__display](dCtx);
+		expect(display).toBe("[A, [B, C]]");
+	});
+
+	test("throws OrmError for empty array", () => {
+		expect(() => inheritableIntoWorkable([] as never)).toThrow(
+			"Cannot convert empty array to workable",
+		);
+
+		try {
+			inheritableIntoWorkable([] as never);
+		} catch (err) {
+			expect(err).toBeInstanceOf(OrmError);
 		}
 	});
 });
