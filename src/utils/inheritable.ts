@@ -45,6 +45,13 @@ export type InheritableForWorkable<
 	P extends Inheritable<C> = Inheritable<C>,
 > = InheritableIntoWorkable<C, P> extends Workable<C, T> ? P : never;
 
+/**
+ * Convert an {@link Inheritable} value (a workable or a plain object of
+ * workables) into a single {@link Workable}.
+ *
+ * @throws {TypeParseError} If `value` is not an object.
+ * @throws {OrmError} If `value` is an empty object with no keys.
+ */
 export function inheritableIntoWorkable<
 	C extends WorkableContext,
 	T extends Inheritable<C>,

@@ -248,6 +248,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * @param from - The source record(s).
 	 * @param to - The target record(s).
 	 * @returns A {@link RelateQuery} that can be further chained or awaited.
+	 * @throws {OrmError} If `edge` does not refer to an {@link EdgeSchema}.
 	 */
 	relate<
 		C extends WorkableContext<this>,

@@ -38,7 +38,13 @@ export interface ModificationState {
 	_modificationMode?: ModificationMode;
 }
 
-// Helper function to check modification mode exclusivity
+/**
+ * Assert that a new modification mode is compatible with the current one.
+ *
+ * @param currentMode - The currently active mode, if any.
+ * @param newMode - The mode being requested.
+ * @throws {OrmError} If `currentMode` is set and differs from `newMode`.
+ */
 export function checkModificationMode(
 	currentMode: ModificationMode | undefined,
 	newMode: ModificationMode,
@@ -50,7 +56,11 @@ export function checkModificationMode(
 	}
 }
 
-// Helper functions for setting modification data
+/**
+ * Apply a SET modification to the state.
+ *
+ * @throws {OrmError} If a conflicting modification mode is already active.
+ */
 export function applySet(
 	state: ModificationState,
 	data: Record<string, unknown>,
@@ -61,24 +71,44 @@ export function applySet(
 	state._set = { ...state._set, ...processedData };
 }
 
+/**
+ * Apply an UNSET modification to the state.
+ *
+ * @throws {OrmError} If a conflicting modification mode is already active.
+ */
 export function applyUnset(state: ModificationState, fields: string[]): void {
 	checkModificationMode(state._modificationMode, "set");
 	state._modificationMode = "set";
 	state._unset = [...(state._unset || []), ...fields];
 }
 
+/**
+ * Apply a CONTENT modification to the state.
+ *
+ * @throws {OrmError} If a conflicting modification mode is already active.
+ */
 export function applyContent(state: ModificationState, data: unknown): void {
 	checkModificationMode(state._modificationMode, "content");
 	state._modificationMode = "content";
 	state._content = data;
 }
 
+/**
+ * Apply a MERGE modification to the state.
+ *
+ * @throws {OrmError} If a conflicting modification mode is already active.
+ */
 export function applyMerge(state: ModificationState, data: unknown): void {
 	checkModificationMode(state._modificationMode, "merge");
 	state._modificationMode = "merge";
 	state._merge = data;
 }
 
+/**
+ * Apply a PATCH modification to the state.
+ *
+ * @throws {OrmError} If a conflicting modification mode is already active.
+ */
 export function applyPatch(
 	state: ModificationState,
 	operations: JsonPatchOp[],
@@ -88,6 +118,11 @@ export function applyPatch(
 	state._patch = operations;
 }
 
+/**
+ * Apply a REPLACE modification to the state.
+ *
+ * @throws {OrmError} If a conflicting modification mode is already active.
+ */
 export function applyReplace(state: ModificationState, data: unknown): void {
 	checkModificationMode(state._modificationMode, "replace");
 	state._modificationMode = "replace";

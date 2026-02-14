@@ -73,6 +73,12 @@ export class InsertQuery<
 		return t.array(this.schema);
 	}
 
+	/**
+	 * Specify the fields for a `VALUES`-style insert.
+	 *
+	 * @param fields - Column names to insert into.
+	 * @throws {OrmError} If the query was constructed with inline data.
+	 */
 	fields(
 		fields: E extends ObjectType ? (keyof E["schema"])[] : string[],
 	): this {
@@ -83,6 +89,14 @@ export class InsertQuery<
 		return this;
 	}
 
+	/**
+	 * Provide value rows for a `VALUES`-style insert.
+	 *
+	 * @param rows - One or more arrays of values matching the field order.
+	 * @throws {OrmError} If the query was constructed with inline data.
+	 * @throws {OrmError} If {@link fields} has not been called first.
+	 * @throws {OrmError} If any row length does not match the field count.
+	 */
 	values(...rows: unknown[][]): this {
 		if (this._data) {
 			throw new OrmError("Cannot use values() with object-style insert");
@@ -104,6 +118,11 @@ export class InsertQuery<
 		return this;
 	}
 
+	/**
+	 * Add an `IGNORE` clause so duplicate records are silently skipped.
+	 *
+	 * @throws {OrmError} If {@link onDuplicate} has already been called.
+	 */
 	ignore(): this {
 		if (this._onDuplicate) {
 			throw new OrmError("Cannot use both ignore() and onDuplicate()");
@@ -112,6 +131,12 @@ export class InsertQuery<
 		return this;
 	}
 
+	/**
+	 * Add an `ON DUPLICATE KEY UPDATE` clause.
+	 *
+	 * @param updates - Fields and values to update on conflict.
+	 * @throws {OrmError} If {@link ignore} has already been called.
+	 */
 	onDuplicate(
 		updates: E extends ObjectType
 			? Partial<SetData<E>>

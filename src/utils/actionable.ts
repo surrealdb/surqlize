@@ -25,6 +25,12 @@ export type Actionable<
 	T extends AbstractType,
 > = ActionableProps<C, T> & Workable<C, T> & GetFunctions<C, T>;
 
+/**
+ * Wrap a {@link Workable} in a `Proxy` that provides property access,
+ * function bindings, and type-safe field traversal.
+ *
+ * @throws {OrmError} If a looked-up property exists in the function map but is not callable.
+ */
 export function actionable<
 	C extends WorkableContext = WorkableContext,
 	T extends AbstractType = StringType,
