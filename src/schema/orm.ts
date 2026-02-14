@@ -1,4 +1,4 @@
-import type { Surreal } from "surrealdb";
+import type { SurrealSession } from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
 import type { Query } from "../query/abstract";
 import { BatchQuery } from "../query/batch";
@@ -26,7 +26,7 @@ export type MappedTables<T extends AnyTable[]> = {
 
 export class Orm<T extends AnyTable[] = AnyTable[]> {
 	constructor(
-		public readonly surreal: Surreal,
+		public readonly surreal: SurrealSession,
 		public readonly tables: MappedTables<T>,
 		public readonly lookup: CreateSchemaLookup<T>,
 	) {}
@@ -279,7 +279,10 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	}
 }
 
-export function orm<T extends AnyTable[]>(surreal: Surreal, ...tables: T) {
+export function orm<T extends AnyTable[]>(
+	surreal: SurrealSession,
+	...tables: T
+) {
 	const mapped = tables.reduce<MappedTables<T>>(
 		(acc, table) => {
 			const key = table.tb as T[number]["tb"];
