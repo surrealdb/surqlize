@@ -1052,10 +1052,18 @@ const query = db
       hasBio: author.bio.trueish(),
     })),
   }))
+  .orderBy("created", "DESC")
   .limit(10);
 
 // Fully typed result
 type Result = t.infer<typeof query>;
+
+// Fetch resolves record references into full objects
+const posts = await db
+  .select("post")
+  .fetch("authorId")
+  .execute();
+// posts[0].authorId is now the full user object, not a RecordId
 ```
 
 ## Multi-session support
@@ -1144,7 +1152,7 @@ Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `awa
 **Why Surqlize?**
 
 - **Native SurrealDB support**: Built specifically for SurrealDB's unique features including graph relationships, flexible schemas, and SurrealQL
-- **No code generation**: Full type inference using TypeScript's type system—no build step required
+- **No code generation**: Full type inference using TypeScript's type system—no codegen required
 - **Fluent API**: Natural, chainable syntax that mirrors SurrealQL while providing complete type safety
 - **Graph-first**: Edges and relationships are first-class citizens, not an afterthought
 - **Complete CRUD**: Full support for SELECT, CREATE, UPSERT, UPDATE, RELATE, and DELETE operations
@@ -1169,8 +1177,16 @@ This project is in active development. Planned features include:
 # Install dependencies
 bun install
 
+# Build the project
+bun run build
+
 # Run the example file
-bun run index.ts
+bun run examples/demo.ts
+
+# Run tests
+bun run test:unit          # Unit tests
+bun run test:integration   # Integration tests (requires SurrealDB)
+bun run type-check         # TypeScript type checking
 
 # Lint and format
 bun run qc   # Check for issues
