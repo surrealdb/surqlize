@@ -133,7 +133,7 @@ export class CreateQuery<
 			this._return = sanitizeWorkable(workable) as Workable<C>;
 		} else {
 			this._return = value;
-			this._returnsDiff = value === "diff";
+			this._skipParse = value === "diff";
 		}
 		return this;
 	}

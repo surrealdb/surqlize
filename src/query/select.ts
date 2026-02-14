@@ -195,6 +195,9 @@ export class SelectQuery<
 
 	fetch(...fields: (FieldKeys<O, T> | `${FieldKeys<O, T>}.${string}`)[]): this {
 		this._fetch = fields;
+		// FETCH resolves RecordId references into full objects, which changes
+		// the result shape away from the schema. Skip parse to avoid errors.
+		this._skipParse = true;
 		return this;
 	}
 

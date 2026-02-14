@@ -163,7 +163,7 @@ export class UpdateQuery<
 			this._return = sanitizeWorkable(workable);
 		} else {
 			this._return = value;
-			this._returnsDiff = value === "diff";
+			this._skipParse = value === "diff";
 		}
 		return this;
 	}
