@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { Table } from "surrealdb";
 import { Surreal } from "surrealdb";
 import { __display, displayContext, orm, t, table } from "../../../src";
 

@@ -3,10 +3,8 @@ import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
 	type ArrayType,
-	type NoneType,
 	type ObjectType,
 	type RecordType,
-	type UnionType,
 	t,
 } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
@@ -40,6 +38,10 @@ import {
 	displayModificationClause,
 } from "./modification-methods.ts";
 
+/**
+ * A fluent UPDATE query builder. Supports SET, UNSET, CONTENT, MERGE, PATCH,
+ * REPLACE, WHERE, RETURN, and TIMEOUT clauses.
+ */
 export class UpdateQuery<
 		O extends Orm,
 		C extends WorkableContext<O>,

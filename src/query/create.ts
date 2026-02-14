@@ -35,6 +35,10 @@ import {
 	displayModificationClause,
 } from "./modification-methods.ts";
 
+/**
+ * A fluent CREATE query builder. Supports SET, CONTENT, MERGE, PATCH, REPLACE,
+ * RETURN, and TIMEOUT clauses.
+ */
 export class CreateQuery<
 		O extends Orm,
 		C extends WorkableContext<O>,

@@ -37,6 +37,10 @@ import {
 	displayModificationClause,
 } from "./modification-methods.ts";
 
+/**
+ * A fluent RELATE query builder for creating graph edges between records.
+ * Supports SET, CONTENT, MERGE, PATCH, REPLACE, RETURN, and TIMEOUT clauses.
+ */
 export class RelateQuery<
 		O extends Orm,
 		C extends WorkableContext<O>,

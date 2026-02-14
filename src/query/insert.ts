@@ -32,6 +32,10 @@ type SetData<T extends ObjectType> = {
 	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
 };
 
+/**
+ * A fluent INSERT query builder. Supports inline data, `.fields().values()`,
+ * IGNORE, ON DUPLICATE KEY UPDATE, RETURN, and TIMEOUT clauses.
+ */
 export class InsertQuery<
 	O extends Orm,
 	C extends WorkableContext<O>,

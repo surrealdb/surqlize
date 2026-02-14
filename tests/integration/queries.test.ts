@@ -236,7 +236,7 @@ describe("Complex Queries Integration Tests", () => {
 
 	describe("Graph relationships", () => {
 		test("queries through edges", async () => {
-			const { db, surreal } = getTestDb();
+			const { surreal } = getTestDb();
 
 			// Query posts through authored edges
 			const result = await surreal.query(

@@ -3,9 +3,7 @@ import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
 	type ArrayType,
-	type NoneType,
 	type RecordType,
-	type UnionType,
 	t,
 } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
@@ -26,6 +24,9 @@ import {
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 
+/**
+ * A fluent DELETE query builder. Supports WHERE, RETURN, and TIMEOUT clauses.
+ */
 export class DeleteQuery<
 	O extends Orm,
 	C extends WorkableContext<O>,

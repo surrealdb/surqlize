@@ -93,6 +93,26 @@ export function applyReplace(state: ModificationState, data: unknown): void {
 	state._replace = data;
 }
 
+function displaySetUnsetClause(
+	state: ModificationState,
+	ctx: DisplayContext,
+): string {
+	const parts: string[] = [];
+
+	if (state._set) {
+		const assignments = generateSetAssignments(state._set, ctx);
+		if (assignments.length > 0) {
+			parts.push(`SET ${assignments.join(", ")}`);
+		}
+	}
+
+	if (state._unset && state._unset.length > 0) {
+		parts.push(`UNSET ${state._unset.join(", ")}`);
+	}
+
+	return parts.length > 0 ? ` ${parts.join(" ")}` : "";
+}
+
 // Helper function to generate modification clause SQL
 export function displayModificationClause(
 	state: ModificationState,
@@ -111,22 +131,7 @@ export function displayModificationClause(
 		return /* surql */ ` REPLACE ${ctx.var(state._replace)}`;
 	}
 	if (state._set || state._unset) {
-		const parts: string[] = [];
-
-		if (state._set) {
-			const assignments = generateSetAssignments(state._set, ctx);
-			if (assignments.length > 0) {
-				parts.push(`SET ${assignments.join(", ")}`);
-			}
-		}
-
-		if (state._unset && state._unset.length > 0) {
-			parts.push(`UNSET ${state._unset.join(", ")}`);
-		}
-
-		if (parts.length > 0) {
-			return ` ${parts.join(" ")}`;
-		}
+		return displaySetUnsetClause(state, ctx);
 	}
 
 	return "";

@@ -16,14 +16,23 @@ import { EdgeSchema } from "./edge";
 import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
 import type { TableSchema } from "./table";
 
+/** Union type representing any table or edge schema. */
 export type AnyTable<Tb extends string = string> =
 	| TableSchema<Tb>
 	| EdgeSchema<string, Tb>;
 
+/** Maps an array of table/edge schemas to a record keyed by table name. */
 export type MappedTables<T extends AnyTable[]> = {
 	[K in T[number]["tb"]]: Extract<T[number], AnyTable<K>>;
 } & {};
 
+/**
+ * The main ORM entry point. Provides type-safe query builders for all
+ * registered tables and edges.
+ *
+ * Use the {@link orm} factory function to create instances rather than
+ * calling the constructor directly.
+ */
 export class Orm<T extends AnyTable[] = AnyTable[]> {
 	constructor(
 		public readonly surreal: SurrealSession,
@@ -31,7 +40,12 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		public readonly lookup: CreateSchemaLookup<T>,
 	) {}
 
-	// Table
+	/**
+	 * Build a SELECT query for a table, record ID, or workable record reference.
+	 *
+	 * @param tb - A table name, `RecordId`, workable record, or table name with a second `id` argument.
+	 * @returns A {@link SelectQuery} that can be further chained or awaited.
+	 */
 	select<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -63,7 +77,13 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		return new SelectQuery(this, new RecordId(tb as Tb, id));
 	}
 
-	// CREATE - single table
+	/**
+	 * Build a CREATE query. Optionally pass a specific record ID.
+	 *
+	 * @param tb - The table name.
+	 * @param id - Optional record ID.
+	 * @returns A {@link CreateQuery} that can be further chained or awaited.
+	 */
 	create<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -77,13 +97,19 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 
 	// Method
 	create<
-		C extends WorkableContext<this>,
+		_C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
 	>(tb: Tb, id?: RecordIdValue) {
 		return new CreateQuery(this, tb, id?.toString());
 	}
 
-	// INSERT with data (object style)
+	/**
+	 * Build an INSERT query. Pass data inline or use the `.fields().values()` API.
+	 *
+	 * @param tb - The table name.
+	 * @param data - Optional record or array of records to insert.
+	 * @returns An {@link InsertQuery} that can be further chained or awaited.
+	 */
 	insert<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -97,13 +123,18 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 
 	// Method
 	insert<
-		C extends WorkableContext<this>,
+		_C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
 	>(tb: Tb, data?: unknown | unknown[]) {
 		return new InsertQuery(this, tb, data);
 	}
 
-	// UPDATE - table
+	/**
+	 * Build an UPDATE query for a table, record ID, or workable record reference.
+	 *
+	 * @param tb - A table name, `RecordId`, workable record, or table name with a second `id` argument.
+	 * @returns An {@link UpdateQuery} that can be further chained or awaited.
+	 */
 	update<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -135,7 +166,12 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		return new UpdateQuery(this, new RecordId(tb as Tb, id));
 	}
 
-	// DELETE - table
+	/**
+	 * Build a DELETE query for a table, record ID, or workable record reference.
+	 *
+	 * @param tb - A table name, `RecordId`, workable record, or table name with a second `id` argument.
+	 * @returns A {@link DeleteQuery} that can be further chained or awaited.
+	 */
 	delete<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -167,7 +203,12 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		return new DeleteQuery(this, new RecordId(tb as Tb, id));
 	}
 
-	// UPSERT - table
+	/**
+	 * Build an UPSERT query for a table, record ID, or workable record reference.
+	 *
+	 * @param tb - A table name, `RecordId`, workable record, or table name with a second `id` argument.
+	 * @returns An {@link UpsertQuery} that can be further chained or awaited.
+	 */
 	upsert<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -199,7 +240,14 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		return new UpsertQuery(this, new RecordId(tb as Tb, id));
 	}
 
-	// RELATE
+	/**
+	 * Build a RELATE query to create a graph edge between records.
+	 *
+	 * @param edge - The edge table name (must be an {@link EdgeSchema}).
+	 * @param from - The source record(s).
+	 * @param to - The target record(s).
+	 * @returns A {@link RelateQuery} that can be further chained or awaited.
+	 */
 	relate<
 		C extends WorkableContext<this>,
 		Edge extends keyof this["tables"] & string,
@@ -244,16 +292,37 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		return new RelateQuery(this, edge, from, to);
 	}
 
-	// BATCH
+	/**
+	 * Combine multiple queries into a single atomic batch operation wrapped in
+	 * `BEGIN TRANSACTION; ...; COMMIT TRANSACTION;`.
+	 *
+	 * @param queries - The queries to batch together.
+	 * @returns A {@link BatchQuery} that can be awaited.
+	 */
 	// biome-ignore lint/suspicious/noExplicitAny: required for generic constraint flexibility
 	batch<Q extends Query<any, any>[]>(...queries: Q): BatchQuery<Q> {
 		return new BatchQuery(this.surreal, queries);
 	}
 
-	// TRANSACTION - callback form (auto-commit/cancel)
+	/**
+	 * Start a transaction. Supports two forms:
+	 *
+	 * **Callback form** -- automatically commits on success and cancels on error:
+	 * ```ts
+	 * const result = await db.transaction(async (tx) => {
+	 *   await tx.create("user").set({ ... });
+	 *   return "done";
+	 * });
+	 * ```
+	 *
+	 * **Manual form** -- returns a {@link Transaction} for explicit commit/cancel:
+	 * ```ts
+	 * const tx = await db.transaction();
+	 * await tx.create("user").set({ ... });
+	 * await tx.commit();
+	 * ```
+	 */
 	transaction<R>(cb: (tx: Transaction<T>) => Promise<R>): Promise<R>;
-
-	// TRANSACTION - manual form (explicit commit/cancel)
 	transaction(): Promise<Transaction<T>>;
 
 	// Method
@@ -279,6 +348,20 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	}
 }
 
+/**
+ * Create an ORM instance bound to a SurrealDB session and a set of table/edge
+ * schemas. This is the main entry point for building type-safe queries.
+ *
+ * @param surreal - An active SurrealDB session.
+ * @param tables - One or more {@link TableSchema} or {@link EdgeSchema} definitions.
+ * @returns An {@link Orm} instance with query builders scoped to the provided schemas.
+ *
+ * @example
+ * ```ts
+ * const db = orm(new Surreal(), user, post, authored);
+ * const users = await db.select("user");
+ * ```
+ */
 export function orm<T extends AnyTable[]>(
 	surreal: SurrealSession,
 	...tables: T

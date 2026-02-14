@@ -1,5 +1,3 @@
-import { type GetFunctions, getFunctions } from "../functions";
-import type { Orm } from "../schema";
 import type { AbstractType } from "../types";
 import {
 	type DisplayContext,
@@ -13,6 +11,14 @@ import {
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
 
+/**
+ * Abstract base class for all query types. Implements `Workable` so queries can
+ * be composed as subqueries, and is Promise-like so queries can be directly
+ * awaited to execute against SurrealDB.
+ *
+ * @typeParam C - The workable context (carries the ORM reference).
+ * @typeParam T - The result type of the query.
+ */
 export abstract class Query<
 	C extends WorkableContext = WorkableContext,
 	T extends AbstractType = AbstractType,
@@ -23,18 +29,22 @@ export abstract class Query<
 	abstract [__type]: T;
 
 	type = undefined as unknown as T["infer"];
+	/** Type-guard that checks whether a value matches this query's result type. */
 	validate(value: unknown): value is T["infer"] {
 		return this[__type].validate(value);
 	}
 
+	/** Parse and validate a raw query result against this query's result type. */
 	parse(value: unknown): T["infer"] {
 		return this[__type].parse(value);
 	}
 
+	/** Create a shallow clone of this query. */
 	clone(): this {
 		return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
 	}
 
+	/** Render the query as a SurrealQL string. */
 	toString(): string {
 		const ctx = displayContext();
 		return this[__display]({
@@ -87,6 +97,7 @@ export abstract class Query<
 		return Object.assign(fn, functions) as Then<this> & Actionable<C, T>;
 	}
 
+	/** Execute the query against SurrealDB and return the parsed result. */
 	async execute() {
 		const ctx = displayContext();
 		const query = this[__display](ctx);

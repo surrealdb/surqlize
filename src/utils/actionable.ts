@@ -4,7 +4,6 @@ import {
 	type Workable,
 	type WorkableContext,
 	__type,
-	intoWorkable,
 	workableGet,
 } from "./workable";
 

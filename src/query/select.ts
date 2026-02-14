@@ -3,10 +3,8 @@ import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
 	type ArrayType,
-	type NoneType,
 	type ObjectType,
 	type RecordType,
-	type UnionType,
 	t,
 } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
@@ -34,6 +32,10 @@ type FieldKeys<
 	? keyof F & string
 	: string;
 
+/**
+ * A fluent SELECT query builder. Supports WHERE, ORDER BY, GROUP BY, SPLIT,
+ * FETCH, LIMIT, START, TIMEOUT, and return projections via `.return()`.
+ */
 export class SelectQuery<
 	O extends Orm,
 	C extends WorkableContext<O>,
@@ -201,19 +203,38 @@ export class SelectQuery<
 		return this;
 	}
 
+	private displaySubject(ctx: DisplayContext): string {
+		if (typeof this.subject === "string") return ctx.var(new Table(this.tb));
+		if (isWorkable(this.subject)) return this.subject[__display](ctx);
+		return ctx.var(this.subject);
+	}
+
+	private displayOrderBy(ctx: DisplayContext): string {
+		if (!this._orderBy || this._orderBy.length === 0) return "";
+
+		const orderParts = this._orderBy.map((spec) => {
+			let part =
+				typeof spec.field === "string"
+					? spec.field
+					: spec.field[__display](ctx);
+
+			if (spec.collate) part += " COLLATE";
+			if (spec.numeric) part += " NUMERIC";
+			if (spec.direction) part += ` ${spec.direction}`;
+
+			return part;
+		});
+
+		return /* surql */ ` ORDER BY ${orderParts.join(", ")}`;
+	}
+
 	[__display](inp: DisplayContext) {
 		const ctx = displayContext({
 			...inp,
 			contextId: this[__ctx].id,
 		});
 
-		const thing =
-			typeof this.subject === "string"
-				? ctx.var(new Table(this.tb))
-				: isWorkable(this.subject)
-					? this.subject[__display](ctx)
-					: ctx.var(this.subject);
-
+		const thing = this.displaySubject(ctx);
 		const start = this._start && ctx.var(this._start);
 		const limit = this._limit && ctx.var(this._limit);
 
@@ -222,56 +243,29 @@ export class SelectQuery<
 			: "*";
 		let query = /* surql */ `SELECT ${predicates} FROM ${thing}`;
 
-		// WHERE
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
-		// SPLIT
-		if (this._split && this._split.length > 0) {
+		if (this._split && this._split.length > 0)
 			query += /* surql */ ` SPLIT ${this._split.join(", ")}`;
-		}
 
-		// GROUP BY / GROUP ALL
 		if (this._groupBy) {
-			if (this._groupBy === "ALL") {
-				query += " GROUP ALL";
-			} else {
-				query += /* surql */ ` GROUP BY ${this._groupBy.join(", ")}`;
-			}
+			query +=
+				this._groupBy === "ALL"
+					? " GROUP ALL"
+					: /* surql */ ` GROUP BY ${this._groupBy.join(", ")}`;
 		}
 
-		// ORDER BY
-		if (this._orderBy && this._orderBy.length > 0) {
-			const orderParts = this._orderBy.map((spec) => {
-				let part: string;
-				if (typeof spec.field === "string") {
-					part = spec.field;
-				} else {
-					part = spec.field[__display](ctx);
-				}
+		query += this.displayOrderBy(ctx);
 
-				if (spec.collate) part += " COLLATE";
-				if (spec.numeric) part += " NUMERIC";
-				if (spec.direction) part += ` ${spec.direction}`;
-
-				return part;
-			});
-			query += /* surql */ ` ORDER BY ${orderParts.join(", ")}`;
-		}
-
-		// LIMIT / START
 		if (limit) query += /* surql */ ` LIMIT ${limit}`;
 		if (start) query += /* surql */ ` START ${start}`;
 
-		// FETCH
-		if (this._fetch && this._fetch.length > 0) {
+		if (this._fetch && this._fetch.length > 0)
 			query += /* surql */ ` FETCH ${this._fetch.join(", ")}`;
-		}
 
-		// TIMEOUT
-		if (this._timeout) {
+		if (this._timeout)
 			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;
-		}
 
 		return `(${query})`;
 	}
