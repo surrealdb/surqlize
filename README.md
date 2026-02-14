@@ -692,6 +692,44 @@ db.select("user").where((user) =>
 );
 ```
 
+### Compound conditions
+
+For complex conditions, use the standalone `and()` and `or()` combiners. These make precedence explicit and produce correctly parenthesized SurrealQL:
+
+```typescript
+import { orm, table, t, and, or } from "surqlize";
+
+// Simple compound: age >= 18 AND email ends with @example.com
+db.select("user").where((user) =>
+  and(user.age.gte(18), user.email.endsWith("@example.com"))
+);
+// WHERE (age >= 18 AND string::ends_with(email, "@example.com"))
+
+// OR with multiple options
+db.select("user").where((user) =>
+  or(user.role.eq("admin"), user.role.eq("moderator"), user.role.eq("owner"))
+);
+// WHERE (role = "admin" OR role = "moderator" OR role = "owner")
+
+// Nested: AND with inner OR for grouped conditions
+db.select("user").where((user) =>
+  and(
+    user.age.gte(18),
+    or(user.role.eq("admin"), user.role.eq("moderator")),
+    user.email.endsWith("@example.com"),
+  )
+);
+// WHERE (age >= 18 AND (role = "admin" OR role = "moderator") AND string::ends_with(email, "@example.com"))
+
+// Chaining .and() / .or() on individual conditions also works
+db.select("user").where((user) =>
+  user.age.gte(18).and(user.name.first.eq("Alice"))
+);
+// WHERE (age >= 18 AND name.first = "Alice")
+```
+
+Both `and()` and `or()` require at least two conditions and accept any number of additional conditions. Nesting them produces correctly parenthesized output, so precedence is always explicit.
+
 ## Type-specific functions
 
 ### String functions

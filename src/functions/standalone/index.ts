@@ -68,6 +68,7 @@ export function standaloneConst<
 	});
 }
 
+export * from "./and";
 export * from "./bytes";
 export * from "./count";
 export * from "./crypto";
@@ -79,6 +80,7 @@ export * from "./math";
 export * from "./meta";
 export * from "./not";
 export * from "./object";
+export * from "./or";
 export * from "./parse";
 export * from "./rand";
 export * from "./search";
