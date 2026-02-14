@@ -32,10 +32,7 @@ describe("SELECT clause integration tests", () => {
 
 		test("orders by email ASC", async () => {
 			const { db } = getTestDb();
-			const result = await db
-				.select("user")
-				.orderBy("email", "ASC")
-				.execute();
+			const result = await db.select("user").orderBy("email", "ASC").execute();
 
 			expect(result.length).toBe(3);
 			// alice@, bob@, charlie@ in alphabetical order
@@ -114,10 +111,7 @@ describe("SELECT clause integration tests", () => {
 	describe("FETCH", () => {
 		test("fetches and resolves record references", async () => {
 			const { db } = getTestDb();
-			const result = await db
-				.select("post")
-				.fetch("author")
-				.execute();
+			const result = await db.select("post").fetch("author").execute();
 
 			expect(result).toBeDefined();
 			expect(result.length).toBeGreaterThan(0);

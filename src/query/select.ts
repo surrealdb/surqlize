@@ -33,12 +33,13 @@ type FieldKeys<
 	: string;
 
 /** Resolve a single field type: if it's a RecordType referencing a known table, replace with that table's schema. */
-type ResolveField<O extends Orm, F extends AbstractType> =
-	F extends RecordType<infer Tb>
-		? Tb extends keyof O["tables"] & string
-			? O["tables"][Tb]["schema"]
-			: F
-		: F;
+type ResolveField<O extends Orm, F extends AbstractType> = F extends RecordType<
+	infer Tb
+>
+	? Tb extends keyof O["tables"] & string
+		? O["tables"][Tb]["schema"]
+		: F
+	: F;
 
 /** Transform an ObjectType by resolving RecordType fields that appear in the Fields union. */
 type FetchedSchema<
@@ -222,18 +223,16 @@ export class SelectQuery<
 		// Build a resolved schema where fetched RecordType fields are replaced
 		// with the referenced table's ObjectType schema, so parse() validates
 		// the resolved objects instead of expecting RecordIds.
-		const currentSchema = this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb].schema;
+		const currentSchema =
+			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb].schema;
 		if (currentSchema instanceof ObjectType) {
 			const resolved = { ...currentSchema.schema };
 			for (const field of fields) {
 				// Only resolve top-level field names (ignore "field.nested" paths)
-				const topLevel = field.includes(".")
-					? field.split(".")[0]
-					: field;
+				const topLevel = field.includes(".") ? field.split(".")[0] : field;
 				const fieldType = resolved[topLevel];
 				if (fieldType instanceof RecordType && fieldType.tb) {
-					const targetTable =
-						this[__ctx].orm.tables[fieldType.tb as string];
+					const targetTable = this[__ctx].orm.tables[fieldType.tb as string];
 					if (targetTable) {
 						resolved[topLevel] = targetTable.schema;
 					}
