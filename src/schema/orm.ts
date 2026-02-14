@@ -1,10 +1,13 @@
 import type { Surreal } from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
+import type { Query } from "../query/abstract";
+import { BatchQuery } from "../query/batch";
 import { CreateQuery } from "../query/create";
 import { DeleteQuery } from "../query/delete";
 import { InsertQuery } from "../query/insert";
 import { RelateQuery } from "../query/relate";
 import { SelectQuery } from "../query/select";
+import type { Transaction } from "../query/transaction";
 import { UpdateQuery } from "../query/update";
 import { UpsertQuery } from "../query/upsert";
 import type { ArrayType, RecordType } from "../types";
@@ -239,6 +242,40 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		}
 
 		return new RelateQuery(this, edge, from, to);
+	}
+
+	// BATCH
+	// biome-ignore lint/suspicious/noExplicitAny: required for generic constraint flexibility
+	batch<Q extends Query<any, any>[]>(...queries: Q): BatchQuery<Q> {
+		return new BatchQuery(this.surreal, queries);
+	}
+
+	// TRANSACTION - callback form (auto-commit/cancel)
+	transaction<R>(cb: (tx: Transaction<T>) => Promise<R>): Promise<R>;
+
+	// TRANSACTION - manual form (explicit commit/cancel)
+	transaction(): Promise<Transaction<T>>;
+
+	// Method
+	async transaction<R>(
+		cb?: (tx: Transaction<T>) => Promise<R>,
+	): Promise<Transaction<T> | R> {
+		// Dynamic import to avoid circular dependency
+		// (Transaction extends Orm)
+		const { Transaction: Tx } = await import("../query/transaction");
+		const surrealTx = await this.surreal.beginTransaction();
+		const tx = new Tx<T>(surrealTx, this.tables, this.lookup);
+
+		if (!cb) return tx;
+
+		try {
+			const result = await cb(tx);
+			await tx.commit();
+			return result;
+		} catch (e) {
+			await tx.cancel();
+			throw e;
+		}
 	}
 }
 
