@@ -33,6 +33,18 @@ describe("Transaction integration tests", () => {
 		test("auto-cancels on error", async () => {
 			const { db } = getTestDb();
 
+			// Create a record first so the table exists for the post-cancel check
+			await db
+				.create("user", "tx_setup")
+				.set({
+					name: { first: "Setup", last: "User" },
+					age: 1,
+					email: "setup@example.com",
+					created: new Date(),
+					updated: new Date(),
+				})
+				.execute();
+
 			try {
 				await db.transaction(async (tx) => {
 					await tx
@@ -84,6 +96,18 @@ describe("Transaction integration tests", () => {
 
 		test("explicit cancel discards changes", async () => {
 			const { db } = getTestDb();
+
+			// Create a record first so the table exists for the post-cancel check
+			await db
+				.create("user", "tx_cancel_setup")
+				.set({
+					name: { first: "Setup", last: "User" },
+					age: 1,
+					email: "setup@example.com",
+					created: new Date(),
+					updated: new Date(),
+				})
+				.execute();
 
 			const tx = await db.transaction();
 			await tx
