@@ -1,3 +1,4 @@
+import { OrmError } from "../error.ts";
 import type { ObjectType } from "../types";
 import type { DisplayContext } from "../utils/display.ts";
 import {
@@ -43,7 +44,7 @@ export function checkModificationMode(
 	newMode: ModificationMode,
 ): void {
 	if (currentMode && currentMode !== newMode) {
-		throw new Error(
+		throw new OrmError(
 			`Cannot use ${newMode}() when ${currentMode}() has already been used`,
 		);
 	}

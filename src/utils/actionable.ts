@@ -1,3 +1,4 @@
+import { OrmError } from "../error";
 import { type GetFunctions, getFunctions } from "../functions";
 import type { AbstractType, ArrayType, ObjectType, StringType } from "../types";
 import { type Workable, type WorkableContext, workableGet } from "./workable";
@@ -50,7 +51,7 @@ export function actionable<
 					});
 				}
 
-				throw new Error(`Property ${prop} is not a function`);
+				throw new OrmError(`Property ${prop} is not a function`);
 			}
 
 			return val;

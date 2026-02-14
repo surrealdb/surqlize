@@ -1,5 +1,6 @@
 import type { SurrealSession } from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
+import { OrmError } from "../error";
 import type { Query } from "../query/abstract";
 import { BatchQuery } from "../query/batch";
 import { CreateQuery } from "../query/create";
@@ -286,7 +287,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 
 		// Validate it's an EdgeSchema
 		if (!(edgeSchema instanceof EdgeSchema)) {
-			throw new Error(`"${edge}" is not an edge table`);
+			throw new OrmError(`"${edge}" is not an edge table`);
 		}
 
 		return new RelateQuery(this, edge, from, to);

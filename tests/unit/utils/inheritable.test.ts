@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayContext, t } from "../../../src";
+import { displayContext, TypeParseError, t } from "../../../src";
 import type { AbstractType } from "../../../src/types/classes";
 import { inheritableIntoWorkable } from "../../../src/utils/inheritable";
 import {
@@ -71,15 +71,27 @@ describe("inheritableIntoWorkable", () => {
 		expect(display).toContain("inner:");
 	});
 
-	test("throws for non-object input", () => {
+	test("throws TypeParseError for non-object input", () => {
 		expect(() => inheritableIntoWorkable("string" as never)).toThrow(
-			"Invalid Predicable value: must be an object",
+			"Expected object but found string",
 		);
+
+		try {
+			inheritableIntoWorkable("string" as never);
+		} catch (err) {
+			expect(err).toBeInstanceOf(TypeParseError);
+		}
 	});
 
-	test("throws for null input", () => {
+	test("throws TypeParseError for null input", () => {
 		expect(() => inheritableIntoWorkable(null as never)).toThrow(
-			"Invalid Predicable value: must be an object",
+			"Expected object but found null",
 		);
+
+		try {
+			inheritableIntoWorkable(null as never);
+		} catch (err) {
+			expect(err).toBeInstanceOf(TypeParseError);
+		}
 	});
 });

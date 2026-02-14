@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { RecordId } from "surrealdb";
+import { OrmError } from "../../src";
 import { withTestDb } from "./setup";
 
 describe("Error handling integration tests", () => {
 	const getTestDb = withTestDb({ perTest: true });
 
 	describe("Invalid table in relate()", () => {
-		test("throws when using a non-edge table for relate", () => {
+		test("throws OrmError when using a non-edge table for relate", () => {
 			const { db } = getTestDb();
 
 			expect(() => {
@@ -16,11 +17,21 @@ describe("Error handling integration tests", () => {
 					new RecordId("post", "post1"),
 				);
 			}).toThrow('"user" is not an edge table');
+
+			try {
+				db.relate(
+					"user" as never,
+					new RecordId("user", "alice"),
+					new RecordId("post", "post1"),
+				);
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
 		});
 	});
 
 	describe("Modification mode conflicts", () => {
-		test("set() then content() throws", () => {
+		test("set() then content() throws OrmError", () => {
 			const { db } = getTestDb();
 
 			expect(() => {
@@ -40,17 +51,43 @@ describe("Error handling integration tests", () => {
 						updated: new Date(),
 					});
 			}).toThrow("Cannot use content() when set() has already been used");
+
+			try {
+				db.create("user")
+					.set({
+						name: { first: "Test", last: "User" },
+						age: 30,
+						email: "test@example.com",
+						created: new Date(),
+						updated: new Date(),
+					})
+					.content({
+						name: { first: "Test", last: "User" },
+						age: 31,
+						email: "test@example.com",
+						created: new Date(),
+						updated: new Date(),
+					});
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
 		});
 
-		test("content() then merge() throws", () => {
+		test("content() then merge() throws OrmError", () => {
 			const { db } = getTestDb();
 
 			expect(() => {
 				db.update("user", "test").content({ age: 30 }).merge({ age: 31 });
 			}).toThrow("Cannot use merge() when content() has already been used");
+
+			try {
+				db.update("user", "test").content({ age: 30 }).merge({ age: 31 });
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
 		});
 
-		test("merge() then patch() throws", () => {
+		test("merge() then patch() throws OrmError", () => {
 			const { db } = getTestDb();
 
 			expect(() => {
@@ -58,6 +95,14 @@ describe("Error handling integration tests", () => {
 					.merge({ age: 30 })
 					.patch([{ op: "replace", path: "/age", value: 31 }]);
 			}).toThrow("Cannot use patch() when merge() has already been used");
+
+			try {
+				db.update("user", "test")
+					.merge({ age: 30 })
+					.patch([{ op: "replace", path: "/age", value: 31 }]);
+			} catch (err) {
+				expect(err).toBeInstanceOf(OrmError);
+			}
 		});
 	});
 

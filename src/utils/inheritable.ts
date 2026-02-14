@@ -1,3 +1,4 @@
+import { OrmError, TypeParseError } from "../error";
 import { type AbstractType, ObjectType } from "../types";
 import type { DisplayContext } from "./display";
 import {
@@ -49,7 +50,7 @@ export function inheritableIntoWorkable<
 	T extends Inheritable<C>,
 >(value: T): InheritableIntoWorkable<C, T> {
 	if (typeof value !== "object" || value === null) {
-		throw new Error("Invalid Predicable value: must be an object");
+		throw new TypeParseError("inheritable", "object", value);
 	}
 
 	if (isWorkable(value)) {
@@ -68,7 +69,7 @@ export function inheritableIntoWorkable<
 	) as Record<string, AbstractType>;
 
 	const firstKey = Object.keys(converted)[0];
-	if (!firstKey) throw new Error("Cannot convert empty object to workable");
+	if (!firstKey) throw new OrmError("Cannot convert empty object to workable");
 
 	return {
 		[__ctx]: converted[firstKey]![__ctx],

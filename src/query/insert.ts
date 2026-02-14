@@ -1,4 +1,5 @@
 import { Table } from "surrealdb";
+import { OrmError } from "../error.ts";
 import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
@@ -76,7 +77,7 @@ export class InsertQuery<
 		fields: E extends ObjectType ? (keyof E["schema"])[] : string[],
 	): this {
 		if (this._data) {
-			throw new Error("Cannot use fields() with object-style insert");
+			throw new OrmError("Cannot use fields() with object-style insert");
 		}
 		this._fields = fields as string[];
 		return this;
@@ -84,16 +85,16 @@ export class InsertQuery<
 
 	values(...rows: unknown[][]): this {
 		if (this._data) {
-			throw new Error("Cannot use values() with object-style insert");
+			throw new OrmError("Cannot use values() with object-style insert");
 		}
 		if (!this._fields) {
-			throw new Error("Must call fields() before values()");
+			throw new OrmError("Must call fields() before values()");
 		}
 
 		// Validate each row has the correct number of values
 		for (const row of rows) {
 			if (row.length !== this._fields.length) {
-				throw new Error(
+				throw new OrmError(
 					`Value row length (${row.length}) does not match fields length (${this._fields.length})`,
 				);
 			}
@@ -105,7 +106,7 @@ export class InsertQuery<
 
 	ignore(): this {
 		if (this._onDuplicate) {
-			throw new Error("Cannot use both ignore() and onDuplicate()");
+			throw new OrmError("Cannot use both ignore() and onDuplicate()");
 		}
 		this._ignore = true;
 		return this;
@@ -117,7 +118,7 @@ export class InsertQuery<
 			: Record<string, unknown>,
 	): this {
 		if (this._ignore) {
-			throw new Error("Cannot use both ignore() and onDuplicate()");
+			throw new OrmError("Cannot use both ignore() and onDuplicate()");
 		}
 
 		const processedData = processSetOperators(
