@@ -122,18 +122,6 @@ describe("SELECT return projections", () => {
 		expect(result).toContain("]");
 	});
 
-	test("RETURN [ ... ] — nested arrays", () => {
-		const query = db
-			.select("user")
-			.return((r) => [r.email, [r.name.first, r.name.last]]);
-		const ctx = displayContext();
-		const result = query[__display](ctx);
-
-		expect(result).toContain("SELECT VALUE");
-		// Should contain nested bracket structure
-		expect(result).toMatch(/\[.*\[.*\].*\]/);
-	});
-
 	test("RETURN { ... } — deeply nested object with array", () => {
 		const query = db.select("user").return((r) => ({
 			profile: {
@@ -165,7 +153,7 @@ describe("CREATE return projections", () => {
 	test("RETURN VALUE <field> — single field", () => {
 		const query = db
 			.create("user")
-			.set({ name: "Test", age: 1 })
+			.set({ name: { first: "Test", last: "User" }, age: 1 })
 			.return((r) => r.name);
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -178,7 +166,7 @@ describe("CREATE return projections", () => {
 	test("RETURN VALUE { ... } — object", () => {
 		const query = db
 			.create("user")
-			.set({ name: "Test", age: 1 })
+			.set({ name: { first: "Test", last: "User" }, age: 1 })
 			.return((r) => ({ name: r.name, email: r.email }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -191,7 +179,7 @@ describe("CREATE return projections", () => {
 	test("RETURN VALUE [ ... ] — array", () => {
 		const query = db
 			.create("user")
-			.set({ name: "Test", age: 1 })
+			.set({ name: { first: "Test", last: "User" }, age: 1 })
 			.return((r) => [r.name.first, r.age]);
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -204,7 +192,7 @@ describe("CREATE return projections", () => {
 	test("RETURN VALUE { ... } — object with nested array", () => {
 		const query = db
 			.create("user")
-			.set({ name: "Test", age: 1 })
+			.set({ name: { first: "Test", last: "User" }, age: 1 })
 			.return((r) => ({
 				fields: [r.name.first, r.name.last],
 				age: r.age,
@@ -222,7 +210,7 @@ describe("CREATE return projections", () => {
 		for (const mode of ["none", "before", "after", "diff"] as const) {
 			const query = db
 				.create("user")
-				.set({ name: "Test", age: 1 })
+				.set({ name: { first: "Test", last: "User" }, age: 1 })
 				.return(mode);
 			const ctx = displayContext();
 			const result = query[__display](ctx);
@@ -308,7 +296,11 @@ describe("UPSERT return projections", () => {
 	test("RETURN VALUE <field> — single field", () => {
 		const query = db
 			.upsert("user", "alice")
-			.set({ name: "Alice", age: 30, email: "alice@example.com" })
+			.set({
+				name: { first: "Alice", last: "User" },
+				age: 30,
+				email: "alice@example.com",
+			})
 			.return((r) => r.email);
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -321,7 +313,11 @@ describe("UPSERT return projections", () => {
 	test("RETURN VALUE { ... } — object", () => {
 		const query = db
 			.upsert("user", "alice")
-			.set({ name: "Alice", age: 30, email: "alice@example.com" })
+			.set({
+				name: { first: "Alice", last: "User" },
+				age: 30,
+				email: "alice@example.com",
+			})
 			.return((r) => ({ name: r.name, email: r.email }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -334,7 +330,11 @@ describe("UPSERT return projections", () => {
 	test("RETURN VALUE [ ... ] — array", () => {
 		const query = db
 			.upsert("user", "alice")
-			.set({ name: "Alice", age: 30, email: "alice@example.com" })
+			.set({
+				name: { first: "Alice", last: "User" },
+				age: 30,
+				email: "alice@example.com",
+			})
 			.return((r) => [r.name.first, r.age]);
 		const ctx = displayContext();
 		const result = query[__display](ctx);

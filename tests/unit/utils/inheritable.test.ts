@@ -150,7 +150,11 @@ describe("inheritableIntoWorkable", () => {
 			[makeWorkable("B", t.number()), makeWorkable("C", t.bool())],
 		];
 
-		const result = inheritableIntoWorkable(arr);
+		// Nested arrays are handled at runtime but not at the type level,
+		// so we cast through unknown to test runtime behavior.
+		const result = inheritableIntoWorkable(
+			arr as unknown as Workable<WorkableContext>[],
+		);
 		expect(isWorkable(result)).toBe(true);
 		expect(result[__type].name).toBe("array");
 

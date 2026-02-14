@@ -10,17 +10,27 @@ import {
 	type WorkableContext,
 } from "./workable";
 
+/** A single inheritable value: a workable field reference or a plain object. */
+export type InheritableElement<C extends WorkableContext> =
+	| Workable<C>
+	| InheritableObject<C>;
+
 export type InheritableObject<C extends WorkableContext> = {
 	[key: string]: Inheritable<C>;
 };
 
-export type InheritableArray<C extends WorkableContext> =
-	readonly Inheritable<C>[];
-
+/**
+ * A composable return value for query projections. Can be a single field
+ * reference, a plain object of inheritable values, or an array of elements.
+ *
+ * Arrays contain {@link InheritableElement} (not full `Inheritable`) to avoid
+ * an infinite type cycle — nested arrays are handled at runtime but not at the
+ * type level. Objects inside arrays, and arrays inside objects, are both
+ * supported.
+ */
 export type Inheritable<C extends WorkableContext> =
-	| Workable<C>
-	| InheritableObject<C>
-	| InheritableArray<C>;
+	| InheritableElement<C>
+	| readonly InheritableElement<C>[];
 
 export type InheritableIntoType<
 	C extends WorkableContext,
@@ -28,12 +38,8 @@ export type InheritableIntoType<
 > =
 	T extends Workable<C, infer U>
 		? U
-		: T extends readonly Inheritable<C>[]
-			? ArrayType<{
-					[K in keyof T]: T[K] extends Inheritable<C>
-						? InheritableIntoType<C, T[K]>
-						: never;
-				}>
+		: T extends readonly (infer E extends Inheritable<C>)[]
+			? ArrayType<InheritableIntoType<C, E>>
 			: T extends InheritableObject<C>
 				? ObjectType<{ [K in keyof T]: InheritableIntoType<C, T[K]> }>
 				: never;
@@ -44,7 +50,7 @@ export type InheritableIntoWorkable<
 > =
 	P extends Workable<C, infer T>
 		? Workable<C, T>
-		: P extends readonly Inheritable<C>[]
+		: P extends readonly any[]
 			? Workable<C, InheritableIntoType<C, P>>
 			: P extends InheritableObject<C>
 				? Workable<C, InheritableIntoType<C, P>>
@@ -89,7 +95,7 @@ export function inheritableIntoWorkable<
 			[__display]: (ctx: DisplayContext) => {
 				return `[${converted.map((v) => v[__display](ctx)).join(", ")}]`;
 			},
-		} as InheritableIntoWorkable<C, T>;
+		} as unknown as InheritableIntoWorkable<C, T>;
 	}
 
 	const converted = Object.fromEntries(

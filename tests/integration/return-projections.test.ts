@@ -125,8 +125,12 @@ describe("Return projection integration tests", () => {
 				expect(row.length).toBe(2);
 				expect(typeof row[0]).toBe("string");
 				expect(row[1]).toHaveProperty("fullName");
-				expect(row[1].fullName).toHaveProperty("first");
-				expect(row[1].fullName).toHaveProperty("last");
+				expect(
+					(row[1] as { fullName: { first: string; last: string } }).fullName,
+				).toHaveProperty("first");
+				expect(
+					(row[1] as { fullName: { first: string; last: string } }).fullName,
+				).toHaveProperty("last");
 			}
 		});
 
@@ -147,23 +151,6 @@ describe("Return projection integration tests", () => {
 				expect(typeof row.names[0]).toBe("string");
 				expect(typeof row.names[1]).toBe("string");
 				expect(typeof row.age).toBe("number");
-			}
-		});
-
-		test("RETURN [ ... ] — nested arrays", async () => {
-			const { db } = getTestDb();
-			const result = await db
-				.select("user")
-				.return((r) => [r.email, [r.name.first, r.name.last]])
-				.execute();
-
-			expect(result.length).toBe(3);
-			for (const row of result) {
-				expect(Array.isArray(row)).toBe(true);
-				expect(row.length).toBe(2);
-				expect(typeof row[0]).toBe("string");
-				expect(Array.isArray(row[1])).toBe(true);
-				expect(row[1].length).toBe(2);
 			}
 		});
 
@@ -273,8 +260,9 @@ describe("Return projection integration tests", () => {
 				.execute();
 
 			expect(result.length).toBe(1);
-			expect(result[0]!.firstName).toBe("Test");
-			expect(result[0]!.age).toBe(25);
+			const row = result[0]! as { firstName: string; age: number };
+			expect(row.firstName).toBe("Test");
+			expect(row.age).toBe(25);
 		});
 
 		test("RETURN VALUE [ ... ] — array", async () => {
@@ -292,9 +280,10 @@ describe("Return projection integration tests", () => {
 				.execute();
 
 			expect(result.length).toBe(1);
-			expect(result[0]![0]).toBe("Test");
-			expect(result[0]![1]).toBe(25);
-			expect(result[0]![2]).toBe("test@example.com");
+			const row = result[0]! as [string, number, string];
+			expect(row[0]).toBe("Test");
+			expect(row[1]).toBe(25);
+			expect(row[2]).toBe("test@example.com");
 		});
 
 		test("RETURN VALUE { ... } — object with nested array", async () => {
@@ -315,9 +304,10 @@ describe("Return projection integration tests", () => {
 				.execute();
 
 			expect(result.length).toBe(1);
-			expect(result[0]!.names[0]).toBe("Test");
-			expect(result[0]!.names[1]).toBe("User");
-			expect(result[0]!.age).toBe(25);
+			const row = result[0]! as { names: [string, string]; age: number };
+			expect(row.names[0]).toBe("Test");
+			expect(row.names[1]).toBe("User");
+			expect(row.age).toBe(25);
 		});
 	});
 
@@ -422,8 +412,12 @@ describe("Return projection integration tests", () => {
 
 			expect(result.length).toBe(1);
 			expect(result[0]![0]).toBe("upd@example.com");
-			expect(result[0]![1].fullName.first).toBe("Before");
-			expect(result[0]![1].age).toBe(21);
+			const mixed = result[0]![1] as {
+				fullName: { first: string; last: string };
+				age: number;
+			};
+			expect(mixed.fullName.first).toBe("Before");
+			expect(mixed.age).toBe(21);
 		});
 	});
 

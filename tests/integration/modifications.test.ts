@@ -212,8 +212,9 @@ describe("Modification methods integration tests", () => {
 			expect(result).toBeDefined();
 			expect(result.length).toBe(1);
 			expect(Array.isArray(result[0])).toBe(true);
-			expect(result[0]![0]).toBe("Array");
-			expect(result[0]![1]).toBe(42);
+			const row = result[0]! as [string, number];
+			expect(row[0]).toBe("Array");
+			expect(row[1]).toBe(42);
 		});
 
 		test("update with array return callback", async () => {
