@@ -102,6 +102,30 @@ describe("SELECT queries", () => {
 		expect(result).toContain("WHERE");
 	});
 
+	test("generates SELECT with array return projection", () => {
+		const query = db.select("user").return((user) => [user.name, user.age]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("SELECT VALUE");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+		expect(result).toContain("FROM");
+	});
+
+	test("generates SELECT with array containing nested object", () => {
+		const query = db
+			.select("user")
+			.return((user) => [user.email, { fullName: user.name }]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("SELECT VALUE");
+		expect(result).toContain("[");
+		expect(result).toContain("fullName:");
+		expect(result).toContain("]");
+	});
+
 	test("generates nested SELECT", () => {
 		const query = db.select("post").return((post) => ({
 			title: post.title,

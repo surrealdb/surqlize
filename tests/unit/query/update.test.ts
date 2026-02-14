@@ -145,6 +145,20 @@ describe("UPDATE queries", () => {
 		expect(result).toContain("RETURN");
 	});
 
+	test("generates UPDATE with array RETURN callback", () => {
+		const query = db
+			.update("user", "alice")
+			.set({ age: 32 })
+			.return((record) => [record.name, record.email]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("UPDATE");
+		expect(result).toContain("RETURN");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+	});
+
 	test("generates UPDATE with TIMEOUT", () => {
 		const query = db.update("user", "alice").set({ age: 32 }).timeout("10s");
 		const ctx = displayContext();

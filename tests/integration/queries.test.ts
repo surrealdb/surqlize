@@ -180,6 +180,58 @@ describe("Complex Queries Integration Tests", () => {
 		});
 	});
 
+	describe("SELECT with array projections", () => {
+		test("selects with array return projection", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((user) => [user.name.first, user.age])
+				.execute();
+
+			expect(result).toBeDefined();
+			expect(result.length).toBeGreaterThan(0);
+			for (const row of result) {
+				expect(Array.isArray(row)).toBe(true);
+				expect(row.length).toBe(2);
+				expect(typeof row[0]).toBe("string");
+				expect(typeof row[1]).toBe("number");
+			}
+		});
+
+		test("selects with single-element array projection", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((user) => [user.email])
+				.execute();
+
+			expect(result).toBeDefined();
+			expect(result.length).toBeGreaterThan(0);
+			for (const row of result) {
+				expect(Array.isArray(row)).toBe(true);
+				expect(row.length).toBe(1);
+				expect(typeof row[0]).toBe("string");
+			}
+		});
+
+		test("selects with array containing nested object", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((user) => [user.email, { fullName: user.name }])
+				.execute();
+
+			expect(result).toBeDefined();
+			expect(result.length).toBeGreaterThan(0);
+			for (const row of result) {
+				expect(Array.isArray(row)).toBe(true);
+				expect(row.length).toBe(2);
+				expect(typeof row[0]).toBe("string");
+				expect(row[1]).toHaveProperty("fullName");
+			}
+		});
+	});
+
 	describe("String functions in queries", () => {
 		test("uses startsWith in WHERE clause", async () => {
 			const { db } = getTestDb();
@@ -208,9 +260,7 @@ describe("Complex Queries Integration Tests", () => {
 		});
 	});
 
-	// Skipped: return projections on UPDATE currently produce an ObjectType result
-	// but SurrealDB returns the raw object fields. Requires parse/type coercion work.
-	describe.skip("Complex UPDATE scenarios", () => {
+	describe("Complex UPDATE scenarios", () => {
 		test("updates with projection return", async () => {
 			const { db } = getTestDb();
 

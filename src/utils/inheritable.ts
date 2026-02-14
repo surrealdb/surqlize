@@ -1,5 +1,5 @@
 import { OrmError, TypeParseError } from "../error";
-import { type AbstractType, ObjectType } from "../types";
+import { type AbstractType, ArrayType, ObjectType } from "../types";
 import type { DisplayContext } from "./display";
 import {
 	__ctx,
@@ -10,14 +10,27 @@ import {
 	type WorkableContext,
 } from "./workable";
 
+/** A single inheritable value: a workable field reference or a plain object. */
+export type InheritableElement<C extends WorkableContext> =
+	| Workable<C>
+	| InheritableObject<C>;
+
 export type InheritableObject<C extends WorkableContext> = {
 	[key: string]: Inheritable<C>;
 };
 
-// TODO: Get inheritable arrays to work
+/**
+ * A composable return value for query projections. Can be a single field
+ * reference, a plain object of inheritable values, or an array of elements.
+ *
+ * Arrays contain {@link InheritableElement} (not full `Inheritable`) to avoid
+ * an infinite type cycle — nested arrays are handled at runtime but not at the
+ * type level. Objects inside arrays, and arrays inside objects, are both
+ * supported.
+ */
 export type Inheritable<C extends WorkableContext> =
-	| Workable<C>
-	| InheritableObject<C>;
+	| InheritableElement<C>
+	| readonly InheritableElement<C>[];
 
 export type InheritableIntoType<
 	C extends WorkableContext,
@@ -25,9 +38,11 @@ export type InheritableIntoType<
 > =
 	T extends Workable<C, infer U>
 		? U
-		: T extends InheritableObject<C>
-			? ObjectType<{ [K in keyof T]: InheritableIntoType<C, T[K]> }>
-			: never;
+		: T extends readonly (infer E extends Inheritable<C>)[]
+			? ArrayType<InheritableIntoType<C, E>>
+			: T extends InheritableObject<C>
+				? ObjectType<{ [K in keyof T]: InheritableIntoType<C, T[K]> }>
+				: never;
 
 export type InheritableIntoWorkable<
 	C extends WorkableContext,
@@ -35,9 +50,11 @@ export type InheritableIntoWorkable<
 > =
 	P extends Workable<C, infer T>
 		? Workable<C, T>
-		: P extends InheritableObject<C>
+		: P extends readonly any[]
 			? Workable<C, InheritableIntoType<C, P>>
-			: never;
+			: P extends InheritableObject<C>
+				? Workable<C, InheritableIntoType<C, P>>
+				: never;
 
 export type InheritableForWorkable<
 	C extends WorkableContext,
@@ -46,11 +63,11 @@ export type InheritableForWorkable<
 > = InheritableIntoWorkable<C, P> extends Workable<C, T> ? P : never;
 
 /**
- * Convert an {@link Inheritable} value (a workable or a plain object of
- * workables) into a single {@link Workable}.
+ * Convert an {@link Inheritable} value (a workable, a plain object of
+ * workables, or an array of workables) into a single {@link Workable}.
  *
- * @throws {TypeParseError} If `value` is not an object.
- * @throws {OrmError} If `value` is an empty object with no keys.
+ * @throws {TypeParseError} If `value` is not an object or array.
+ * @throws {OrmError} If `value` is an empty object or empty array.
  */
 export function inheritableIntoWorkable<
 	C extends WorkableContext,
@@ -62,6 +79,23 @@ export function inheritableIntoWorkable<
 
 	if (isWorkable(value)) {
 		return value as unknown as InheritableIntoWorkable<C, T>;
+	}
+
+	if (Array.isArray(value)) {
+		const converted = value.map((item) =>
+			inheritableIntoWorkable(item as Inheritable<C>),
+		);
+
+		const first = converted[0];
+		if (!first) throw new OrmError("Cannot convert empty array to workable");
+
+		return {
+			[__ctx]: first[__ctx],
+			[__type]: new ArrayType(converted.map((v) => v[__type])),
+			[__display]: (ctx: DisplayContext) => {
+				return `[${converted.map((v) => v[__display](ctx)).join(", ")}]`;
+			},
+		} as unknown as InheritableIntoWorkable<C, T>;
 	}
 
 	const converted = Object.fromEntries(

@@ -99,6 +99,23 @@ describe("INSERT queries", () => {
 		expect(result).toContain("RETURN AFTER");
 	});
 
+	test("generates INSERT with array RETURN callback", () => {
+		const query = db
+			.insert("user", {
+				name: "Eve",
+				age: 50,
+				email: "eve@example.com",
+			})
+			.return((record) => [record.name, record.age]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("INSERT");
+		expect(result).toContain("RETURN");
+		expect(result).toContain("[");
+		expect(result).toContain("]");
+	});
+
 	test("generates INSERT with TIMEOUT", () => {
 		const query = db
 			.insert("user", {
