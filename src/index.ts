@@ -10,3 +10,4 @@ export * from "./query/select";
 export * from "./query/transaction";
 export * from "./query/update";
 export * from "./query/upsert";
+export * from "./functions/standalone";
