@@ -125,6 +125,8 @@ describe("Complex Queries Integration Tests", () => {
 		});
 	});
 
+	// Skipped: nested subqueries via record references (e.g. post.author.select())
+	// are a planned feature that requires RecordType to expose query builder methods.
 	describe.skip("Nested SELECT queries", () => {
 		test("selects with nested record lookup", async () => {
 			const { db } = getTestDb();
@@ -206,6 +208,8 @@ describe("Complex Queries Integration Tests", () => {
 		});
 	});
 
+	// Skipped: return projections on UPDATE currently produce an ObjectType result
+	// but SurrealDB returns the raw object fields. Requires parse/type coercion work.
 	describe.skip("Complex UPDATE scenarios", () => {
 		test("updates with projection return", async () => {
 			const { db } = getTestDb();
