@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Surreal } from "surrealdb";
-import { __display, displayContext, not_, orm, t, table } from "../../../src";
+import { __display, displayContext, not, orm, t, table } from "../../../src";
 
 describe("Not function", () => {
 	const user = table("user", {
@@ -11,9 +11,9 @@ describe("Not function", () => {
 
 	const db = orm(new Surreal(), user);
 
-	test("not_() generates not(", () => {
+	test("not() generates not(", () => {
 		const query = db.select("user").return((user) => ({
-			negated: not_(user.age),
+			negated: not(user.age),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

@@ -880,7 +880,7 @@ db.select("user").return((user) => ({
 }));
 ```
 
-Available standalone function families: `count`, `math` (aggregation + constants), `time`, `crypto`, `rand`, `duration`, `type_`, `encoding`, `geo`, `http`, `meta`, `object`, `parse`, `search`, `session`, `set_`, `sleep`, `value`, `vector`, `bytes`, `not_`.
+Available standalone function families: `count`, `math` (aggregation + constants), `time`, `crypto`, `rand`, `duration`, `type_`, `encoding`, `geo`, `http`, `meta`, `object`, `parse`, `search`, `session`, `set_`, `sleep`, `value`, `vector`, `bytes`, `not`.
 
 ## Advanced Features
 
