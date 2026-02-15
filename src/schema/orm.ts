@@ -2,6 +2,7 @@ import type { SurrealSession } from "surrealdb";
 import { RecordId, type RecordIdValue } from "surrealdb";
 import { OrmError } from "../error";
 import type { Query } from "../query/abstract";
+import { ApiClient } from "../query/api";
 import { BatchQuery } from "../query/batch";
 import { CreateQuery } from "../query/create";
 import { DeleteQuery } from "../query/delete";
@@ -11,9 +12,11 @@ import { SelectQuery } from "../query/select";
 import type { Transaction } from "../query/transaction";
 import { UpdateQuery } from "../query/update";
 import { UpsertQuery } from "../query/upsert";
-import type { ArrayType, RecordType } from "../types";
+import type { AbstractType, ArrayType, RecordType } from "../types";
 import { isWorkable, type Workable, type WorkableContext } from "../utils";
+import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
+import type { FunctionCallable, InferParams } from "./function";
 import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
 import type { TableSchema } from "./table";
 
@@ -292,6 +295,54 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		}
 
 		return new RelateQuery(this, edge, from, to);
+	}
+
+	/**
+	 * Run a user-defined SurrealDB function and return the typed result.
+	 *
+	 * @param fn - A function callable created with {@link fn}.
+	 * @param args - Positional arguments matching the function's parameter types.
+	 *   Omit for functions that take no parameters.
+	 * @returns The typed result of the function execution.
+	 *
+	 * @example
+	 * ```ts
+	 * const greet = fn("greet", [t.string()], t.string());
+	 * const result = await db.run(greet, ["world"]); // typed as string
+	 * ```
+	 */
+	async run<P extends AbstractType[], R extends AbstractType>(
+		fn: FunctionCallable<P, R>,
+		args?: InferParams<P>,
+	): Promise<R["infer"]> {
+		const schema = fn.schema;
+		const result = await this.surreal.run(
+			`fn::${schema.name}`,
+			args as unknown[] | undefined,
+		);
+		return schema.returns.parse(result);
+	}
+
+	/**
+	 * Create a type-safe API client for user-defined API endpoints.
+	 *
+	 * @param endpoints - One or more {@link ApiEndpointSchema} definitions
+	 *   created with {@link api}.
+	 * @returns An {@link ApiClient} with typed HTTP methods.
+	 *
+	 * @example
+	 * ```ts
+	 * const usersEndpoint = api("/users", {
+	 *   get: { response: t.array(user.schema) },
+	 *   post: { request: t.object({ name: t.string() }), response: user.schema },
+	 * });
+	 *
+	 * const client = db.api(usersEndpoint);
+	 * const response = await client.get("/users");
+	 * ```
+	 */
+	api<E extends ApiEndpointSchema[]>(...endpoints: E) {
+		return new ApiClient(this.surreal, endpoints);
 	}
 
 	/**
