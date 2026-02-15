@@ -1,5 +1,6 @@
 export * from "./error";
 export * from "./functions/standalone";
+export * from "./query/api";
 export * from "./query/batch";
 export * from "./query/create";
 export * from "./query/delete";
