@@ -223,6 +223,37 @@ export class RecordType<
 	}
 }
 
+/**
+ * The result of a graph traversal (e.g. `->authored->post`). A traversal yields
+ * an array of record links to the table it lands on, so its inferred type is
+ * `RecordId<Tb>[]`. Carrying the target table name on `.tb` lets `.select()` and
+ * further `.out()`/`.in()` steps resolve against it, while the array `infer`
+ * keeps a bare traversal (dropped straight into a projection) correctly typed.
+ */
+export class GraphType<Tb extends string = string> extends AbstractType<
+	RecordId<Tb>[]
+> {
+	name = "graph" as const;
+	get expected() {
+		return `array<record<${String(this._tb)}>>`;
+	}
+
+	constructor(private _tb: Tb) {
+		super();
+	}
+
+	get tb() {
+		return this._tb;
+	}
+
+	validate(value: unknown): value is this["infer"] {
+		if (!Array.isArray(value)) return false;
+		return value.every(
+			(v) => v instanceof RecordId && String(v.table) === this._tb,
+		);
+	}
+}
+
 export type ObjectTypeInner = Record<string, AbstractType>;
 export class ObjectType<
 	T extends ObjectTypeInner = ObjectTypeInner,

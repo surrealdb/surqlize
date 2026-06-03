@@ -12,6 +12,7 @@ const functions = {
 	any: typeFunctions.any.functions,
 	array: typeFunctions.array.functions,
 	date: typeFunctions.date.functions,
+	graph: typeFunctions.graph.functions,
 	number: typeFunctions.number.functions,
 	option: typeFunctions.option.functions,
 	record: typeFunctions.record.functions,
@@ -22,6 +23,7 @@ interface BaseFunctions {
 	any: typeFunctions.any.Functions;
 	array: typeFunctions.array.Functions;
 	date: typeFunctions.date.Functions;
+	graph: typeFunctions.graph.Functions;
 	number: typeFunctions.number.Functions;
 	option: typeFunctions.option.Functions;
 	record: typeFunctions.record.Functions;

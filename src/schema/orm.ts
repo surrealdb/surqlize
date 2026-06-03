@@ -13,7 +13,7 @@ import { SelectQuery } from "../query/select";
 import type { Transaction } from "../query/transaction";
 import { UpdateQuery } from "../query/update";
 import { UpsertQuery } from "../query/upsert";
-import type { AbstractType, ArrayType, RecordType } from "../types";
+import type { AbstractType, ArrayType, GraphType, RecordType } from "../types";
 import { isWorkable, type Workable, type WorkableContext } from "../utils";
 import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
@@ -98,6 +98,11 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
 	>(rid: Workable<C, RecordType<Tb>>): SelectQuery<this, C, Tb>;
+	// Graph-traversal step (e.g. `user.out("authored")`)
+	select<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(step: Workable<C, GraphType<Tb>>): SelectQuery<this, C, Tb>;
 	select<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
@@ -107,7 +112,10 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	select<
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
-	>(tb: Tb | RecordId<Tb> | Workable<C, RecordType<Tb>>, id?: RecordIdValue) {
+	>(
+		tb: Tb | RecordId<Tb> | Workable<C, RecordType<Tb> | GraphType<Tb>>,
+		id?: RecordIdValue,
+	) {
 		if (tb instanceof RecordId) return new SelectQuery(this, tb);
 		if (isWorkable(tb))
 			return new SelectQuery(this, tb as Workable<C, RecordType<Tb>>);

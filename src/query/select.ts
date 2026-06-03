@@ -3,6 +3,7 @@ import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
 	ArrayType,
+	type GraphType,
 	ObjectType,
 	type ObjectTypeInner,
 	OptionType,
@@ -141,9 +142,12 @@ export class SelectQuery<
 	private _fetchResolvedType?: AbstractType;
 	private _timeout?: string;
 	private tb: T;
-	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
+	private subject: T | RecordId<T> | Workable<C, RecordType<T> | GraphType<T>>;
 
-	constructor(orm: O, subject: T | RecordId<T> | Workable<C, RecordType<T>>) {
+	constructor(
+		orm: O,
+		subject: T | RecordId<T> | Workable<C, RecordType<T> | GraphType<T>>,
+	) {
 		super();
 		this[__ctx] = {
 			orm,
