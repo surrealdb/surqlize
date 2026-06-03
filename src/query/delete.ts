@@ -78,8 +78,10 @@ export class DeleteQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		this._filter = sanitizeWorkable(cb(tb));
-		return this;
+		const filter = sanitizeWorkable(cb(tb));
+		return this.derive((next) => {
+			next._filter = filter;
+		});
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
@@ -108,17 +110,22 @@ export class DeleteQuery<
 			const workable = inheritableIntoWorkable<C, typeof predicable>(
 				predicable,
 			) as unknown as Workable<C, E>;
-			this._return = sanitizeWorkable(workable);
-		} else {
-			this._return = value;
-			this._skipParse = value === "diff";
+			const ret = sanitizeWorkable(workable);
+			return this.derive((next) => {
+				next._return = ret;
+			});
 		}
-		return this;
+		const mode = value;
+		return this.derive((next) => {
+			next._return = mode;
+			next._skipParse = mode === "diff";
+		});
 	}
 
 	timeout(duration: string): this {
-		this._timeout = duration;
-		return this;
+		return this.derive((next) => {
+			next._timeout = duration;
+		});
 	}
 
 	[__display](inp: DisplayContext) {

@@ -84,30 +84,27 @@ export class CreateQuery<
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		applySet(this, data as Record<string, unknown>);
-		return this;
+		return this.derive((next) =>
+			applySet(next, data as Record<string, unknown>),
+		);
 	}
 
 	content(
 		data: E extends ObjectType ? Omit<E["infer"], "id"> : E["infer"],
 	): this {
-		applyContent(this, data);
-		return this;
+		return this.derive((next) => applyContent(next, data));
 	}
 
 	merge(data: Partial<E["infer"]>): this {
-		applyMerge(this, data);
-		return this;
+		return this.derive((next) => applyMerge(next, data));
 	}
 
 	patch(operations: JsonPatchOp[]): this {
-		applyPatch(this, operations);
-		return this;
+		return this.derive((next) => applyPatch(next, operations));
 	}
 
 	replace(data: Partial<E["infer"]>): this {
-		applyReplace(this, data);
-		return this;
+		return this.derive((next) => applyReplace(next, data));
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
@@ -133,17 +130,22 @@ export class CreateQuery<
 
 			const inheritable = value(record);
 			const workable = inheritableIntoWorkable(inheritable);
-			this._return = sanitizeWorkable(workable) as Workable<C>;
-		} else {
-			this._return = value;
-			this._skipParse = value === "diff";
+			const ret = sanitizeWorkable(workable) as Workable<C>;
+			return this.derive((next) => {
+				next._return = ret;
+			});
 		}
-		return this;
+		const mode = value;
+		return this.derive((next) => {
+			next._return = mode;
+			next._skipParse = mode === "diff";
+		});
 	}
 
 	timeout(duration: string): this {
-		this._timeout = duration;
-		return this;
+		return this.derive((next) => {
+			next._timeout = duration;
+		});
 	}
 
 	[__display](inp: DisplayContext) {

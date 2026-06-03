@@ -2,6 +2,7 @@ import { OrmError } from "../error.ts";
 import type { ObjectType } from "../types";
 import type { DisplayContext } from "../utils/display.ts";
 import {
+	escapeIdiomPath,
 	generateSetAssignments,
 	processSetOperators,
 	type SetValue,
@@ -143,7 +144,7 @@ function displaySetUnsetClause(
 	}
 
 	if (state._unset && state._unset.length > 0) {
-		parts.push(`UNSET ${state._unset.join(", ")}`);
+		parts.push(`UNSET ${state._unset.map(escapeIdiomPath).join(", ")}`);
 	}
 
 	return parts.length > 0 ? ` ${parts.join(" ")}` : "";

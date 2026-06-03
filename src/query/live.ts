@@ -29,6 +29,7 @@ import {
 	type FetchPaths,
 	resolveFetchObject,
 } from "./select.ts";
+import { escapeIdiomPath } from "./utils.ts";
 
 /** The underlying SDK subscription returned by `surreal.liveOf()`. */
 type SdkLiveSubscription = Awaited<ReturnType<SurrealSession["liveOf"]>>;
@@ -159,6 +160,23 @@ export class LiveQuery<
 		return this.entry;
 	}
 
+	/** Create a shallow clone of this live query. */
+	private clone(): this {
+		return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+	}
+
+	/**
+	 * Return a shallow {@link clone} with `mutate` applied. Mirrors
+	 * `Query.derive`: chaining methods derive a new builder instead of mutating
+	 * `this`, so a base live query can be safely reused. Mutations must replace
+	 * mutable fields wholesale rather than mutating them in place.
+	 */
+	private derive(mutate: (draft: this) => void): this {
+		const next = this.clone();
+		mutate(next);
+		return next;
+	}
+
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
@@ -177,8 +195,9 @@ export class LiveQuery<
 		) as unknown as Workable<C, R>;
 		const entry = sanitizeWorkable(workable);
 
-		(this as unknown as LiveQuery<O, C, T, R, R["infer"]>)._entry = entry;
-		return this as unknown as LiveQuery<O, C, T, R, R["infer"]>;
+		return this.derive((next) => {
+			(next as unknown as LiveQuery<O, C, T, R, R["infer"]>)._entry = entry;
+		}) as unknown as LiveQuery<O, C, T, R, R["infer"]>;
 	}
 
 	where(
@@ -192,8 +211,10 @@ export class LiveQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		this._filter = sanitizeWorkable(cb(tb));
-		return this;
+		const filter = sanitizeWorkable(cb(tb));
+		return this.derive((next) => {
+			next._filter = filter;
+		});
 	}
 
 	fetch<P extends FetchPaths<O, T>>(
@@ -205,21 +226,19 @@ export class LiveQuery<
 		FetchedSchema<O, E, P>,
 		FetchedSchema<O, E, P>["infer"]
 	> {
-		this._fetch = fields;
-
 		// Reuse SelectQuery's resolved-schema logic so notification values are
 		// validated as the resolved records instead of expecting RecordIds.
 		const currentSchema =
 			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb]!.schema;
-		if (currentSchema instanceof ObjectType) {
-			this._fetchResolvedType = resolveFetchObject(
-				currentSchema,
-				fields,
-				this[__ctx].orm,
-			);
-		}
+		const resolved =
+			currentSchema instanceof ObjectType
+				? resolveFetchObject(currentSchema, fields, this[__ctx].orm)
+				: undefined;
 
-		return this as unknown as LiveQuery<
+		return this.derive((next) => {
+			next._fetch = fields;
+			if (resolved) next._fetchResolvedType = resolved;
+		}) as unknown as LiveQuery<
 			O,
 			C,
 			T,
@@ -233,8 +252,9 @@ export class LiveQuery<
 	 * records. Mutually exclusive with a `.return()` projection.
 	 */
 	diff(): LiveQuery<O, C, T, E, JsonPatchOp[]> {
-		this._diff = true;
-		return this as unknown as LiveQuery<O, C, T, E, JsonPatchOp[]>;
+		return this.derive((next) => {
+			next._diff = true;
+		}) as unknown as LiveQuery<O, C, T, E, JsonPatchOp[]>;
 	}
 
 	private displaySubject(ctx: DisplayContext): string {
@@ -263,7 +283,7 @@ export class LiveQuery<
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
 		if (this._fetch && this._fetch.length > 0)
-			query += /* surql */ ` FETCH ${this._fetch.join(", ")}`;
+			query += /* surql */ ` FETCH ${this._fetch.map(escapeIdiomPath).join(", ")}`;
 
 		return query;
 	}

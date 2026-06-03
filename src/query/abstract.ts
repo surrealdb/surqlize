@@ -54,6 +54,25 @@ export abstract class Query<
 		return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
 	}
 
+	/**
+	 * Return a shallow {@link clone} of this query with `mutate` applied to it.
+	 *
+	 * This is the basis of the immutable builder API: every chaining method
+	 * (`.where()`, `.limit()`, …) derives a *new* query rather than mutating
+	 * `this`, so a partially-built query can be safely reused as the base for
+	 * several divergent queries without their state leaking into one another.
+	 *
+	 * Because the clone is shallow, `mutate` must replace mutable fields
+	 * wholesale (e.g. `next._orderBy = [...next._orderBy ?? [], entry]`) instead
+	 * of mutating them in place — an in-place `push`/property write would also
+	 * affect the original query, which shares the same array/object references.
+	 */
+	protected derive(mutate: (draft: this) => void): this {
+		const next = this.clone();
+		mutate(next);
+		return next;
+	}
+
 	/** Render the query as a SurrealQL string. */
 	toString(): string {
 		const ctx = displayContext();

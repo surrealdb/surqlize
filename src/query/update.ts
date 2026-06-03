@@ -95,33 +95,29 @@ export class UpdateQuery<
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		applySet(this, data as Record<string, unknown>);
-		return this;
+		return this.derive((next) =>
+			applySet(next, data as Record<string, unknown>),
+		);
 	}
 
 	unset(fields: E extends ObjectType ? (keyof E["schema"])[] : string[]): this {
-		applyUnset(this, fields as string[]);
-		return this;
+		return this.derive((next) => applyUnset(next, fields as string[]));
 	}
 
 	content(data: Partial<E["infer"]>): this {
-		applyContent(this, data);
-		return this;
+		return this.derive((next) => applyContent(next, data));
 	}
 
 	merge(data: Partial<E["infer"]>): this {
-		applyMerge(this, data);
-		return this;
+		return this.derive((next) => applyMerge(next, data));
 	}
 
 	patch(operations: JsonPatchOp[]): this {
-		applyPatch(this, operations);
-		return this;
+		return this.derive((next) => applyPatch(next, operations));
 	}
 
 	replace(data: Partial<E["infer"]>): this {
-		applyReplace(this, data);
-		return this;
+		return this.derive((next) => applyReplace(next, data));
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
@@ -133,8 +129,10 @@ export class UpdateQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		this._filter = sanitizeWorkable(cb(tb));
-		return this;
+		const filter = sanitizeWorkable(cb(tb));
+		return this.derive((next) => {
+			next._filter = filter;
+		});
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
@@ -163,17 +161,22 @@ export class UpdateQuery<
 			const workable = inheritableIntoWorkable<C, typeof predicable>(
 				predicable,
 			) as unknown as Workable<C, E>;
-			this._return = sanitizeWorkable(workable);
-		} else {
-			this._return = value;
-			this._skipParse = value === "diff";
+			const ret = sanitizeWorkable(workable);
+			return this.derive((next) => {
+				next._return = ret;
+			});
 		}
-		return this;
+		const mode = value;
+		return this.derive((next) => {
+			next._return = mode;
+			next._skipParse = mode === "diff";
+		});
 	}
 
 	timeout(duration: string): this {
-		this._timeout = duration;
-		return this;
+		return this.derive((next) => {
+			next._timeout = duration;
+		});
 	}
 
 	[__display](inp: DisplayContext) {

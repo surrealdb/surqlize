@@ -1,4 +1,4 @@
-import { Table } from "surrealdb";
+import { escapeIdent, Table } from "surrealdb";
 import { OrmError } from "../error.ts";
 import type { Orm } from "../schema/orm.ts";
 import {
@@ -88,8 +88,10 @@ export class InsertQuery<
 		if (this._data) {
 			throw new OrmError("Cannot use fields() with object-style insert");
 		}
-		this._fields = fields as string[];
-		return this;
+		const fields_ = fields as string[];
+		return this.derive((next) => {
+			next._fields = fields_;
+		});
 	}
 
 	/**
@@ -117,8 +119,9 @@ export class InsertQuery<
 			}
 		}
 
-		this._values = [...(this._values || []), ...rows];
-		return this;
+		return this.derive((next) => {
+			next._values = [...(next._values ?? []), ...rows];
+		});
 	}
 
 	/**
@@ -130,8 +133,9 @@ export class InsertQuery<
 		if (this._onDuplicate) {
 			throw new OrmError("Cannot use both ignore() and onDuplicate()");
 		}
-		this._ignore = true;
-		return this;
+		return this.derive((next) => {
+			next._ignore = true;
+		});
 	}
 
 	/**
@@ -152,8 +156,9 @@ export class InsertQuery<
 		const processedData = processSetOperators(
 			updates as Record<string, unknown>,
 		);
-		this._onDuplicate = processedData;
-		return this;
+		return this.derive((next) => {
+			next._onDuplicate = processedData;
+		});
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
@@ -182,17 +187,22 @@ export class InsertQuery<
 			const workable = inheritableIntoWorkable<C, typeof predicable>(
 				predicable,
 			) as unknown as Workable<C, E>;
-			this._return = sanitizeWorkable(workable);
-		} else {
-			this._return = value;
-			this._skipParse = value === "diff";
+			const ret = sanitizeWorkable(workable);
+			return this.derive((next) => {
+				next._return = ret;
+			});
 		}
-		return this;
+		const mode = value;
+		return this.derive((next) => {
+			next._return = mode;
+			next._skipParse = mode === "diff";
+		});
 	}
 
 	timeout(duration: string): this {
-		this._timeout = duration;
-		return this;
+		return this.derive((next) => {
+			next._timeout = duration;
+		});
 	}
 
 	[__display](inp: DisplayContext) {
@@ -214,7 +224,7 @@ export class InsertQuery<
 
 		// VALUES tuple syntax
 		else if (this._fields && this._values) {
-			query += /* surql */ ` (${this._fields.join(", ")})`;
+			query += /* surql */ ` (${this._fields.map(escapeIdent).join(", ")})`;
 			const valueGroups = this._values.map(
 				(row) => `(${row.map((v) => ctx.var(v)).join(", ")})`,
 			);

@@ -1,5 +1,20 @@
+import { escapeIdent } from "surrealdb";
 import type { AbstractType } from "../types";
 import type { DisplayContext } from "../utils";
+
+/**
+ * Escape a dotted SurrealQL idiom path (e.g. `out.author`) segment by segment.
+ *
+ * Field identifiers are interpolated directly into the rendered query — unlike
+ * values, which are bound as parameters — so each segment is passed through the
+ * SDK's `escapeIdent`: bare identifiers are emitted unchanged, while names that
+ * are not valid bare identifiers (spaces, punctuation, leading digits, …) are
+ * safely quoted. The `.` separators that drive record-link traversal are
+ * preserved between segments.
+ */
+export function escapeIdiomPath(path: string): string {
+	return path.split(".").map(escapeIdent).join(".");
+}
 
 export type SetValue<T extends AbstractType> =
 	| T["infer"]
@@ -40,16 +55,17 @@ export function generateSetAssignments(
 ): string[] {
 	const assignments: string[] = [];
 	for (const [key, value] of Object.entries(data)) {
+		const field = escapeIdiomPath(key);
 		if (value && typeof value === "object" && "+=" in value) {
 			assignments.push(
-				`${key} += ${ctx.var((value as { "+=": unknown })["+="])}`,
+				`${field} += ${ctx.var((value as { "+=": unknown })["+="])}`,
 			);
 		} else if (value && typeof value === "object" && "-=" in value) {
 			assignments.push(
-				`${key} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
+				`${field} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 			);
 		} else {
-			assignments.push(`${key} = ${ctx.var(value)}`);
+			assignments.push(`${field} = ${ctx.var(value)}`);
 		}
 	}
 	return assignments;

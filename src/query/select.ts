@@ -26,6 +26,7 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
+import { escapeIdiomPath } from "./utils.ts";
 
 type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
 	O["tables"][T]["schema"] extends ObjectType<infer F>
@@ -194,8 +195,9 @@ export class SelectQuery<
 		) as unknown as Workable<C, R>;
 		const entry = sanitizeWorkable(workable);
 
-		(this as unknown as SelectQuery<O, C, T, R>)._entry = entry;
-		return this as unknown as SelectQuery<O, C, T, R>;
+		return this.derive((next) => {
+			(next as unknown as SelectQuery<O, C, T, R>)._entry = entry;
+		}) as unknown as SelectQuery<O, C, T, R>;
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
@@ -207,18 +209,22 @@ export class SelectQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		this._filter = sanitizeWorkable(cb(tb));
-		return this;
+		const filter = sanitizeWorkable(cb(tb));
+		return this.derive((next) => {
+			next._filter = filter;
+		});
 	}
 
 	start(start: number) {
-		this._start = start;
-		return this;
+		return this.derive((next) => {
+			next._start = start;
+		});
 	}
 
 	limit(limit: number) {
-		this._limit = limit;
-		return this;
+		return this.derive((next) => {
+			next._limit = limit;
+		});
 	}
 
 	private _addOrderBy(
@@ -226,24 +232,27 @@ export class SelectQuery<
 		direction?: "ASC" | "DESC",
 		opts?: { collate?: boolean; numeric?: boolean },
 	): this {
-		if (!this._orderBy) this._orderBy = [];
-		if (typeof field === "string") {
-			this._orderBy.push({ field, direction, ...opts });
-		} else {
-			const record = actionable({
-				[__ctx]: this[__ctx],
-				[__type]: this.entry,
-				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$this" : "$parent";
-				},
-			}) as Actionable<C, E>;
-			this._orderBy.push({
-				field: sanitizeWorkable(field(record)),
-				direction,
-				...opts,
-			});
-		}
-		return this;
+		const entry =
+			typeof field === "string"
+				? { field, direction, ...opts }
+				: {
+						field: sanitizeWorkable(
+							field(
+								actionable({
+									[__ctx]: this[__ctx],
+									[__type]: this.entry,
+									[__display]: ({ contextId }) => {
+										return contextId === this[__ctx].id ? "$this" : "$parent";
+									},
+								}) as Actionable<C, E>,
+							),
+						),
+						direction,
+						...opts,
+					};
+		return this.derive((next) => {
+			next._orderBy = [...(next._orderBy ?? []), entry];
+		});
 	}
 
 	orderBy(
@@ -268,25 +277,26 @@ export class SelectQuery<
 	}
 
 	groupBy(...fields: FieldKeys<O, T>[]): this {
-		this._groupBy = fields;
-		return this;
+		return this.derive((next) => {
+			next._groupBy = fields;
+		});
 	}
 
 	groupAll(): this {
-		this._groupBy = "ALL";
-		return this;
+		return this.derive((next) => {
+			next._groupBy = "ALL";
+		});
 	}
 
 	split(...fields: FieldKeys<O, T>[]): this {
-		this._split = fields;
-		return this;
+		return this.derive((next) => {
+			next._split = fields;
+		});
 	}
 
 	fetch<P extends FetchPaths<O, T>>(
 		...fields: P[]
 	): SelectQuery<O, C, T, FetchedSchema<O, E, P>> {
-		this._fetch = fields;
-
 		// Build a resolved schema where fetched record references are replaced
 		// with the referenced table's ObjectType schema, recursing into nested
 		// paths so parse() validates the resolved objects instead of expecting
@@ -294,20 +304,21 @@ export class SelectQuery<
 		// `out.author` resolves both `out` and its nested `author`.
 		const currentSchema =
 			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb]!.schema;
-		if (currentSchema instanceof ObjectType) {
-			this._fetchResolvedType = resolveFetchObject(
-				currentSchema,
-				fields,
-				this[__ctx].orm,
-			);
-		}
+		const resolved =
+			currentSchema instanceof ObjectType
+				? resolveFetchObject(currentSchema, fields, this[__ctx].orm)
+				: undefined;
 
-		return this as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>>;
+		return this.derive((next) => {
+			next._fetch = fields;
+			if (resolved) next._fetchResolvedType = resolved;
+		}) as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>>;
 	}
 
 	timeout(duration: string): this {
-		this._timeout = duration;
-		return this;
+		return this.derive((next) => {
+			next._timeout = duration;
+		});
 	}
 
 	private displaySubject(ctx: DisplayContext): string {
@@ -322,7 +333,7 @@ export class SelectQuery<
 		const orderParts = this._orderBy.map((spec) => {
 			let part =
 				typeof spec.field === "string"
-					? spec.field
+					? escapeIdiomPath(spec.field)
 					: spec.field[__display](ctx);
 
 			if (spec.collate) part += " COLLATE";
@@ -354,13 +365,13 @@ export class SelectQuery<
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
 		if (this._split && this._split.length > 0)
-			query += /* surql */ ` SPLIT ${this._split.join(", ")}`;
+			query += /* surql */ ` SPLIT ${this._split.map(escapeIdiomPath).join(", ")}`;
 
 		if (this._groupBy) {
 			query +=
 				this._groupBy === "ALL"
 					? " GROUP ALL"
-					: /* surql */ ` GROUP BY ${this._groupBy.join(", ")}`;
+					: /* surql */ ` GROUP BY ${this._groupBy.map(escapeIdiomPath).join(", ")}`;
 		}
 
 		query += this.displayOrderBy(ctx);
@@ -369,7 +380,7 @@ export class SelectQuery<
 		if (start) query += /* surql */ ` START ${start}`;
 
 		if (this._fetch && this._fetch.length > 0)
-			query += /* surql */ ` FETCH ${this._fetch.join(", ")}`;
+			query += /* surql */ ` FETCH ${this._fetch.map(escapeIdiomPath).join(", ")}`;
 
 		if (this._timeout)
 			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;

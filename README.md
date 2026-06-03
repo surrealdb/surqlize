@@ -55,6 +55,17 @@ bun add surqlize
 npm install surqlize
 ```
 
+### Requirements
+
+- **SurrealDB server ≥ 3.0** — surqlize targets the SurrealDB 3.x server. Some
+  features degrade or are unavailable on older servers; for example, filtering
+  or projecting a live query relies on query parameters that require **server ≥
+  3.0** (`FETCH` requires ≥ 2.2.0).
+- **`surrealdb` JavaScript SDK ≥ 2.0.0-alpha.18** — declared as a peer
+  dependency, so install it alongside surqlize. (The SDK and the server are
+  versioned independently: the 2.x SDK is what connects to a 3.x server.)
+- **TypeScript ≥ 5.0** for full type inference.
+
 ## Quick start
 
 ```typescript
