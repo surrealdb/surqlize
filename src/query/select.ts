@@ -2,8 +2,10 @@ import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
-	type ArrayType,
+	ArrayType,
 	ObjectType,
+	type ObjectTypeInner,
+	OptionType,
 	RecordType,
 	t,
 } from "../types";
@@ -30,23 +32,84 @@ type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
 		? keyof F & string
 		: string;
 
-/** Resolve a single field type: if it's a RecordType referencing a known table, replace with that table's schema. */
-type ResolveField<O extends Orm, F extends AbstractType> =
+/**
+ * Every valid FETCH path for a table: a top-level field, or a dotted path
+ * rooted at a top-level field (e.g. `"out"` or `"out.author"`). Only the head
+ * segment is constrained to a known field; deeper segments are unconstrained,
+ * mirroring SurrealDB which validates the rest of the path at query time.
+ */
+type FetchPaths<O extends Orm, T extends keyof O["tables"] & string> =
+	| FieldKeys<O, T>
+	| `${FieldKeys<O, T>}.${string}`;
+
+/** The first segment of a dotted path, or the whole path when it has no dot. */
+type PathHead<P extends string> = P extends `${infer H}.${string}` ? H : P;
+
+/** The remainder of every path whose head segment is `K`. */
+type PathTail<K extends string, P extends string> = P extends `${K}.${infer R}`
+	? R
+	: never;
+
+/**
+ * Resolve a record link to the schema it points at, unwrapping `option<…>` and
+ * `array<…>` wrappers. Non-record types (and records to unknown tables) are
+ * left untouched.
+ */
+type ResolveLink<O extends Orm, F extends AbstractType> =
 	F extends RecordType<infer Tb>
 		? Tb extends keyof O["tables"] & string
 			? O["tables"][Tb]["schema"]
 			: F
-		: F;
+		: F extends OptionType<infer Inner extends AbstractType>
+			? OptionType<ResolveLink<O, Inner>>
+			: F extends ArrayType<infer Inner extends AbstractType>
+				? ArrayType<ResolveLink<O, Inner>>
+				: F;
 
-/** Transform an ObjectType by resolving RecordType fields that appear in the Fields union. */
+/**
+ * Resolve a record link and then continue fetching `Tails` within the resolved
+ * object. Used when a fetch path descends past this field (e.g. `out.author`
+ * descends through `out`).
+ */
+type ResolveNested<
+	O extends Orm,
+	F extends AbstractType,
+	Tails extends string,
+> =
+	F extends RecordType<infer Tb>
+		? Tb extends keyof O["tables"] & string
+			? FetchedSchema<O, O["tables"][Tb]["schema"], Tails>
+			: F
+		: F extends OptionType<infer Inner extends AbstractType>
+			? OptionType<ResolveNested<O, Inner, Tails>>
+			: F extends ArrayType<infer Inner extends AbstractType>
+				? ArrayType<ResolveNested<O, Inner, Tails>>
+				: F extends ObjectType<ObjectTypeInner>
+					? FetchedSchema<O, F, Tails>
+					: F;
+
+/** Resolve a single fetched field given the nested paths (if any) beneath it. */
+type FetchField<O extends Orm, F extends AbstractType, Tails extends string> = [
+	Tails,
+] extends [never]
+	? ResolveLink<O, F>
+	: ResolveNested<O, F, Tails>;
+
+/**
+ * Transform an ObjectType by resolving every fetched field. A field is resolved
+ * when it is the head of any fetch path; nested paths recurse into the resolved
+ * schema. Matches SurrealDB, which expands intermediate records along a path.
+ */
 type FetchedSchema<
 	O extends Orm,
 	E extends AbstractType,
-	Fields extends string,
+	Paths extends string,
 > =
 	E extends ObjectType<infer S>
 		? ObjectType<{
-				[K in keyof S]: K extends Fields ? ResolveField<O, S[K]> : S[K];
+				[K in keyof S]: K extends PathHead<Paths>
+					? FetchField<O, S[K], PathTail<K & string, Paths>>
+					: S[K];
 			}>
 		: E;
 
@@ -213,33 +276,27 @@ export class SelectQuery<
 		return this;
 	}
 
-	fetch<F extends FieldKeys<O, T>>(
-		...fields: (F | `${F}.${string}`)[]
-	): SelectQuery<O, C, T, FetchedSchema<O, E, F>> {
+	fetch<P extends FetchPaths<O, T>>(
+		...fields: P[]
+	): SelectQuery<O, C, T, FetchedSchema<O, E, P>> {
 		this._fetch = fields;
 
-		// Build a resolved schema where fetched RecordType fields are replaced
-		// with the referenced table's ObjectType schema, so parse() validates
-		// the resolved objects instead of expecting RecordIds.
+		// Build a resolved schema where fetched record references are replaced
+		// with the referenced table's ObjectType schema, recursing into nested
+		// paths so parse() validates the resolved objects instead of expecting
+		// RecordIds. SurrealDB expands every record along a fetched path, so
+		// `out.author` resolves both `out` and its nested `author`.
 		const currentSchema =
 			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb]!.schema;
 		if (currentSchema instanceof ObjectType) {
-			const resolved = { ...currentSchema.schema };
-			for (const field of fields) {
-				// Only resolve top-level field names (ignore "field.nested" paths)
-				const topLevel = field.includes(".") ? field.split(".")[0]! : field;
-				const fieldType = resolved[topLevel];
-				if (fieldType instanceof RecordType && fieldType.tb) {
-					const targetTable = this[__ctx].orm.tables[fieldType.tb as string];
-					if (targetTable) {
-						resolved[topLevel] = targetTable.schema;
-					}
-				}
-			}
-			this._fetchResolvedType = new ObjectType(resolved);
+			this._fetchResolvedType = resolveFetchObject(
+				currentSchema,
+				fields,
+				this[__ctx].orm,
+			);
 		}
 
-		return this as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, F>>;
+		return this as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>>;
 	}
 
 	timeout(duration: string): this {
@@ -313,4 +370,63 @@ export class SelectQuery<
 
 		return `(${query})`;
 	}
+}
+
+/**
+ * Resolve the fetched fields of an object schema at runtime, mirroring
+ * {@link FetchedSchema} at the value level. Fetch paths are grouped by their
+ * head segment; each head is resolved once and any deeper segments recurse into
+ * the resolved schema.
+ */
+function resolveFetchObject(
+	schema: ObjectType,
+	paths: string[],
+	orm: Orm,
+): ObjectType {
+	// Group paths by head segment, collecting the remaining (nested) paths.
+	const tailsByHead = new Map<string, string[]>();
+	for (const path of paths) {
+		const dot = path.indexOf(".");
+		const head = dot === -1 ? path : path.slice(0, dot);
+		const tail = dot === -1 ? undefined : path.slice(dot + 1);
+		const tails = tailsByHead.get(head) ?? [];
+		if (tail !== undefined) tails.push(tail);
+		tailsByHead.set(head, tails);
+	}
+
+	const resolved: ObjectTypeInner = { ...schema.schema };
+	for (const [head, tails] of tailsByHead) {
+		const fieldType = resolved[head];
+		if (fieldType) resolved[head] = resolveFetchField(fieldType, tails, orm);
+	}
+	return new ObjectType(resolved);
+}
+
+/**
+ * Resolve a single fetched field: expand record links (unwrapping `option<…>`
+ * and `array<…>`) to the referenced table's schema, then continue resolving any
+ * nested paths within it. Unknown or non-record fields are returned unchanged.
+ */
+function resolveFetchField(
+	fieldType: AbstractType,
+	tails: string[],
+	orm: Orm,
+): AbstractType {
+	if (fieldType instanceof RecordType && fieldType.tb) {
+		const target = orm.tables[fieldType.tb as string];
+		if (!target) return fieldType;
+		return tails.length === 0
+			? target.schema
+			: resolveFetchObject(target.schema, tails, orm);
+	}
+	if (fieldType instanceof OptionType) {
+		return new OptionType(resolveFetchField(fieldType.schema, tails, orm));
+	}
+	if (fieldType instanceof ArrayType && !Array.isArray(fieldType.schema)) {
+		return new ArrayType(resolveFetchField(fieldType.schema, tails, orm));
+	}
+	if (fieldType instanceof ObjectType && tails.length > 0) {
+		return resolveFetchObject(fieldType, tails, orm);
+	}
+	return fieldType;
 }

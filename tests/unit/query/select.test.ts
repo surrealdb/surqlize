@@ -4,6 +4,7 @@ import {
 	__display,
 	and,
 	displayContext,
+	edge,
 	or,
 	orm,
 	t,
@@ -432,6 +433,138 @@ describe("SELECT FETCH", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("FETCH author.profile");
+	});
+});
+
+describe("SELECT FETCH nested resolution", () => {
+	const author = table("author", {
+		name: t.string(),
+	});
+
+	const product = table("product", {
+		title: t.string(),
+		author: t.record("author"),
+		tags: t.array(t.record("author")),
+		featured: t.option(t.record("author")),
+	});
+
+	const purchased = edge("user", "purchased", "product", {
+		moment: t.date(),
+	});
+
+	const db = orm(new Surreal(), author, product, purchased);
+
+	const authorRid = new RecordId("author", "alice");
+	const productRid = new RecordId("product", "widget");
+	const userRid = new RecordId("user", "bob");
+	const purchasedRid = new RecordId("purchased", "x");
+	const authorObj = { id: authorRid, name: "Alice" };
+
+	test("fetching a record link expands it but leaves nested links alone", () => {
+		const query = db.select("purchased").fetch("out");
+
+		const fetchedNestedLinks = {
+			id: purchasedRid,
+			in: userRid,
+			out: {
+				id: productRid,
+				title: "Widget",
+				author: authorRid,
+				tags: [],
+				featured: undefined,
+			},
+			moment: new Date(),
+		};
+		expect(query.entry.validate(fetchedNestedLinks)).toBe(true);
+
+		// `out` must be an object now, not a RecordId
+		const unfetchedOut = { ...fetchedNestedLinks, out: productRid };
+		expect(query.entry.validate(unfetchedOut)).toBe(false);
+	});
+
+	test("fetching a nested path (out.author) expands the whole chain", () => {
+		const query = db.select("purchased").fetch("out", "out.author");
+
+		const fullyFetched = {
+			id: purchasedRid,
+			in: userRid,
+			out: {
+				id: productRid,
+				title: "Widget",
+				author: authorObj,
+				tags: [],
+				featured: undefined,
+			},
+			moment: new Date(),
+		};
+		expect(query.entry.validate(fullyFetched)).toBe(true);
+
+		// Leaving the nested author as a RecordId must now fail validation
+		const nestedStillLink = {
+			...fullyFetched,
+			out: { ...fullyFetched.out, author: authorRid },
+		};
+		expect(query.entry.validate(nestedStillLink)).toBe(false);
+	});
+
+	test("fetching out.author alone still expands the intermediate out", () => {
+		// SurrealDB expands every record along a fetched path.
+		const query = db.select("purchased").fetch("out.author");
+
+		const sample = {
+			id: purchasedRid,
+			in: userRid,
+			out: {
+				id: productRid,
+				title: "Widget",
+				author: authorObj,
+				tags: [],
+				featured: undefined,
+			},
+			moment: new Date(),
+		};
+		expect(query.entry.validate(sample)).toBe(true);
+
+		const outNotExpanded = { ...sample, out: productRid };
+		expect(query.entry.validate(outNotExpanded)).toBe(false);
+	});
+
+	test("resolves record links inside array and option wrappers", () => {
+		const query = db.select("product").fetch("tags", "featured");
+
+		const sample = {
+			id: productRid,
+			title: "Widget",
+			author: authorRid, // not fetched -> stays a RecordId
+			tags: [authorObj, { id: new RecordId("author", "bob"), name: "Bob" }],
+			featured: authorObj,
+		};
+		expect(query.entry.validate(sample)).toBe(true);
+
+		// option<record> resolves to option<author> — undefined is still valid
+		const noneFeatured = { ...sample, featured: undefined };
+		expect(query.entry.validate(noneFeatured)).toBe(true);
+
+		// array elements must be expanded objects, not RecordIds
+		const tagsStillLinks = { ...sample, tags: [authorRid] };
+		expect(query.entry.validate(tagsStillLinks)).toBe(false);
+	});
+
+	test("result type reflects the resolved nested shape", () => {
+		const query = db.select("purchased").fetch("out", "out.author");
+		type Row = t.infer<typeof query>[number];
+
+		// Compile-only assertions: this function is never invoked, so the nested
+		// property accesses are type-checked without running. They only compile
+		// when `out` and `out.author` resolve to objects and `in` stays a link.
+		const typeAssertions = (row: Row) => {
+			const title: string = row.out.title;
+			const name: string = row.out.author.name;
+			const inLink: RecordId<"user"> = row.in;
+			return [title, name, inLink];
+		};
+
+		expect(typeof typeAssertions).toBe("function");
 	});
 });
 

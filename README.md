@@ -260,6 +260,26 @@ const deepFetch = db.select("post")
   .fetch("author", "comments");
 ```
 
+`fetch` also follows nested record paths. Like SurrealDB, fetching a nested
+path expands every record link along the way, and the result type is resolved
+accordingly — `out` becomes the linked record's object, and `out.author`
+expands the `author` link inside it:
+
+```typescript
+// purchased is an edge: user ->purchased-> product, and product.author -> author
+const purchases = await db.select("purchased")
+  .fetch("out", "out.author")
+  .execute();
+
+purchases[0].out.title;        // string  (product fetched)
+purchases[0].out.author.name;  // string  (nested author fetched)
+purchases[0].in;               // RecordId<"user">  (left as a link)
+```
+
+Record links wrapped in `option<…>` or `array<…>` are resolved too, so
+`fetch("tags")` on an `array<record<tag>>` field yields an array of full `tag`
+objects.
+
 #### Splitting arrays with SPLIT
 
 ```typescript
