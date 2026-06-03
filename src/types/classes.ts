@@ -185,6 +185,18 @@ export class OptionType<T extends AbstractType> extends AbstractType<
 	validate(value: unknown): value is this["infer"] {
 		return value === undefined || this.schema.validate(value);
 	}
+
+	/**
+	 * Parse `value` against the inner schema, returning `undefined` when the
+	 * value is absent. Delegates to the inner type so conversions (e.g. dates)
+	 * are applied.
+	 *
+	 * @throws {TypeParseError} If `value` is defined but fails the inner schema.
+	 */
+	parse(value: unknown): this["infer"] {
+		if (value === undefined) return undefined;
+		return this.schema.parse(value);
+	}
 }
 
 export class RecordType<
@@ -246,18 +258,21 @@ export class ObjectType<
 	}
 
 	/**
-	 * Validate every field of `value` against the object schema.
+	 * Validate every field of `value` against the object schema, returning a new
+	 * object whose schema fields hold the parsed (and possibly converted) values.
 	 *
 	 * @throws {TypeParseError} If `value` is not an object or a field fails validation.
 	 */
 	parse(value: unknown): this["infer"] {
 		if (typeof value !== "object" || value === null)
 			throw new TypeParseError(this.name, this.expected, value);
+		const source = value as Record<string, unknown>;
+		const result: Record<string, unknown> = { ...source };
 		for (const key in this.schema) {
-			this.schema[key]!.parse((value as this["infer"])[key]);
+			result[key] = this.schema[key]!.parse(source[key]);
 		}
 
-		return value as this["infer"];
+		return result as this["infer"];
 	}
 
 	get(prop: string | number): [AbstractType, string] {
@@ -315,7 +330,8 @@ export class ArrayType<
 	}
 
 	/**
-	 * Validate every element of `value` against the array or tuple schema.
+	 * Validate every element of `value` against the array or tuple schema,
+	 * returning a new array of the parsed (and possibly converted) elements.
 	 *
 	 * @throws {TypeParseError} If `value` is not an array, has the wrong length
 	 *   (tuple), or an element fails validation.
@@ -323,18 +339,13 @@ export class ArrayType<
 	parse(value: unknown): this["infer"] {
 		if (!Array.isArray(value))
 			throw new TypeParseError(this.name, this.expected, value);
-		if (Array.isArray(this.schema)) {
-			if (this.schema.length !== value.length)
+		const schema = this.schema;
+		if (Array.isArray(schema)) {
+			if (schema.length !== value.length)
 				throw new TypeParseError(this.name, this.expected, value);
-			for (let i = 0; i < this.schema.length; i++) {
-				this.schema[i]!.parse(value[i]);
-			}
-		} else {
-			for (const item of value) {
-				this.schema.parse(item);
-			}
+			return schema.map((item, i) => item.parse(value[i])) as this["infer"];
 		}
-		return value as this["infer"];
+		return value.map((item) => schema.parse(item)) as this["infer"];
 	}
 
 	get(prop: number): [AbstractType, string] {
@@ -386,5 +397,18 @@ export class UnionType<T extends AbstractType[]> extends AbstractType<
 			if (schema.validate(value)) return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Parse `value` against the first matching member, delegating so that member
+	 * conversions (e.g. dates) are applied.
+	 *
+	 * @throws {TypeParseError} If `value` matches none of the members.
+	 */
+	parse(value: unknown): this["infer"] {
+		for (const schema of this.schema) {
+			if (schema.validate(value)) return schema.parse(value) as this["infer"];
+		}
+		throw new TypeParseError(this.name, this.expected, value);
 	}
 }

@@ -277,6 +277,67 @@ describe("Return projection integration tests", () => {
 				expect(row.when).toBeDefined();
 			}
 		});
+
+		// ─── Date conversion ─────────────────────────────────────────────────
+
+		test("RETURN VALUE <field> — single date field is a JS Date", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((r) => r.created)
+				.execute();
+
+			expect(result.length).toBe(3);
+			for (const created of result) {
+				expect(created).toBeInstanceOf(Date);
+			}
+		});
+
+		test("RETURN { ... } — date nested in object is a JS Date", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((p) => ({ when: p.created }))
+				.execute();
+
+			expect(result.length).toBe(3);
+			for (const row of result) {
+				expect(row.when).toBeInstanceOf(Date);
+			}
+		});
+
+		test("RETURN [ ... ] — date nested in array is a JS Date", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((p) => [p.email, p.created])
+				.execute();
+
+			expect(result.length).toBe(3);
+			for (const row of result) {
+				expect(typeof row[0]).toBe("string");
+				expect(row[1]).toBeInstanceOf(Date);
+			}
+		});
+
+		test("RETURN { ... } — dates deeply nested in object and array", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.return((p) => ({
+					meta: { timestamps: [p.created, p.updated] },
+				}))
+				.execute();
+
+			expect(result.length).toBe(3);
+			for (const row of result) {
+				expect(Array.isArray(row.meta.timestamps)).toBe(true);
+				expect(row.meta.timestamps.length).toBe(2);
+				for (const ts of row.meta.timestamps) {
+					expect(ts).toBeInstanceOf(Date);
+				}
+			}
+		});
 	});
 
 	// ─── CREATE ────────────────────────────────────────────────────────────

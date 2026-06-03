@@ -270,10 +270,27 @@ describe("Type builders", () => {
 			expect(() => t.bool().parse(1)).toThrow(TypeParseError);
 		});
 
-		test("ObjectType.parse() returns valid object", () => {
+		test("ObjectType.parse() returns parsed object", () => {
 			const type = t.object({ name: t.string() });
 			const val = { name: "Alice" };
-			expect(type.parse(val)).toBe(val);
+			expect(type.parse(val)).toEqual(val);
+		});
+
+		test("ObjectType.parse() converts nested dates", () => {
+			const type = t.object({ when: t.date() });
+			const fakeDateTime = { toDate: () => new Date("2024-01-01") };
+			const result = type.parse({ when: fakeDateTime });
+			expect(result.when).toBeInstanceOf(Date);
+			expect(result.when.getFullYear()).toBe(2024);
+		});
+
+		test("ObjectType.parse() preserves keys outside the schema", () => {
+			const type = t.object({ name: t.string() });
+			const result = type.parse({ name: "Alice", extra: 42 }) as Record<
+				string,
+				unknown
+			>;
+			expect(result.extra).toBe(42);
 		});
 
 		test("ObjectType.parse() throws for null", () => {
@@ -288,10 +305,28 @@ describe("Type builders", () => {
 			);
 		});
 
-		test("ArrayType.parse() returns valid array", () => {
+		test("ArrayType.parse() returns parsed array", () => {
 			const type = t.array(t.string());
 			const val = ["a", "b"];
-			expect(type.parse(val)).toBe(val);
+			expect(type.parse(val)).toEqual(val);
+		});
+
+		test("ArrayType.parse() converts dates in a homogeneous array", () => {
+			const type = t.array(t.date());
+			const fakeDateTime = { toDate: () => new Date("2024-01-01") };
+			const result = type.parse([fakeDateTime, fakeDateTime]);
+			expect(result.length).toBe(2);
+			for (const item of result) {
+				expect(item).toBeInstanceOf(Date);
+			}
+		});
+
+		test("ArrayType.parse() converts dates in a tuple", () => {
+			const type = t.array([t.string(), t.date()]);
+			const fakeDateTime = { toDate: () => new Date("2024-01-01") };
+			const result = type.parse(["a", fakeDateTime]);
+			expect(result[0]).toBe("a");
+			expect(result[1]).toBeInstanceOf(Date);
 		});
 
 		test("ArrayType.parse() throws for non-array", () => {
@@ -321,6 +356,31 @@ describe("Type builders", () => {
 
 		test("DateType.parse() throws for invalid value", () => {
 			expect(() => t.date().parse("2024-01-01")).toThrow(TypeParseError);
+		});
+
+		test("OptionType.parse() returns undefined for absent value", () => {
+			expect(t.option(t.date()).parse(undefined)).toBeUndefined();
+		});
+
+		test("OptionType.parse() converts the inner value", () => {
+			const fakeDateTime = { toDate: () => new Date("2024-01-01") };
+			expect(t.option(t.date()).parse(fakeDateTime)).toBeInstanceOf(Date);
+		});
+
+		test("OptionType.parse() throws for a defined invalid value", () => {
+			expect(() => t.option(t.date()).parse("nope")).toThrow(TypeParseError);
+		});
+
+		test("UnionType.parse() converts via the matching member", () => {
+			const type = t.union([t.string(), t.date()]);
+			const fakeDateTime = { toDate: () => new Date("2024-01-01") };
+			expect(type.parse(fakeDateTime)).toBeInstanceOf(Date);
+			expect(type.parse("hello")).toBe("hello");
+		});
+
+		test("UnionType.parse() throws when no member matches", () => {
+			const type = t.union([t.string(), t.number()]);
+			expect(() => type.parse(true)).toThrow(TypeParseError);
 		});
 	});
 
