@@ -5,11 +5,9 @@ import {
 	__type,
 	type DisplayContext,
 	displayContext,
-	sanitizeWorkable,
 	type Workable,
 	type WorkableContext,
 } from "../utils";
-import { type Actionable, actionable } from "../utils/actionable";
 
 /**
  * Abstract base class for all query types. Implements `Workable` so queries can
@@ -80,7 +78,7 @@ export abstract class Query<
 	}
 
 	// biome-ignore lint/suspicious/noThenProperty: entire point of the class
-	get then(): Then<this> & Actionable<C, T> {
+	get then(): Then<this> & ThenAccessors<this> {
 		const fn = <TResult1 = this["type"], TResult2 = never>(
 			onFulfilled?:
 				| ((value: this["type"]) => TResult1 | PromiseLike<TResult1>)
@@ -94,9 +92,28 @@ export abstract class Query<
 			return this.execute().then(onFulfilled, onRejected);
 		};
 
-		const workable = sanitizeWorkable(this);
-		const functions = actionable(workable);
-		return Object.assign(fn, functions) as Then<this> & Actionable<C, T>;
+		// Convenience accessors that execute the query and index into the
+		// resolved result array client-side. All queries return arrays, so these
+		// extract a single record. See README "Accessing Single Records".
+		const val = (): Promise<ResultElement<this["type"]> | undefined> =>
+			this.execute().then(
+				(result) =>
+					(Array.isArray(result) ? result.at(0) : result) as
+						| ResultElement<this["type"]>
+						| undefined,
+			);
+
+		const at = (
+			index: number,
+		): Promise<ResultElement<this["type"]> | undefined> =>
+			this.execute().then(
+				(result) =>
+					(Array.isArray(result) ? result.at(index) : undefined) as
+						| ResultElement<this["type"]>
+						| undefined,
+			);
+
+		return Object.assign(fn, { val, at }) as Then<this> & ThenAccessors<this>;
 	}
 
 	/** Execute the query against SurrealDB and return the parsed result. */
@@ -123,3 +140,20 @@ type Then<Q extends Query> = <TResult1 = Q["type"], TResult2 = never>(
 		| undefined
 		| null,
 ) => Promise<TResult1 | TResult2>;
+
+/** The element type of an array result, or the result itself if not an array. */
+type ResultElement<T> = T extends readonly (infer E)[] ? E : T;
+
+/**
+ * Convenience accessors hung off {@link Query.then} for reaching into a query's
+ * result array without first awaiting it into a variable.
+ */
+type ThenAccessors<Q extends Query> = {
+	/** Execute the query and resolve to the first result, or `undefined`. */
+	val(): Promise<ResultElement<Q["type"]> | undefined>;
+	/**
+	 * Execute the query and resolve to the result at `index`, or `undefined`.
+	 * Negative indexes count from the end (e.g. `-1` is the last result).
+	 */
+	at(index: number): Promise<ResultElement<Q["type"]> | undefined>;
+};
