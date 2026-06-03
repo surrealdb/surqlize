@@ -243,7 +243,7 @@ describe("SELECT ORDER BY", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("ORDER BY");
-		expect(result).toContain('["name"]["last"]');
+		expect(result).toContain(".name.last");
 		expect(result).toContain("ASC");
 	});
 
@@ -256,8 +256,8 @@ describe("SELECT ORDER BY", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("ORDER BY");
-		expect(result).toContain('["name"]["last"] ASC');
-		expect(result).toContain('["name"]["first"] ASC');
+		expect(result).toContain(".name.last ASC");
+		expect(result).toContain(".name.first ASC");
 		// Both should be in a single ORDER BY clause separated by comma
 		expect(result).toMatch(/ORDER BY .+, .+/);
 	});

@@ -89,7 +89,7 @@ describe("workableGet", () => {
 
 		const child = workableGet(parentWorkable, "name");
 		const display = child[__display](ctx);
-		expect(display).toBe('$this["name"]');
+		expect(display).toBe("$this.name");
 	});
 
 	test("returns correct type for known property", () => {

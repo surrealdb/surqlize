@@ -258,6 +258,17 @@ const withAuthor = db.select("post")
 // Fetch multiple relations
 const deepFetch = db.select("post")
   .fetch("author", "comments");
+
+// Project a subset of a fetched relation with RETURN. The result is typed and
+// validated against the projected shape, so you can pick fields from the linked
+// records (in / out) and omit the edge's own fields without errors.
+const authorships = db.select("authored")
+  .fetch("in", "out")
+  .return((edge) => ({
+    user: edge.in.name,   // from the fetched `user` record
+    post: edge.out.title, // from the fetched `post` record
+    role: edge.role,
+  }));
 ```
 
 #### Splitting arrays with SPLIT

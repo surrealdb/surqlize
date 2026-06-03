@@ -98,8 +98,14 @@ export class SelectQuery<
 	}
 
 	get entry(): E {
-		return (this._fetchResolvedType ??
-			this._entry?.[__type] ??
+		// A return projection (`_entry`) defines the query's result shape, so it
+		// must take precedence over the fetch-resolved schema when both are set —
+		// otherwise parse() would validate the projection against the full table
+		// schema and reject it for missing (unprojected) fields. The `.return()`
+		// callback still sees the fetch-resolved schema because it reads `entry`
+		// *before* assigning `_entry`.
+		return (this._entry?.[__type] ??
+			this._fetchResolvedType ??
 			this[__ctx].orm.tables[this.tb]!.schema) as E;
 	}
 
