@@ -38,7 +38,7 @@ type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
  * segment is constrained to a known field; deeper segments are unconstrained,
  * mirroring SurrealDB which validates the rest of the path at query time.
  */
-type FetchPaths<O extends Orm, T extends keyof O["tables"] & string> =
+export type FetchPaths<O extends Orm, T extends keyof O["tables"] & string> =
 	| FieldKeys<O, T>
 	| `${FieldKeys<O, T>}.${string}`;
 
@@ -100,7 +100,7 @@ type FetchField<O extends Orm, F extends AbstractType, Tails extends string> = [
  * when it is the head of any fetch path; nested paths recurse into the resolved
  * schema. Matches SurrealDB, which expands intermediate records along a path.
  */
-type FetchedSchema<
+export type FetchedSchema<
 	O extends Orm,
 	E extends AbstractType,
 	Paths extends string,
@@ -384,7 +384,7 @@ export class SelectQuery<
  * head segment; each head is resolved once and any deeper segments recurse into
  * the resolved schema.
  */
-function resolveFetchObject(
+export function resolveFetchObject(
 	schema: ObjectType,
 	paths: string[],
 	orm: Orm,

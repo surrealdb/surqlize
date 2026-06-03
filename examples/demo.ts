@@ -316,6 +316,16 @@ const complexSelect = db
 	.fetch("metadata")
 	.timeout("10s");
 
+// LIVE SELECT
+const liveUsers = db.live("user");
+const liveAdults = db.live("user").where(($this) => $this.age.gte(18));
+const liveDiff = db.live("user").diff();
+const liveProjected = db.live("user").return((user) => ({
+	name: user.name,
+	email: user.email,
+}));
+const liveFetch = db.live("post").fetch("author");
+
 // Display generated queries
 console.log("\n=== SELECT: ORDER BY ===");
 console.log(orderByAge[__display](displayContext()));
@@ -337,6 +347,16 @@ console.log("\n=== SELECT: TIMEOUT ===");
 console.log(timedQuery[__display](displayContext()));
 console.log("\n=== SELECT: COMBINED ===");
 console.log(complexSelect[__display](displayContext()));
+console.log("\n=== LIVE SELECT ===");
+console.log(liveUsers[__display](displayContext()));
+console.log("\n=== LIVE SELECT: WHERE ===");
+console.log(liveAdults[__display](displayContext()));
+console.log("\n=== LIVE SELECT: DIFF ===");
+console.log(liveDiff[__display](displayContext()));
+console.log("\n=== LIVE SELECT: VALUE projection ===");
+console.log(liveProjected[__display](displayContext()));
+console.log("\n=== LIVE SELECT: FETCH ===");
+console.log(liveFetch[__display](displayContext()));
 
 console.log("\n=== CREATE ===");
 console.log(createUser[__display](displayContext()));

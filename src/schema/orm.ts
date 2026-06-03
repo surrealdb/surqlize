@@ -7,6 +7,7 @@ import { BatchQuery } from "../query/batch";
 import { CreateQuery } from "../query/create";
 import { DeleteQuery } from "../query/delete";
 import { InsertQuery } from "../query/insert";
+import { LiveQuery } from "../query/live";
 import { RelateQuery } from "../query/relate";
 import { SelectQuery } from "../query/select";
 import type { Transaction } from "../query/transaction";
@@ -112,6 +113,48 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 			return new SelectQuery(this, tb as Workable<C, RecordType<Tb>>);
 		if (id === undefined) return new SelectQuery(this, tb as Tb);
 		return new SelectQuery(this, new RecordId(tb as Tb, id));
+	}
+
+	/**
+	 * Open a `LIVE SELECT` subscription for a table, record ID, or workable
+	 * record reference. Awaiting the returned builder runs the live query and
+	 * resolves to a {@link LiveSubscription}.
+	 *
+	 * @param tb - A table name, `RecordId`, workable record, or table name with a second `id` argument.
+	 * @returns A {@link LiveQuery} that can be chained (`.where()`, `.return()`, `.fetch()`, `.diff()`) and awaited.
+	 *
+	 * @remarks Filtering or projecting a live query relies on query parameters,
+	 *   which require **SurrealDB ≥ 3.0**.
+	 */
+	live<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(tb: Tb): LiveQuery<this, C, Tb>;
+
+	// RecordId
+	live<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(rid: RecordId<Tb>): LiveQuery<this, C, Tb>;
+	live<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(rid: Workable<C, RecordType<Tb>>): LiveQuery<this, C, Tb>;
+	live<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(tb: Tb, id: RecordIdValue): LiveQuery<this, C, Tb>;
+
+	// Method
+	live<
+		C extends WorkableContext<this>,
+		Tb extends keyof this["tables"] & string,
+	>(tb: Tb | RecordId<Tb> | Workable<C, RecordType<Tb>>, id?: RecordIdValue) {
+		if (tb instanceof RecordId) return new LiveQuery(this, tb);
+		if (isWorkable(tb))
+			return new LiveQuery(this, tb as Workable<C, RecordType<Tb>>);
+		if (id === undefined) return new LiveQuery(this, tb as Tb);
+		return new LiveQuery(this, new RecordId(tb as Tb, id));
 	}
 
 	/**

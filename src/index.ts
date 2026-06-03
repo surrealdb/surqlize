@@ -5,6 +5,7 @@ export * from "./query/batch";
 export * from "./query/create";
 export * from "./query/delete";
 export * from "./query/insert";
+export * from "./query/live";
 export * from "./query/relate";
 export * from "./query/select";
 export * from "./query/transaction";

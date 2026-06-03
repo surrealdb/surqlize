@@ -42,6 +42,7 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Automatic type inference** - Get full TypeScript types without code generation
 - **Fluent query builder** - Chain `.select()`, `.where()`, `.return()` with full type safety
 - **Complete CRUD operations** - SELECT, CREATE, UPDATE, DELETE, and UPSERT queries
+- **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
 - **Graph relationships** - First-class support for edges and graph traversal
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
@@ -707,6 +708,93 @@ try {
 
 The transaction object (`tx`) has all the same query-builder methods as the main `db` instance — `select`, `create`, `insert`, `update`, `upsert`, `delete`, and `relate`.
 
+## Live queries
+
+Subscribe to real-time changes with `db.live()`. It compiles to a SurrealDB [`LIVE SELECT`](https://surrealdb.com/docs/surrealql/statements/live) statement and resolves to a typed `LiveSubscription`:
+
+```typescript
+// Open a subscription to every change on the `user` table
+const sub = await db.live("user");
+
+// Handle notifications (returns a function that unsubscribes this handler)
+const off = sub.subscribe((msg) => {
+  // msg.action:   "CREATE" | "UPDATE" | "DELETE" | "KILLED"
+  // msg.recordId: the affected RecordId
+  // msg.value:    the affected record, parsed against the schema
+  console.log(msg.action, msg.value);
+});
+
+// Stop receiving updates on this handler...
+off();
+// ...or kill the subscription entirely
+await sub.kill();
+```
+
+The notification `value` is parsed against the table schema, so it is fully typed:
+
+```typescript
+const sub = await db.live("user");
+sub.subscribe((msg) => {
+  msg.value.name.first; // string
+  msg.value.age; // number
+});
+```
+
+A subscription is also async-iterable:
+
+```typescript
+for await (const msg of await db.live("user")) {
+  console.log(msg.action, msg.value);
+}
+```
+
+### Filtering, projecting and fetching
+
+Live queries support `.where()`, `.return()` (a `VALUE` projection) and `.fetch()`, mirroring `select`:
+
+```typescript
+// Only notify for adult users
+const adults = await db.live("user").where((user) => user.age.gte(18));
+
+// Project a subset of fields
+const names = await db.live("user").return((user) => ({
+  name: user.name,
+  email: user.email,
+}));
+
+// Resolve record links in notifications
+const posts = await db.live("post").fetch("author");
+```
+
+> **Note:** Filtering or projecting a live query relies on query parameters, which require **SurrealDB ≥ 3.0** (`FETCH` requires ≥ 2.2.0). On older servers a parameterized live query is accepted but never delivers notifications.
+
+### Diffs
+
+Use `.diff()` to receive [JSON Patch](https://jsonpatch.com) arrays instead of full records (`LIVE SELECT DIFF`):
+
+```typescript
+const sub = await db.live("user").diff();
+sub.subscribe((msg) => {
+  // msg.value is a JsonPatchOp[]
+});
+```
+
+### Subscribe in one step
+
+Calling `.subscribe(handler)` on the builder starts the query and returns a stop function that both unsubscribes and kills the subscription:
+
+```typescript
+const stop = await db
+  .live("user")
+  .where((user) => user.age.gte(18))
+  .subscribe((msg) => console.log(msg.action, msg.value));
+
+// later
+stop();
+```
+
+> Live subscriptions are **unmanaged** — they are not automatically restarted if the connection drops and reconnects. The table must also exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
+
 ## Accessing Single Records
 
 All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:
@@ -1282,6 +1370,7 @@ This project is in active development. Planned features include:
 - [x] **Advanced query clauses** - ORDER BY, GROUP BY, FETCH, SPLIT
 - [x] **Transaction support** - Batch and interactive transactions
 - [x] **Multi-session support** - Multiple sessions over a single connection
+- [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [ ] **Advanced graph traversal** - Path finding, recursive queries, graph algorithms
 - [ ] **Performance optimizations** - Query caching, connection pooling
