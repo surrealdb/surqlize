@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { Surreal } from "surrealdb";
+import { Surreal, type SurrealSession } from "surrealdb";
 import { __display, displayContext, orm, t, table } from "../../../src";
+
+function mockSurrealQuery(results: unknown[]): SurrealSession {
+	return {
+		query: () => Promise.resolve(results),
+	} as unknown as SurrealSession;
+}
 
 describe("BATCH queries", () => {
 	const user = table("user", {
@@ -111,6 +117,27 @@ describe("BATCH queries", () => {
 		expect(display).toContain("BEGIN TRANSACTION;");
 		expect(str).toContain("WHERE");
 		expect(display).toContain("WHERE");
+	});
+
+	test("reuses single-query parse behavior for RETURN DIFF", async () => {
+		const surreal = mockSurrealQuery([
+			{ status: "OK" },
+			[{ op: "replace", path: "/age", value: 31 }],
+			{ status: "OK" },
+		]);
+		const batchDb = orm(surreal, user, post);
+
+		const result = (await batchDb
+			.batch(batchDb.update("user", "alice").set({ age: 31 }).return("diff"))
+			.execute()) as unknown as [
+			Array<{
+				op: string;
+				path: string;
+				value: number;
+			}>,
+		];
+
+		expect(result[0]).toEqual([{ op: "replace", path: "/age", value: 31 }]);
 	});
 
 	test("Orm has batch method", () => {

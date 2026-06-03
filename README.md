@@ -306,7 +306,38 @@ const withAuthor = db.select("post")
 // Fetch multiple relations
 const deepFetch = db.select("post")
   .fetch("author", "comments");
+
+// Project a subset of a fetched relation with RETURN. The result is typed and
+// validated against the projected shape, so you can pick fields from the linked
+// records (in / out) and omit the edge's own fields without errors.
+const authorships = db.select("authored")
+  .fetch("in", "out")
+  .return((edge) => ({
+    user: edge.in.name,   // from the fetched `user` record
+    post: edge.out.title, // from the fetched `post` record
+    role: edge.role,
+  }));
 ```
+
+`fetch` also follows nested record paths. Like SurrealDB, fetching a nested
+path expands every record link along the way, and the result type is resolved
+accordingly — `out` becomes the linked record's object, and `out.author`
+expands the `author` link inside it:
+
+```typescript
+// purchased is an edge: user ->purchased-> product, and product.author -> author
+const purchases = await db.select("purchased")
+  .fetch("out", "out.author")
+  .execute();
+
+purchases[0].out.title;        // string  (product fetched)
+purchases[0].out.author.name;  // string  (nested author fetched)
+purchases[0].in;               // RecordId<"user">  (left as a link)
+```
+
+Record links wrapped in `option<…>` or `array<…>` are resolved too, so
+`fetch("tags")` on an `array<record<tag>>` field yields an array of full `tag`
+objects.
 
 #### Splitting arrays with SPLIT
 
@@ -1043,13 +1074,13 @@ const query = db.select("user").return((user) => ({
 type QueryResult = t.infer<typeof query>;
 // QueryResult: Array<{ name: string; age: number }>
 
-// Infer table type
+// Infer table row type
 const userTable = table("user", {
   name: t.string(),
   age: t.number(),
 });
 
-type User = t.infer<typeof userTable>;
+type User = (typeof userTable)["type"];
 // User: { id: RecordId<"user">; name: string; age: number }
 
 // Infer individual type definitions

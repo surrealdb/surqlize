@@ -137,7 +137,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		_C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
 	>(tb: Tb, id?: RecordIdValue) {
-		return new CreateQuery(this, tb, id?.toString());
+		return new CreateQuery(this, tb, id);
 	}
 
 	/**

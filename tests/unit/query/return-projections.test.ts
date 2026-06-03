@@ -33,7 +33,7 @@ describe("SELECT return projections", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("SELECT VALUE");
-		expect(result).toContain('$this["name"]');
+		expect(result).toContain("$this.name");
 	});
 
 	test("RETURN VALUE <nested field> — nested field access", () => {
@@ -42,7 +42,7 @@ describe("SELECT return projections", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("SELECT VALUE");
-		expect(result).toContain('$this["name"]["first"]');
+		expect(result).toContain("$this.name.first");
 	});
 
 	test("RETURN { ... } — flat object", () => {
@@ -80,7 +80,7 @@ describe("SELECT return projections", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("SELECT VALUE");
-		expect(result).toMatch(/\[.*\$this\["name"\].*,.*\$this\["age"\].*\]/);
+		expect(result).toMatch(/\[.*\$this\.name.*,.*\$this\.age.*\]/);
 	});
 
 	test("RETURN [ ... ] — array with nested field access", () => {
@@ -92,9 +92,9 @@ describe("SELECT return projections", () => {
 
 		expect(result).toContain("SELECT VALUE");
 		expect(result).toContain("[");
-		expect(result).toContain('$this["name"]["first"]');
-		expect(result).toContain('$this["name"]["last"]');
-		expect(result).toContain('$this["age"]');
+		expect(result).toContain("$this.name.first");
+		expect(result).toContain("$this.name.last");
+		expect(result).toContain("$this.age");
 		expect(result).toContain("]");
 	});
 
@@ -160,7 +160,7 @@ describe("CREATE return projections", () => {
 
 		expect(result).toContain("CREATE");
 		expect(result).toContain("RETURN VALUE");
-		expect(result).toContain('$this["name"]');
+		expect(result).toContain("$this.name");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {
@@ -234,7 +234,7 @@ describe("UPDATE return projections", () => {
 
 		expect(result).toContain("UPDATE");
 		expect(result).toContain("RETURN VALUE");
-		expect(result).toContain('$this["name"]');
+		expect(result).toContain("$this.name");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {
@@ -260,9 +260,9 @@ describe("UPDATE return projections", () => {
 
 		expect(result).toContain("RETURN VALUE");
 		expect(result).toContain("[");
-		expect(result).toContain('$this["name"]["first"]');
-		expect(result).toContain('$this["age"]');
-		expect(result).toContain('$this["email"]');
+		expect(result).toContain("$this.name.first");
+		expect(result).toContain("$this.age");
+		expect(result).toContain("$this.email");
 		expect(result).toContain("]");
 	});
 
@@ -307,7 +307,7 @@ describe("UPSERT return projections", () => {
 
 		expect(result).toContain("UPSERT");
 		expect(result).toContain("RETURN VALUE");
-		expect(result).toContain('$this["email"]');
+		expect(result).toContain("$this.email");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {
@@ -357,7 +357,7 @@ describe("INSERT return projections", () => {
 
 		expect(result).toContain("INSERT");
 		expect(result).toContain("RETURN VALUE");
-		expect(result).toContain('$this["email"]');
+		expect(result).toContain("$this.email");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {
@@ -395,7 +395,7 @@ describe("DELETE return projections", () => {
 
 		expect(result).toContain("DELETE");
 		expect(result).toContain("RETURN VALUE");
-		expect(result).toContain('$this["name"]');
+		expect(result).toContain("$this.name");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {

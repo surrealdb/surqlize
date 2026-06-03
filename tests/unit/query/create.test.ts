@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Surreal } from "surrealdb";
+import { RecordId, Surreal } from "surrealdb";
 import { __display, displayContext, orm, t, table } from "../../../src";
 
 describe("CREATE queries", () => {
@@ -38,6 +38,41 @@ describe("CREATE queries", () => {
 		expect(result).toContain("CREATE");
 		expect(result).toContain("SET");
 		// ID is in variables, not in the query string directly
+	});
+
+	test("preserves a zero-valued numeric id instead of dropping it", () => {
+		const query = db.create("user", 0).set({ name: "Zero", age: 0 });
+		const ctx = displayContext();
+
+		query[__display](ctx);
+
+		const recordId = Object.values(ctx.variables).find(
+			(value) => value instanceof RecordId,
+		);
+
+		expect(recordId).toBeInstanceOf(RecordId);
+		expect((recordId as RecordId).id).toBe(0);
+	});
+
+	test("preserves composite CREATE ids without stringifying them", () => {
+		const compositeId = {
+			tenant: "acme",
+			slug: "alice",
+		};
+		const query = db.create("user", compositeId).set({
+			name: "Alice",
+			age: 25,
+		});
+		const ctx = displayContext();
+
+		query[__display](ctx);
+
+		const recordId = Object.values(ctx.variables).find(
+			(value) => value instanceof RecordId,
+		);
+
+		expect(recordId).toBeInstanceOf(RecordId);
+		expect((recordId as RecordId).id).toEqual(compositeId);
 	});
 
 	test("generates CREATE with CONTENT", () => {

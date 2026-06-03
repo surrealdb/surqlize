@@ -329,14 +329,14 @@ describe("Type builders", () => {
 			const type = t.object({ name: t.string(), age: t.number() });
 			const [fieldType, path] = type.get("name");
 			expect(fieldType.name).toBe("string");
-			expect(path).toBe('["name"]');
+			expect(path).toBe(".name");
 		});
 
 		test("ObjectType.get() returns NoneType for unknown key", () => {
 			const type = t.object({ name: t.string() });
 			const [fieldType, path] = type.get("unknown");
 			expect(fieldType).toBeInstanceOf(NoneType);
-			expect(path).toBe('["unknown"]');
+			expect(path).toBe(".unknown");
 		});
 
 		test("ArrayType.get() returns element type for tuple index", () => {
@@ -363,7 +363,7 @@ describe("Type builders", () => {
 			const type = t.string();
 			const [fieldType, path] = type.get("anything");
 			expect(fieldType).toBeInstanceOf(NoneType);
-			expect(path).toBe('["anything"]');
+			expect(path).toBe(".anything");
 		});
 	});
 

@@ -220,6 +220,63 @@ describe("Return projection integration tests", () => {
 				expect(row.length).toBe(2);
 			}
 		});
+
+		// Regression tests for https://github.com/surrealdb/surqlize/issues/23 —
+		// a return projection over a graph edge must (1) validate against the
+		// projected shape rather than the full edge schema, so omitting the edge's
+		// own fields (created/updated) is fine, and (2) traverse the in/out record
+		// links via dot notation so nested fields actually resolve.
+
+		test("FETCH + RETURN { ... } — project subset of an edge, omitting edge fields", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("authored")
+				.fetch("in", "out")
+				.return((p) => ({
+					user: {
+						first: p.in.name.first,
+						id: p.in.id,
+					},
+					edge_id: p.id,
+					post: {
+						title: p.out.title,
+						id: p.out.id,
+					},
+				}))
+				.execute();
+
+			expect(result.length).toBe(2);
+			for (const row of result) {
+				expect(typeof row.user.first).toBe("string");
+				expect(String(row.user.id)).toContain("user:");
+				expect(String(row.edge_id)).toContain("authored:");
+				expect(typeof row.post.title).toBe("string");
+				expect(String(row.post.id)).toContain("post:");
+			}
+
+			const sorted = result.sort((a, b) =>
+				a.user.first.localeCompare(b.user.first),
+			);
+			expect(sorted[0]!.user.first).toBe("Alice");
+			expect(sorted[0]!.post.title).toBe("First Post");
+			expect(sorted[1]!.user.first).toBe("Bob");
+			expect(sorted[1]!.post.title).toBe("Second Post");
+		});
+
+		test("FETCH + RETURN { ... } — mixes a fetched link field with an edge field", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("authored")
+				.fetch("in")
+				.return((p) => ({ author: p.in.email, when: p.created }))
+				.execute();
+
+			expect(result.length).toBe(2);
+			for (const row of result) {
+				expect(row.author).toContain("@example.com");
+				expect(row.when).toBeDefined();
+			}
+		});
 	});
 
 	// ─── CREATE ────────────────────────────────────────────────────────────

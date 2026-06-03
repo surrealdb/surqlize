@@ -1,6 +1,24 @@
 import { RecordId, Uuid } from "surrealdb";
 import { TypeParseError } from "../error";
 
+/** Matches strings usable as a bare SurrealQL identifier in an idiom path. */
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Build an idiom path segment for accessing `prop` on a parent value.
+ *
+ * String keys that are valid identifiers use dot notation (`.name`). This is
+ * required for record-link traversal: SurrealDB dereferences links through the
+ * `.` operator (`record.field`) but NOT through index access (`record["field"]`),
+ * which returns NONE. Dot notation also works for plain object fields, so it is
+ * the correct default. Non-identifier keys (and numeric indices, handled by the
+ * caller) fall back to bracket notation.
+ */
+function pathSegment(prop: string | number): string {
+	if (typeof prop === "string" && IDENTIFIER.test(prop)) return `.${prop}`;
+	return `[${JSON.stringify(prop)}]`;
+}
+
 export abstract class AbstractType<T = unknown> {
 	abstract readonly name: string;
 	abstract readonly expected: string | [string, string, ...string[]];
@@ -21,7 +39,7 @@ export abstract class AbstractType<T = unknown> {
 	}
 
 	get(prop: string | number): [AbstractType, string] {
-		return [new NoneType(), `[${JSON.stringify(prop)}]`];
+		return [new NoneType(), pathSegment(prop)];
 	}
 }
 
@@ -244,10 +262,10 @@ export class ObjectType<
 
 	get(prop: string | number): [AbstractType, string] {
 		if (prop in this.schema) {
-			return [this.schema[prop as keyof T]!, `[${JSON.stringify(prop)}]`];
+			return [this.schema[prop as keyof T]!, pathSegment(prop)];
 		}
 
-		return [new NoneType(), `[${JSON.stringify(prop)}]`];
+		return [new NoneType(), pathSegment(prop)];
 	}
 }
 
