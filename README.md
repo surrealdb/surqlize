@@ -167,6 +167,54 @@ const db = orm(new Surreal(), user, post, authored);
 - `in`: RecordId of the source table (user)
 - `out`: RecordId of the target table (post)
 
+## Registering schemas
+
+Pass your tables and edges to `orm()` to get a type-safe client. Schemas can be
+supplied either as individual arguments or grouped in a single object — both
+produce an identical, fully typed ORM:
+
+```typescript
+// As individual arguments
+const db = orm(new Surreal(), user, post, authored);
+
+// Or grouped in an object
+const db = orm(new Surreal(), { user, post, authored });
+```
+
+The object form pairs nicely with a dedicated schema module, letting you define
+your tables once and reuse them across multiple ORM instances:
+
+```typescript
+// database/schema.ts
+import { edge, t, table } from "surqlize";
+
+export const user = table("user", {
+  name: t.string(),
+  email: t.string(),
+});
+
+export const post = table("post", {
+  title: t.string(),
+  content: t.string(),
+});
+
+export const authored = edge("user", "authored", "post", {
+  created: t.date(),
+});
+```
+
+```typescript
+// src/db.ts
+import { Surreal } from "surrealdb";
+import { orm } from "surqlize";
+import * as schema from "../database/schema";
+
+const db = orm(new Surreal(), schema);
+```
+
+> Tables are always addressed by their `tb` name in queries (e.g. `db.select("user")`),
+> regardless of how they are registered. The object keys are purely organizational.
+
 ## CRUD Operations
 
 ### SELECT statements

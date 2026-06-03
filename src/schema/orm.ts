@@ -18,7 +18,7 @@ import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
 import type { FunctionCallable, InferParams } from "./function";
 import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
-import type { TableSchema } from "./table";
+import { TableSchema } from "./table";
 
 /** Union type representing any table or edge schema. */
 export type AnyTable<Tb extends string = string> =
@@ -29,6 +29,39 @@ export type AnyTable<Tb extends string = string> =
 export type MappedTables<T extends AnyTable[]> = {
 	[K in T[number]["tb"]]: Extract<T[number], AnyTable<K>>;
 } & {};
+
+/**
+ * A plain object grouping table/edge schemas under arbitrary keys, e.g. the
+ * result of `import * as schema from "./schema"`. The object keys are only a
+ * container — tables are still addressed by their `tb` name in queries.
+ */
+export type SchemaMap = Record<string, AnyTable>;
+
+// Convert the union of a schema map's values into a tuple so the object form of
+// `orm()` resolves to exactly the same `Orm<[...]>` type as the rest-param form.
+// Element order is irrelevant: every consumer (`MappedTables`, the lookup
+// helpers, `HasEdgeSchema`) inspects the tuple via `[number]` or a membership
+// check — none depend on ordering.
+type UnionToIntersection<U> = (
+	U extends unknown
+		? (k: U) => void
+		: never
+) extends (k: infer I) => void
+	? I
+	: never;
+
+type LastOf<U> =
+	UnionToIntersection<U extends unknown ? () => U : never> extends () => infer R
+		? R
+		: never;
+
+type UnionToTuple<U> = [U] extends [never]
+	? []
+	: [...UnionToTuple<Exclude<U, LastOf<U>>>, LastOf<U>];
+
+/** The schemas held by a {@link SchemaMap}, as a tuple used as the `Orm` type argument. */
+export type SchemaMapTables<S extends SchemaMap> =
+	UnionToTuple<S[keyof S]> extends infer R extends AnyTable[] ? R : never;
 
 /**
  * The main ORM entry point. Provides type-safe query builders for all
@@ -402,33 +435,72 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 }
 
 /**
+ * Distinguish a {@link SchemaMap} from an individual table/edge schema. A single
+ * schema is an instance of {@link TableSchema} or {@link EdgeSchema}; a schema map
+ * is any other (plain) object.
+ */
+function isSchemaMap(value: unknown): value is SchemaMap {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		!(value instanceof TableSchema) &&
+		!(value instanceof EdgeSchema)
+	);
+}
+
+/**
  * Create an ORM instance bound to a SurrealDB session and a set of table/edge
  * schemas. This is the main entry point for building type-safe queries.
+ *
+ * Schemas may be passed either as individual arguments or grouped in a single
+ * object — both produce an identical, fully typed ORM. Tables are always
+ * addressed by their `tb` name in queries, regardless of how they are passed.
  *
  * @param surreal - An active SurrealDB session.
  * @param tables - One or more {@link TableSchema} or {@link EdgeSchema} definitions.
  * @returns An {@link Orm} instance with query builders scoped to the provided schemas.
  *
- * @example
+ * @example Individual arguments
  * ```ts
  * const db = orm(new Surreal(), user, post, authored);
+ * const users = await db.select("user");
+ * ```
+ *
+ * @example A schema object (handy with `import * as schema`)
+ * ```ts
+ * // database/schema.ts
+ * export const user = table("user", { name: t.string() });
+ * export const post = table("post", { title: t.string() });
+ *
+ * // src/db.ts
+ * import * as schema from "../database/schema";
+ * const db = orm(new Surreal(), schema);
  * const users = await db.select("user");
  * ```
  */
 export function orm<T extends AnyTable[]>(
 	surreal: SurrealSession,
 	...tables: T
-) {
-	const mapped = tables.reduce<MappedTables<T>>(
-		(acc, table) => {
-			const key = table.tb as T[number]["tb"];
-			acc[key] = table as Extract<T[number], AnyTable<typeof table.tb>>;
-			return acc;
-		},
-		{} as MappedTables<T>,
-	);
+): Orm<T>;
+export function orm<S extends SchemaMap>(
+	surreal: SurrealSession,
+	schema: S,
+): Orm<SchemaMapTables<S>>;
+export function orm(
+	surreal: SurrealSession,
+	...args: AnyTable[] | [SchemaMap]
+): Orm {
+	const tables: AnyTable[] =
+		args.length === 1 && isSchemaMap(args[0])
+			? Object.values(args[0])
+			: (args as AnyTable[]);
+
+	const mapped = tables.reduce<Record<string, AnyTable>>((acc, table) => {
+		acc[table.tb] = table;
+		return acc;
+	}, {});
 
 	const lookup = createLookupFromSchemas(tables);
 
-	return new Orm(surreal, mapped, lookup);
+	return new Orm(surreal, mapped as MappedTables<AnyTable[]>, lookup);
 }
