@@ -1206,11 +1206,13 @@ console.log(ctx.variables); // Parameterized values
 
 ## Graph traversal
 
-Traverse graph edges directly inside queries. From any record — a row's `id` or a
-record-link field — `.out()` follows an edge to the far table (`->edge->target`)
-and `.in()` follows it in reverse (`<-edge<-source`). TypeScript only permits
-edges that actually connect to the current table, and the result type is inferred
-automatically.
+Traverse graph edges directly inside queries. Call `.out()` on a select row to
+follow an edge to the far table (`->edge->target`), or `.in()` to follow it in
+reverse (`<-edge<-source`). TypeScript only permits edges that actually connect
+to the current table, and the result type is inferred automatically.
+
+You can traverse from the row itself (`user.out("authored")`, rooted at the
+row's `id`) or from any record-link field (`post.author.out(...)`).
 
 ```typescript
 const user = table("user", { name: t.string() });
@@ -1233,7 +1235,7 @@ traversal compiles to a subquery:
 ```typescript
 const usersWithPosts = db.select("user").return((user) => ({
   name: user.name,
-  posts: user.id
+  posts: user
     .out("authored")              // ->authored->post
     .select()
     .return((post) => ({ title: post.title })),
@@ -1248,7 +1250,7 @@ exactly like raw SurrealQL `->authored->post`:
 
 ```typescript
 const query = db.select("user").return((user) => ({
-  postIds: user.id.out("authored"),
+  postIds: user.out("authored"),
 }));
 
 type Result = t.infer<typeof query>;
@@ -1261,7 +1263,7 @@ Steps chain, with every hop re-typed against the table it lands on:
 
 ```typescript
 db.select("user").return((user) => ({
-  tags: user.id
+  tags: user
     .out("authored")   // -> post
     .out("tagged")     // -> tag
     .select()
@@ -1275,7 +1277,7 @@ db.select("user").return((user) => ({
 ```typescript
 // Who authored this post?
 db.select("post").return((post) => ({
-  authors: post.id
+  authors: post
     .in("authored")               // <-authored<-user
     .select()
     .return((user) => ({ name: user.name })),
@@ -1289,7 +1291,7 @@ fields (such as `created` or `role`):
 
 ```typescript
 db.select("user").return((user) => ({
-  authorships: user.id.outEdge("authored").select().return((e) => ({
+  authorships: user.outEdge("authored").select().return((e) => ({
     when: e.created,
     role: e.role,
   })),
@@ -1304,7 +1306,7 @@ Filter on the edge mid-traversal with `where` — this compiles to
 
 ```typescript
 db.select("user").return((user) => ({
-  posts: user.id
+  posts: user
     .out("authored", { where: (e) => e.role.eq("author") })
     .select()
     .return((post) => ({ title: post.title })),
@@ -1317,11 +1319,48 @@ Traversals also compose inside `WHERE` to filter the outer query. `len()` and
 
 ```typescript
 // Users who have authored at least one post
-db.select("user").where((user) => user.id.out("authored").len().gt(0));
+db.select("user").where((user) => user.out("authored").len().gt(0));
 
 // Users who have authored none
-db.select("user").where((user) => user.id.out("authored").isEmpty());
+db.select("user").where((user) => user.out("authored").isEmpty());
 ```
+
+### Recursive traversal & path finding
+
+Repeat a hop with `depth` to walk several levels deep — this compiles to
+SurrealDB's recursive idiom `record.{depth}(->edge->target)` and returns the
+records reached at the deepest level. `depth` is an exact number, an inclusive
+`[min, max]` range, or `{ min?, max? }` for open-ended ranges:
+
+```typescript
+const person = table("person", { name: t.string() });
+const knows = edge("person", "knows", "person", {});
+const db = orm(new Surreal(), person, knows);
+
+// Connections between one and three hops away
+db.select("person").return((p) => ({
+  network: p.out("knows", { depth: [1, 3] }),
+}));
+// person.{1..3}(->knows->person)
+```
+
+Add `collect` to gather every unique node encountered, or `shortest` to find the
+shortest path to a target record:
+
+```typescript
+// Everyone reachable through `knows`
+db.select("person").return((p) => ({
+  reachable: p.out("knows", { collect: true }), // .{..+collect}(->knows->person)
+}));
+
+// Shortest path from one person to another (the target binds as a parameter)
+db.select("person", "alice").return((p) => ({
+  path: p.out("knows", { shortest: new RecordId("person", "dave") }),
+}));
+// person:alice.{..+shortest=$target}(->knows->person)
+```
+
+`depth` / `collect` / `shortest` compose with edge filtering (`where`) too.
 
 ### Edge adjacency metadata
 
@@ -1493,7 +1532,7 @@ This project is in active development. Planned features include:
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
-- [ ] **Advanced graph traversal** - Path finding, recursive queries, graph algorithms
+- [x] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [ ] **Performance optimizations** - Query caching, connection pooling
 - [ ] **Schema migrations** - Version control for database schemas
 - [ ] **Documentation site** - Comprehensive guides and API reference

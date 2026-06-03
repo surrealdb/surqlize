@@ -179,6 +179,23 @@ describe("graph traversal integration tests", () => {
 
 		expect(result.map((r) => r.first)).toEqual(["Carol"]);
 	});
+
+	test("row-level sugar (user.out without .id)", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		const result = await db
+			.select("user", "alice")
+			.return((u) => ({
+				posts: u
+					.out("authored")
+					.select()
+					.return((p) => ({ title: p.title })),
+			}))
+			.execute();
+
+		expect(result).toEqual([{ posts: [{ title: "First Post" }] }]);
+	});
 });
 
 describe("graph traversal — edge filtering", () => {
@@ -226,5 +243,71 @@ describe("graph traversal — edge filtering", () => {
 			.execute();
 
 		expect(result[0]!.posts.length).toBe(2);
+	});
+});
+
+describe("graph traversal — recursive / path finding", () => {
+	const person = table("person", { name: t.string() });
+	const knows = edge("person", "knows", "person", {});
+	const schema = [person, knows] as const;
+
+	const getTestDb = withTestDb({
+		setup: async ({ surreal }) => {
+			await surreal.query(`
+				CREATE person:alice, person:bob, person:carol, person:dave;
+				RELATE person:alice->knows->person:bob;
+				RELATE person:bob->knows->person:carol;
+				RELATE person:carol->knows->person:dave;
+			`);
+		},
+	});
+
+	const ids = (arr: { id: unknown }[] | RecordId[]) =>
+		(arr as RecordId[]).map((r) => String(r));
+
+	test("exact depth lands on the node at that depth", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		const result = await db
+			.select("person", "alice")
+			.return((p) => ({ net: p.out("knows", { depth: 2 }) }))
+			.execute();
+
+		expect(ids(result[0]!.net)).toEqual(["person:carol"]);
+	});
+
+	test("collect gathers every node along the recursion", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		const result = await db
+			.select("person", "alice")
+			.return((p) => ({ net: p.out("knows", { collect: true }) }))
+			.execute();
+
+		expect(ids(result[0]!.net).sort()).toEqual([
+			"person:bob",
+			"person:carol",
+			"person:dave",
+		]);
+	});
+
+	test("shortest finds the path to a target record", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		const result = await db
+			.select("person", "alice")
+			.return((p) => ({
+				path: p.out("knows", { shortest: new RecordId("person", "dave") }),
+			}))
+			.execute();
+
+		expect(ids(result[0]!.path)).toEqual([
+			"person:bob",
+			"person:carol",
+			"person:dave",
+		]);
 	});
 });

@@ -4,6 +4,7 @@ import type {
 	FromOf,
 	IncomingEdges,
 	OutgoingEdges,
+	RecurseOpts,
 	ToOf,
 	TraverseOpts,
 } from "../../schema/traversal";
@@ -16,7 +17,7 @@ import {
 } from "../../utils";
 import type { Actionable } from "../../utils/actionable";
 import { comparingFilter } from "../filters";
-import { databaseFunction, edgeFilter, traverse } from "../utils";
+import { databaseFunction, edgeFilter, recursionOf, traverse } from "../utils";
 
 /**
  * Functions available on a graph-traversal step (a {@link GraphType} workable).
@@ -47,7 +48,7 @@ export const functions = {
 	>(
 		this: Workable<C, GraphType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	) {
 		const schema = edgeSchema(this, edge);
 		const where = edgeFilter(this[__ctx], schema.schema, opts?.where);
@@ -57,6 +58,7 @@ export const functions = {
 			edge,
 			schema.to,
 			where,
+			recursionOf(opts),
 		) as unknown as Actionable<C, GraphType<ToOf<C, Edge>>>;
 	},
 
@@ -67,7 +69,7 @@ export const functions = {
 	>(
 		this: Workable<C, GraphType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	) {
 		const schema = edgeSchema(this, edge);
 		const where = edgeFilter(this[__ctx], schema.schema, opts?.where);
@@ -77,6 +79,7 @@ export const functions = {
 			edge,
 			schema.from,
 			where,
+			recursionOf(opts),
 		) as unknown as Actionable<C, GraphType<FromOf<C, Edge>>>;
 	},
 
@@ -160,7 +163,7 @@ export type Functions = {
 	>(
 		this: Workable<C, GraphType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	): Actionable<C, GraphType<ToOf<C, Edge>>>;
 
 	in<
@@ -170,7 +173,7 @@ export type Functions = {
 	>(
 		this: Workable<C, GraphType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	): Actionable<C, GraphType<FromOf<C, Edge>>>;
 
 	outEdge<

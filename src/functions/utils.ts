@@ -1,9 +1,12 @@
+import type { RecordId } from "surrealdb";
+import type { RecurseDepth } from "../schema/traversal";
 import { type AbstractType, GraphType, type ObjectType } from "../types";
 import {
 	__ctx,
 	__display,
 	__type,
 	type DisplayContext,
+	isWorkable,
 	type Workable,
 	type WorkableContext,
 } from "../utils";
@@ -26,12 +29,49 @@ export function databaseFunction<
 /** Direction + landing of a single graph-traversal step. */
 export type TraversalKind = "out" | "in" | "outEdge" | "inEdge";
 
+/** Recursion spec for a recursive / path-finding traversal step. */
+export type Recursion<C extends WorkableContext> = {
+	depth?: RecurseDepth;
+	collect?: boolean;
+	shortest?: RecordId | Workable<C>;
+};
+
+/** Render a {@link RecurseDepth} as the brace range, e.g. `1..3`, `..3`, `..`. */
+function formatDepth(depth: RecurseDepth | undefined): string {
+	if (depth === undefined) return "..";
+	if (typeof depth === "number") return String(depth);
+	if (Array.isArray(depth)) return `${depth[0]}..${depth[1]}`;
+	const { min, max } = depth as { min?: number; max?: number };
+	return `${min ?? ""}..${max ?? ""}`;
+}
+
+/** The full brace expression for a recursion, e.g. `.{1..3}`, `.{..+collect}`. */
+function recursionBraces<C extends WorkableContext>(
+	ctx: DisplayContext,
+	recursion: Recursion<C>,
+): string {
+	let modifier = "";
+	if (recursion.shortest !== undefined) {
+		const tgt = isWorkable(recursion.shortest)
+			? recursion.shortest[__display](ctx)
+			: ctx.var(recursion.shortest);
+		modifier = `+shortest=${tgt}`;
+	} else if (recursion.collect) {
+		modifier = "+collect";
+	}
+	return `.{${formatDepth(recursion.depth)}${modifier}}`;
+}
+
 /**
  * Build a graph-traversal expression by appending an edge segment to `parent`'s
  * idiom. `out`/`in` traverse through the edge to the far node
  * (`->edge->target` / `<-edge<-target`); `outEdge`/`inEdge` stop on the edge
  * itself (`->edge` / `<-edge`). An optional `whereSql` renders an edge filter as
  * `->(edge WHERE …)->target`.
+ *
+ * When `recursion` is given, the hop is wrapped in SurrealDB's recursive idiom
+ * `head.{depth}(->edge->target)`, optionally with a `+collect` or
+ * `+shortest=target` modifier for path finding.
  *
  * The result is a {@link GraphType} workable carrying the table it lands on, so
  * it chains (`.out()`/`.in()`), materialises (`.select()`), or — used bare —
@@ -43,6 +83,7 @@ export function traverse<C extends WorkableContext, Target extends string>(
 	edge: string,
 	target: Target,
 	whereSql?: (ctx: DisplayContext) => string,
+	recursion?: Recursion<C>,
 ): Actionable<C, GraphType<Target>> {
 	const arrow = kind === "out" || kind === "outEdge" ? "->" : "<-";
 	const landsOnEdge = kind === "outEdge" || kind === "inEdge";
@@ -54,9 +95,33 @@ export function traverse<C extends WorkableContext, Target extends string>(
 			const head = parent[__display](ctx);
 			const edgeFrag = whereSql ? `(${edge} WHERE ${whereSql(ctx)})` : edge;
 			const tail = landsOnEdge ? "" : `${arrow}${target}`;
-			return `${head}${arrow}${edgeFrag}${tail}`;
+			const body = `${arrow}${edgeFrag}${tail}`;
+
+			return recursion
+				? `${head}${recursionBraces(ctx, recursion)}(${body})`
+				: `${head}${body}`;
 		},
 	});
+}
+
+/**
+ * Distil the recursion-related options of a traversal step into a
+ * {@link Recursion} spec, or `undefined` when none are set (a plain hop).
+ */
+export function recursionOf<C extends WorkableContext>(
+	opts:
+		| {
+				depth?: RecurseDepth;
+				collect?: boolean;
+				shortest?: RecordId | Workable<C>;
+		  }
+		| undefined,
+): Recursion<C> | undefined {
+	if (!opts) return undefined;
+	const { depth, collect, shortest } = opts;
+	if (depth === undefined && !collect && shortest === undefined)
+		return undefined;
+	return { depth, collect, shortest };
 }
 
 /**

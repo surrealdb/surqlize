@@ -4,13 +4,14 @@ import type {
 	FromOf,
 	IncomingEdges,
 	OutgoingEdges,
+	RecurseOpts,
 	ToOf,
 	TraverseOpts,
 } from "../../schema/traversal";
 import type { GraphType, RecordType } from "../../types";
 import { __ctx, type Workable, type WorkableContext } from "../../utils";
 import type { Actionable } from "../../utils/actionable";
-import { edgeFilter, traverse } from "../utils";
+import { edgeFilter, recursionOf, traverse } from "../utils";
 
 /** Read an edge schema by its registered name. */
 function edgeSchema<C extends WorkableContext>(
@@ -35,7 +36,7 @@ export const functions = {
 	>(
 		this: Workable<C, RecordType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	) {
 		const schema = edgeSchema(this, edge);
 		const where = edgeFilter(this[__ctx], schema.schema, opts?.where);
@@ -45,6 +46,7 @@ export const functions = {
 			edge,
 			schema.to,
 			where,
+			recursionOf(opts),
 		) as unknown as Actionable<C, GraphType<ToOf<C, Edge>>>;
 	},
 
@@ -55,7 +57,7 @@ export const functions = {
 	>(
 		this: Workable<C, RecordType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	) {
 		const schema = edgeSchema(this, edge);
 		const where = edgeFilter(this[__ctx], schema.schema, opts?.where);
@@ -65,6 +67,7 @@ export const functions = {
 			edge,
 			schema.from,
 			where,
+			recursionOf(opts),
 		) as unknown as Actionable<C, GraphType<FromOf<C, Edge>>>;
 	},
 
@@ -118,7 +121,10 @@ export type Functions = {
 		Tb extends keyof C["orm"]["tables"] & string,
 	>(this: Workable<C, RecordType<Tb>>): SelectQuery<C["orm"], C, Tb>;
 
-	/** Traverse outgoing through `edge` to the far node: `->edge->target`. */
+	/**
+	 * Traverse outgoing through `edge` to the far node: `->edge->target`. Pass
+	 * `depth` / `collect` / `shortest` to recurse (`head.{depth}(->edge->target)`).
+	 */
 	out<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
@@ -126,10 +132,13 @@ export type Functions = {
 	>(
 		this: Workable<C, RecordType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	): Actionable<C, GraphType<ToOf<C, Edge>>>;
 
-	/** Traverse incoming through `edge` to the far node: `<-edge<-source`. */
+	/**
+	 * Traverse incoming through `edge` to the far node: `<-edge<-source`. Pass
+	 * `depth` / `collect` / `shortest` to recurse.
+	 */
 	in<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
@@ -137,7 +146,7 @@ export type Functions = {
 	>(
 		this: Workable<C, RecordType<Tb>>,
 		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
 	): Actionable<C, GraphType<FromOf<C, Edge>>>;
 
 	/** Traverse outgoing and stop on the edge itself: `->edge`. */

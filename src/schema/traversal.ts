@@ -1,3 +1,5 @@
+import type { RecordId } from "surrealdb";
+import type { GraphType, RecordType } from "../types";
 import type { Workable, WorkableContext } from "../utils";
 import type { Actionable } from "../utils/actionable";
 import type { EdgeSchema } from "./edge";
@@ -37,6 +39,55 @@ export type EdgeFieldsOf<
  */
 export type TraverseOpts<C extends WorkableContext, Edge extends string> = {
 	where?: (edge: Actionable<C, EdgeFieldsOf<C, Edge>>) => Workable<C>;
+};
+
+/**
+ * A recursion depth: an exact number of hops (`{n}`), an inclusive `[min, max]`
+ * range (`{min..max}`), or `{ min?, max? }` for open-ended ranges (`{min..}`,
+ * `{..max}`, `{..}`). Omitting it with `collect`/`shortest` defaults to `{..}`.
+ */
+export type RecurseDepth =
+	| number
+	| readonly [number, number]
+	| { min?: number; max?: number };
+
+/**
+ * Recursive / path-finding options for `.out()` / `.in()`. Triggering any of
+ * these compiles to SurrealDB's recursive idiom `record.{depth}(->edge->target)`:
+ *
+ * - `depth` — how many times to repeat the hop; returns the deepest records.
+ * - `collect` — gather every unique node encountered (`{depth+collect}`).
+ * - `shortest` — the shortest path to a target record (`{depth+shortest=target}`).
+ */
+export type RecurseOpts<C extends WorkableContext, Edge extends string> = {
+	depth?: RecurseDepth;
+	collect?: boolean;
+	shortest?: RecordId<ToOf<C, Edge>> | Workable<C, RecordType<ToOf<C, Edge>>>;
+};
+
+/**
+ * Row-level traversal sugar: the traversal verbs callable directly on a select
+ * row (`user.out("authored")`), rooted at the row's `id`. On edge tables the
+ * runtime keeps `in` / `out` resolving as record-link fields (a verb is only
+ * dispatched when the table has no field of that name).
+ */
+export type RowTraversal<C extends WorkableContext, T extends string> = {
+	out<Edge extends OutgoingEdges<C, T>>(
+		edge: Edge,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
+	): Actionable<C, GraphType<ToOf<C, Edge>>>;
+	in<Edge extends IncomingEdges<C, T>>(
+		edge: Edge,
+		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
+	): Actionable<C, GraphType<FromOf<C, Edge>>>;
+	outEdge<Edge extends OutgoingEdges<C, T>>(
+		edge: Edge,
+		opts?: TraverseOpts<C, Edge>,
+	): Actionable<C, GraphType<Edge>>;
+	inEdge<Edge extends IncomingEdges<C, T>>(
+		edge: Edge,
+		opts?: TraverseOpts<C, Edge>,
+	): Actionable<C, GraphType<Edge>>;
 };
 
 /** The source table of an edge — where `<-edge<-` lands. */

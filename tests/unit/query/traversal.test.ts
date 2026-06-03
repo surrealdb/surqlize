@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { RecordId } from "surrealdb";
-import { Surreal } from "surrealdb";
+import { RecordId, Surreal } from "surrealdb";
 import {
 	__display,
 	displayContext,
@@ -175,5 +174,91 @@ describe("graph traversal — type-level", () => {
 			}));
 		};
 		expect(typeof _typeErrors).toBe("function");
+	});
+});
+
+describe("graph traversal — row-level sugar", () => {
+	test("user.out(edge) roots at the row's id", () => {
+		const q = db.select("user").return((u) => ({ posts: u.out("authored") }));
+		const sql = render(q);
+		expect(sql).toContain("$this.id->authored->post");
+	});
+
+	test("sugar works in WHERE", () => {
+		const q = db.select("user").where((u) => u.out("authored").len().gt(0));
+		const sql = render(q);
+		expect(sql).toContain("array::len($this.id->authored->post)");
+	});
+
+	test("sugar matches the explicit .id form", () => {
+		const sugar = render(
+			db.select("user").return((u) => ({ posts: u.out("authored") })),
+		);
+		const explicit = render(
+			db.select("user").return((u) => ({ posts: u.id.out("authored") })),
+		);
+		expect(sugar).toBe(explicit);
+	});
+
+	test("does not shadow an edge table's in/out fields", () => {
+		// Selecting the `authored` edge: `in`/`out` must stay field accesses.
+		const q = db.select("authored").return((e) => ({ from: e.in, to: e.out }));
+		const sql = render(q);
+		expect(sql).toContain("$this.in");
+		expect(sql).toContain("$this.out");
+		expect(sql).not.toContain("->");
+		expect(sql).not.toContain("<-");
+	});
+});
+
+describe("graph traversal — recursive / path finding", () => {
+	const person = table("person", { name: t.string() });
+	const knows = edge("person", "knows", "person", {});
+	const rdb = orm(new Surreal(), person, knows);
+
+	test("range depth: head.{min..max}(->edge->target)", () => {
+		const q = rdb
+			.select("person")
+			.return((p) => ({ net: p.out("knows", { depth: [1, 3] }) }));
+		expect(render(q)).toContain("$this.id.{1..3}(->knows->person)");
+	});
+
+	test("exact depth: .{n}", () => {
+		const q = rdb
+			.select("person")
+			.return((p) => ({ net: p.out("knows", { depth: 2 }) }));
+		expect(render(q)).toContain(".{2}(->knows->person)");
+	});
+
+	test("open-ended depth: .{..max}", () => {
+		const q = rdb
+			.select("person")
+			.return((p) => ({ net: p.out("knows", { depth: { max: 5 } }) }));
+		expect(render(q)).toContain(".{..5}(->knows->person)");
+	});
+
+	test("collect modifier: .{..+collect}", () => {
+		const q = rdb
+			.select("person")
+			.return((p) => ({ net: p.out("knows", { collect: true }) }));
+		expect(render(q)).toContain(".{..+collect}(->knows->person)");
+	});
+
+	test("shortest path binds the target as a parameter", () => {
+		const target = new RecordId("person", "z");
+		const q = rdb
+			.select("person")
+			.return((p) => ({ path: p.out("knows", { shortest: target }) }));
+		const ctx = displayContext();
+		const sql = q[__display](ctx);
+		expect(sql).toMatch(/\.\{\.\.\+shortest=\$_v\d+\}\(->knows->person\)/);
+		expect(Object.values(ctx.variables)).toContainEqual(target);
+	});
+
+	test("recursion composes with an edge filter", () => {
+		const q = rdb.select("person").return((p) => ({
+			net: p.out("knows", { depth: [1, 2], where: (e) => e.id.trueish() }),
+		}));
+		expect(render(q)).toContain(".{1..2}(->(knows WHERE");
 	});
 });
