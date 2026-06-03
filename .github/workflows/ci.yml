@@ -91,8 +91,16 @@ jobs:
         run: bun run test:unit
 
   integration-tests:
-    name: Integration Tests
+    name: Integration Tests (SurrealDB ${{ matrix.surrealdb_version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `v3.1.0` is not a published release (latest stable is the 3.0.x line;
+        # 3.1.x is nightly-only and `setup-surreal` can only install release
+        # tags or `latest`), so the matrix spans the earliest 3.x stable, the
+        # newest 3.x stable, and `latest`.
+        surrealdb_version: [v3.0.0, v3.0.5, latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -116,7 +124,11 @@ jobs:
       - name: Start SurrealDB
         uses: surrealdb/setup-surreal@7c103070ba4f544240cd287432ba70d6f50163a5 # v2.0.1
         with:
-          surrealdb_version: v3.0.0-beta.4
+          # NB: the workflow previously pinned `v3.0.0-beta.4`, on which graph
+          # traversal materialised via `.select()` (a subquery over a
+          # `$parent`-rooted graph path) returns empty — a beta bug fixed before
+          # the 3.0.0 stable release. The matrix above runs only stable versions.
+          surrealdb_version: ${{ matrix.surrealdb_version }}
           surrealdb_port: 8000
           surrealdb_username: root
           surrealdb_password: root
