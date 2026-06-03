@@ -1,4 +1,4 @@
-import { RecordId, Table, type RecordIdValue } from "surrealdb";
+import { RecordId, type RecordIdValue, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
@@ -153,7 +153,7 @@ export class CreateQuery<
 		});
 
 		let target: string;
-		if (this._id) {
+		if (this._id !== undefined) {
 			// Create a RecordId for the target instead of concatenating variables
 			const recordId = new RecordId(this.tb, this._id);
 			target = ctx.var(recordId);

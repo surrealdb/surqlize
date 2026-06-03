@@ -40,6 +40,20 @@ describe("CREATE queries", () => {
 		// ID is in variables, not in the query string directly
 	});
 
+	test("preserves a zero-valued numeric id instead of dropping it", () => {
+		const query = db.create("user", 0).set({ name: "Zero", age: 0 });
+		const ctx = displayContext();
+
+		query[__display](ctx);
+
+		const recordId = Object.values(ctx.variables).find(
+			(value) => value instanceof RecordId,
+		);
+
+		expect(recordId).toBeInstanceOf(RecordId);
+		expect((recordId as RecordId).id).toBe(0);
+	});
+
 	test("preserves composite CREATE ids without stringifying them", () => {
 		const compositeId = {
 			tenant: "acme",
