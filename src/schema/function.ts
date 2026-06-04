@@ -1,5 +1,7 @@
-import type { ContextSource } from "../functions/standalone";
-import { standaloneFn } from "../functions/standalone";
+import {
+	type ContextSource,
+	standaloneFn,
+} from "../functions/standalone/internal";
 import type { AbstractType } from "../types";
 import type { Workable, WorkableContext } from "../utils";
 import type { Actionable } from "../utils/actionable";

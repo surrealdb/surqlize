@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { type ContextSource, standaloneConst, standaloneFn } from "./index";
+import { type ContextSource, standaloneConst, standaloneFn } from "./internal";
 
 export const time = {
 	// Functions

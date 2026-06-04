@@ -38,7 +38,7 @@
 		"tsup": "^8.5.1"
 	},
 	"peerDependencies": {
-		"surrealdb": ">=2.0.0-alpha.18",
+		"surrealdb": ">=2.0.0",
 		"typescript": "^5.0.0"
 	},
 	"scripts": {

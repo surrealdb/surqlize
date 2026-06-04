@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { type ContextSource, standaloneFn } from "./index";
+import { type ContextSource, standaloneFn } from "./internal";
 
 export const rand = {
 	rand<C extends WorkableContext>(source: ContextSource<C>) {

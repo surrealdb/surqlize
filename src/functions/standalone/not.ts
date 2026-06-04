@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./index";
+import { standaloneFn } from "./internal";
 
 /** not(value) - logical negation */
 export function not<C extends WorkableContext>(value: Workable<C>) {

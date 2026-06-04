@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./index";
+import { standaloneFn } from "./internal";
 
 export const vector = {
 	add<C extends WorkableContext>(a: Workable<C>, b: Workable<C>) {

@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./index";
+import { standaloneFn } from "./internal";
 
 export const encoding = {
 	base64Decode<C extends WorkableContext>(value: Workable<C>) {

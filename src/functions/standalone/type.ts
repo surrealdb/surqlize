@@ -1,7 +1,11 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./index";
+import { standaloneFn } from "./internal";
 
+// Named `type_` (trailing underscore) rather than `type`: a binding literally
+// named `type` cannot be re-exported, because `export { type }` collides with
+// TypeScript's type-only export syntax (`export type { ... }`). The SurrealQL
+// family this maps to is `type::*`.
 export const type_ = {
 	// Casting functions
 

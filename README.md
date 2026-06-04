@@ -61,7 +61,7 @@ npm install surqlize
   features degrade or are unavailable on older servers; for example, filtering
   or projecting a live query relies on query parameters that require **server ≥
   3.0** (`FETCH` requires ≥ 2.2.0).
-- **`surrealdb` JavaScript SDK ≥ 2.0.0-alpha.18** — declared as a peer
+- **`surrealdb` JavaScript SDK ≥ 2.0.0** — declared as a peer
   dependency, so install it alongside surqlize. (The SDK and the server are
   versioned independently: the 2.x SDK is what connects to a 3.x server.)
 - **TypeScript ≥ 5.0** for full type inference.
@@ -1562,7 +1562,7 @@ bun run qau  # Auto-fix with unsafe changes
 
 ## Contributing
 
-Contributions are welcome! This project is in an experimental stage, so expect breaking changes. If you'd like to contribute:
+Contributions are welcome! The project is stabilizing toward a `1.0.0` release; the public API is largely settled, but minor breaking changes are still possible before then. If you'd like to contribute:
 
 1. Open an issue to discuss your idea
 2. Fork the repository

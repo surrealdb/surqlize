@@ -1,7 +1,10 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./index";
+import { standaloneFn } from "./internal";
 
+// Named `set_` (trailing underscore) for consistency with `type_` (which must
+// avoid the `export { type }` syntax collision). Maps to the SurrealQL `set`
+// function family.
 export const set_ = {
 	difference<C extends WorkableContext>(a: Workable<C>, b: Workable<C>) {
 		return standaloneFn(a, t.string(), "set::difference", a, b);

@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./index";
+import { standaloneFn } from "./internal";
 
 /** sleep(duration) - pauses execution */
 export function sleep<C extends WorkableContext>(duration: Workable<C>) {
