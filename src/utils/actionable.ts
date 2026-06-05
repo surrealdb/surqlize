@@ -1,6 +1,13 @@
 import { OrmError } from "../error";
 import { type GetFunctions, getFunctions } from "../functions";
-import type { AbstractType, ArrayType, ObjectType, StringType } from "../types";
+import type {
+	AbstractType,
+	ArrayType,
+	ObjectType,
+	OptionType,
+	StringType,
+	UnionType,
+} from "../types";
 import { type Workable, type WorkableContext, workableGet } from "./workable";
 
 export type ActionableProps<C extends WorkableContext, T extends AbstractType> =
@@ -9,14 +16,16 @@ export type ActionableProps<C extends WorkableContext, T extends AbstractType> =
 		: T extends ArrayType<infer A>
 			? A extends AbstractType
 				? {
-						[K: number]: Actionable<C, A>;
+						[K: number]: Actionable<C, OptionType<A>>;
 					}
 				: A extends AbstractType[]
-					? {
-							[K in keyof A as K extends keyof unknown[]
+					? ({
+							[K in keyof A as K extends keyof Array<unknown>
 								? never
 								: K]: A[K] extends AbstractType ? Actionable<C, A[K]> : never;
-						}
+						} & {
+							[K: number]: Actionable<C, OptionType<UnionType<A>>>;
+						})
 					: never
 			: unknown;
 

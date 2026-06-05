@@ -145,6 +145,17 @@ export abstract class Query<
 		return Object.assign(fn, { val, at }) as Then<this> & ThenAccessors<this>;
 	}
 
+	wrap(): Actionable<C, T> {
+		const query = this;
+		return actionable({
+			[__ctx]: this[__ctx],
+			[__type]: this[__type],
+			[__display](ctx) {
+				return `(${query[__display](ctx)})`;
+			},
+		});
+	}
+
 	/** Execute the query against SurrealDB and return the parsed result. */
 	async execute() {
 		const ctx = displayContext();
