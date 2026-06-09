@@ -337,6 +337,43 @@ describe("graph traversal — row-level sugar", () => {
 		expect(sql).not.toContain("->");
 		expect(sql).not.toContain("<-");
 	});
+
+	// Regression for https://github.com/surrealdb/surqlize/issues/23: the
+	// traversal-verb sugar must let an edge's `in`/`out` resolve *nested* field
+	// access through a fetched record (`e.in.name.first`), not just `e.in` as a
+	// whole. A buggy sugar returned the verb function in place of the record-link
+	// field, so `e.in.name` hit `Function.prototype.name`, `.first` was
+	// `undefined`, and building the projection threw "Expected object but found
+	// undefined".
+	test("resolves nested field access through a fetched in/out link", () => {
+		const q = db
+			.select("authored")
+			.fetch("in", "out")
+			.return((e) => ({
+				user: { first: e.in.name.first, id: e.in.id },
+				edge_id: e.id,
+				post: { title: e.out.title, id: e.out.id },
+			}));
+		const sql = render(q);
+		expect(sql).toContain("SELECT VALUE");
+		expect(sql).toContain("$this.in.name.first");
+		expect(sql).toContain("$this.in.id");
+		expect(sql).toContain("$this.id");
+		expect(sql).toContain("$this.out.title");
+		expect(sql).toContain("$this.out.id");
+		expect(sql).toContain("FETCH in, out");
+	});
+
+	test("mixes a fetched link's nested field with the edge's own field", () => {
+		const q = db
+			.select("authored")
+			.fetch("in")
+			.return((e) => ({ author: e.in.name.first, when: e.created }));
+		const sql = render(q);
+		expect(sql).toContain("$this.in.name.first");
+		expect(sql).toContain("$this.created");
+		expect(sql).toContain("FETCH in");
+	});
 });
 
 describe("graph traversal — multi-table edges", () => {
