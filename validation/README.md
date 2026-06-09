@@ -20,15 +20,15 @@ Core API thesis:
 Proposed naming convention used in examples:
 
 ```ts
-import { ANY, db, fn, g, q } from "surqlize";
+import { ANY, db, fn, q } from "surqlize";
 
-q.field("name");        // typed idiom/expression factory
-q.param("limit");       // $limit
-q.rid("person", "one"); // person:one
-q.raw("...");           // scoped escape hatch
-db.value(raw);          // actionable expression root for raw values
-ANY;                    // graph wildcard `?`
-g.with(db)("edge");     // schema-aware graph segment helper
+q.field("name");           // typed idiom/expression factory
+q.param("limit");          // $limit
+q.rid("person", "one");    // person:one
+q.raw("...");              // scoped escape hatch
+db.value(raw);             // actionable expression root for raw values
+ANY;                       // graph wildcard `?`
+out((g) => g("edge"));     // schema-aware graph segment, injected per step
 ```
 
 Useful validation questions:

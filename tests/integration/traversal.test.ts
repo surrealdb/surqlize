@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RecordId } from "surrealdb";
-import { edge, g, orm, t, table } from "../../src";
+import { edge, orm, t, table } from "../../src";
 import { withTestDb } from "./setup";
 
 describe("graph traversal integration tests", () => {
@@ -229,11 +229,7 @@ describe("graph traversal — edge filtering", () => {
 			.select("user", "dave")
 			.return((u) => ({
 				authored: u.id
-					.out(
-						g
-							.with(db)("authored")
-							.where((e) => e.role.eq("author")),
-					)
+					.out((g) => g("authored").where((e) => e.role.eq("author")))
 					.out("post")
 					.select()
 					.return((p) => ({ title: p.title })),

@@ -1301,18 +1301,24 @@ db.select("user").return((user) => ({
 
 ### Filtering traversals
 
-Filter on the edge mid-traversal with `where` — this compiles to
-`->(edge WHERE …)->target`, and the callback receives the edge's fields:
+Filter on the edge mid-traversal by passing a callback to `.out()` / `.in()`.
+It receives a segment factory `g` bound to the current step: build the edge
+segment and add a `.where()` whose callback receives the edge's fields. This
+compiles to `->(edge WHERE …)->target`:
 
 ```typescript
 db.select("user").return((user) => ({
   posts: user
-    .out("authored", { where: (e) => e.role.eq("author") })
+    .out((g) => g("authored").where((e) => e.role.eq("author")))
     .select()
     .return((post) => ({ title: post.title })),
 }));
 // ->(authored WHERE role = "author")->post
 ```
+
+Plain edge names and filter callbacks are just alternatives for the step, so they
+mix in one call — `user.out("a", (g) => g("b").where(...))` compiles to
+`->(a, b WHERE …)`.
 
 Traversals also compose inside `WHERE` to filter the outer query. `len()` and
 `isEmpty()` are the idiomatic "has any" / "has none" checks:

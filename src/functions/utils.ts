@@ -1,5 +1,6 @@
 import {
 	ANY,
+	createGraphSegment,
 	type GraphSegmentArg,
 	isGraphSegmentSpec,
 } from "../schema/traversal";
@@ -42,11 +43,30 @@ export type RenderedGraphAlternative = {
 	where?: (ctx: DisplayContext) => string;
 };
 
+/**
+ * Normalise a traversal step's arguments into segment specs. Each argument is a
+ * plain edge name / `ANY`, or a filter callback (`(g) => g("edge").where(...)`)
+ * which is invoked with the segment constructor — so a step can freely mix the
+ * two, e.g. `out("a", (g) => g("b").where(...))`. An empty call is the `?`
+ * wildcard.
+ */
+function resolveSegmentArgs(
+	args: readonly unknown[],
+): readonly GraphSegmentArg[] {
+	if (args.length === 0) return [ANY];
+	return args.map((arg) =>
+		typeof arg === "function"
+			? (arg as (g: typeof createGraphSegment) => GraphSegmentArg)(
+					createGraphSegment,
+				)
+			: (arg as GraphSegmentArg),
+	);
+}
+
 export function graphAlternatives<C extends WorkableContext>(
-	args: readonly GraphSegmentArg[],
+	args: readonly unknown[],
 ): RuntimeGraphAlternative<C>[] {
-	const raw: readonly GraphSegmentArg[] = args.length === 0 ? [ANY] : args;
-	return raw.map((arg) => {
+	return resolveSegmentArgs(args).map((arg) => {
 		if (arg === ANY) return { target: ANY };
 		if (isGraphSegmentSpec(arg)) {
 			return { target: arg.target, filter: arg.filter };

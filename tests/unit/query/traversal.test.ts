@@ -6,7 +6,6 @@ import {
 	displayContext,
 	edge,
 	type FromOf,
-	g,
 	type IncomingEdges,
 	type OutgoingEdges,
 	orm,
@@ -134,16 +133,27 @@ describe("graph traversal — SurrealQL generation", () => {
 	test("edge filtering: ->(edge WHERE …)->target", () => {
 		const q = db.select("user").return((u) => ({
 			posts: u.id
-				.out(
-					g
-						.with(db)("authored")
-						.where((e) => e.role.eq("author")),
-				)
+				.out((g) => g("authored").where((e) => e.role.eq("author")))
 				.out("post"),
 		}));
 		const sql = render(q);
 		expect(sql).toContain("->(authored WHERE role = ");
 		expect(sql).toContain(")->post");
+	});
+
+	test("mixes a plain alternative with a filtered one in one step", () => {
+		const account = table("account", { handle: t.string() });
+		const follows = edge("account", "follows", "account", { since: t.date() });
+		const blocks = edge("account", "blocks", "account", { reason: t.string() });
+		const sdb = orm(new Surreal(), account, follows, blocks);
+		const q = sdb.select("account").return((a) => ({
+			rel: a.id.out("follows", (g) =>
+				g("blocks").where((e) => e.reason.eq("spam")),
+			),
+		}));
+		const sql = render(q);
+		// ->(follows, blocks WHERE reason = $v)
+		expect(sql).toContain("->(follows, blocks WHERE reason = ");
 	});
 
 	test(".select().return() wraps the traversal in a subquery", () => {
@@ -217,6 +227,17 @@ describe("graph traversal — type-level", () => {
 		expect(_check).toBe(true);
 	});
 
+	test("filter callback infers the same landing node as the bare step", () => {
+		const q = db.select("user").return((u) => ({
+			posts: u.id
+				.out((g) => g("authored").where((e) => e.role.eq("author")))
+				.out("post"),
+		}));
+		type R = t.infer<typeof q>;
+		const _check: Equal<R, { posts: RecordId<"post">[] }[]> = true;
+		expect(_check).toBe(true);
+	});
+
 	test("ANY is type-safe for the current graph step", () => {
 		const q = db.select("user").return((u) => ({ edges: u.id.out(ANY) }));
 		type R = t.infer<typeof q>;
@@ -253,8 +274,12 @@ describe("graph traversal — type-level", () => {
 				x: u.id.out("authored").out("tag"),
 			}));
 			db.select("user").return((u) => ({
-				// @ts-expect-error g("tagged") is not an outgoing alternative from user
-				x: u.id.out(g("tagged")),
+				// @ts-expect-error "tagged" is not an outgoing alternative from user
+				x: u.id.out((g) => g("tagged")),
+			}));
+			db.select("user").return((u) => ({
+				// @ts-expect-error "nope" is not a field of the authored edge
+				x: u.id.out((g) => g("authored").where((e) => e.nope.eq("x"))),
 			}));
 		};
 		expect(typeof _typeErrors).toBe("function");
@@ -268,6 +293,17 @@ describe("graph traversal — row-level sugar", () => {
 			.return((u) => ({ posts: u.out("authored").out("post") }));
 		const sql = render(q);
 		expect(sql).toContain("$this.id->authored->post");
+	});
+
+	test("row sugar accepts the filter callback", () => {
+		const q = db.select("user").return((u) => ({
+			posts: u
+				.out((g) => g("authored").where((e) => e.role.eq("author")))
+				.out("post"),
+		}));
+		const sql = render(q);
+		expect(sql).toContain("$this.id->(authored WHERE role = ");
+		expect(sql).toContain(")->post");
 	});
 
 	test("sugar works in WHERE", () => {

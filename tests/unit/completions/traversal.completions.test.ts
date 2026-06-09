@@ -2,7 +2,7 @@ import { beforeAll, describe, test } from "bun:test";
 import { expectCompletions, warmCompletions } from "./harness";
 
 const SCHEMA = `
-import { ANY, edge, g, orm, t, table } from "./src";
+import { ANY, edge, orm, t, table } from "./src";
 import { RecordId, Surreal } from "surrealdb";
 
 const user = table("user", { name: t.string(), age: t.number() });
@@ -15,7 +15,7 @@ const tagged = edge("post", "tagged", "tag", {});
 const mentioned = edge(["post", "user"], "mentioned", ["tag", "topic"], {});
 
 const db = orm(new Surreal(), user, post, tag, topic, authored, tagged, mentioned);
-void [db, g, ANY, RecordId];
+void [db, ANY, RecordId];
 `;
 
 beforeAll(() => warmCompletions(SCHEMA));
@@ -61,12 +61,13 @@ describe("graph traversal autocomplete", () => {
 		).toSuggest("authored", "tagged");
 	});
 
-	test("an ORM-bound segment spec suggests schema targets", () => {
-		expectCompletions(`g.with(db)("|")`).toSuggest(
-			"authored",
-			"tagged",
-			"user",
-		);
+	test("the injected segment factory suggests reachable edges", () => {
+		// The factory `g` passed into the callback is bound to the current step,
+		// so it suggests only the reachable out-edges — not every table, the way
+		// the old ORM-bound `g.with(db)` helper did.
+		expectCompletions(`db.value(new RecordId("user", "x")).out((g) => g("|"))`)
+			.toSuggest("authored")
+			.notToSuggest("tagged", "post", "user");
 	});
 
 	test("row-level traversal in a projection suggests edges", () => {

@@ -2,7 +2,7 @@ import type { GraphType } from "../types";
 import type { Workable, WorkableContext } from "../utils";
 import type { Actionable } from "../utils/actionable";
 import type { EdgeSchema } from "./edge";
-import type { AnyTable, Orm } from "./orm";
+import type { AnyTable } from "./orm";
 
 /** A type-safe marker for SurrealQL's graph wildcard segment `?`. */
 export const ANY: unique symbol = Symbol("surqlize.graph.ANY");
@@ -28,7 +28,7 @@ export type GraphFilter<C extends WorkableContext, Target extends string> = (
 
 export type GraphSegmentSpec<
 	Target extends string = string,
-	// biome-ignore lint/suspicious/noExplicitAny: standalone g() is context-free; g.with(orm) supplies a typed context
+	// biome-ignore lint/suspicious/noExplicitAny: the runtime constructor is context-free; the injected g() supplies a typed context
 	C extends WorkableContext = any,
 > = {
 	readonly [GRAPH_SEGMENT]: true;
@@ -39,7 +39,10 @@ export type GraphSegmentSpec<
 	): GraphSegmentSpec<Target, NextC>;
 };
 
-function createGraphSegment<Target extends string, C extends WorkableContext>(
+export function createGraphSegment<
+	Target extends string,
+	C extends WorkableContext,
+>(
 	target: Target,
 	filter?: GraphFilter<C, Target>,
 ): GraphSegmentSpec<Target, C> {
@@ -53,33 +56,35 @@ function createGraphSegment<Target extends string, C extends WorkableContext>(
 	};
 }
 
-export interface GraphSegmentFactory {
-	/** Build a graph segment alternative, optionally with a segment-local filter. */
-	<Target extends string>(target: Target): GraphSegmentSpec<Target>;
-	/**
-	 * Bind the segment factory to an ORM so `.where()` callbacks can use the
-	 * selected table or edge schema.
-	 */
-	with<O extends Orm>(
-		orm: O,
-	): <Target extends keyof O["tables"] & string>(
-		target: Target,
-	) => GraphSegmentSpec<Target, WorkableContext<O>>;
-}
+/**
+ * The context-bound segment factory injected into a traversal-step filter
+ * callback (`.out((g) => g("edge").where(...))`). Its target is constrained
+ * directly to the step's reachable edges — the same direct-constraint pattern
+ * `GraphArgs` relies on, so `g("…")` autocompletes — and the spec it returns is
+ * bound to the live traversal context `C`, so the segment's `.where((e) => …)`
+ * is schema-typed against the edge.
+ */
+export type SegmentBuilder<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+> = <Target extends Extract<StepSegments<C, Tb, Dir>, string>>(
+	target: Target,
+) => GraphSegmentSpec<Target, C>;
 
-export const g: GraphSegmentFactory = Object.assign(
-	<Target extends string>(target: Target): GraphSegmentSpec<Target> =>
-		createGraphSegment(target),
-	{
-		with<O extends Orm>(orm: O) {
-			void orm;
-			return <Target extends keyof O["tables"] & string>(
-				target: Target,
-			): GraphSegmentSpec<Target, WorkableContext<O>> =>
-				createGraphSegment<Target, WorkableContext<O>>(target);
-		},
-	},
-);
+/**
+ * A traversal-step filter alternative: it receives the context-bound segment
+ * factory `g` and returns one (optionally `.where()`-filtered) segment. It is a
+ * variadic argument alongside plain edge names, so one step can mix filtered and
+ * unfiltered alternatives: `out("a", (g) => g("b").where(...))` → `->(a, b WHERE …)`.
+ */
+export type SegmentCallback<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+> = (
+	g: SegmentBuilder<C, Tb, Dir>,
+) => GraphSegmentSpec<Extract<StepSegments<C, Tb, Dir>, string>, C>;
 
 export function isGraphSegmentSpec(
 	value: unknown,
@@ -91,7 +96,7 @@ export function isGraphSegmentSpec(
 	);
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: segment specs can be created standalone or ORM-bound
+// biome-ignore lint/suspicious/noExplicitAny: AnyGraphSegmentSpec erases the segment's context type
 export type AnyGraphSegmentSpec = GraphSegmentSpec<string, any>;
 
 export type GraphSegmentArg = GraphSegmentPrimitive | AnyGraphSegmentSpec;
@@ -175,14 +180,6 @@ type AnyBothStep<C extends WorkableContext, Tb extends string> =
 		? FromOf<C, Tb> | ToOf<C, Tb>
 		: OutgoingEdges<C, Tb> | IncomingEdges<C, Tb>;
 
-type SegmentTarget<Segment extends GraphSegmentArg> =
-	// biome-ignore lint/suspicious/noExplicitAny: only the segment target matters for path typing
-	Segment extends GraphSegmentSpec<infer Target, any>
-		? Target
-		: Segment extends GraphSegmentPrimitive
-			? Segment
-			: never;
-
 type StepResultForTarget<
 	C extends WorkableContext,
 	Tb extends string,
@@ -196,38 +193,42 @@ type StepResultForTarget<
 			: AnyBothStep<C, Tb>
 	: Extract<Target, StepSegments<C, Tb, Dir> & string>;
 
-export type StepResult<
-	C extends WorkableContext,
-	Tb extends string,
-	Dir extends GraphDirection,
-	Segment extends GraphSegmentArg,
-> = StepResultForTarget<C, Tb, Dir, SegmentTarget<Segment>>;
+/**
+ * The landing target contributed by one traversal argument: a plain edge name or
+ * `ANY` contributes itself; a segment callback contributes the target of the
+ * segment it builds.
+ */
+type SegmentArgTarget<Arg> = Arg extends GraphSegmentPrimitive
+	? Arg
+	: // biome-ignore lint/suspicious/noExplicitAny: pull the built segment's target out of any callback
+		Arg extends (g: any) => GraphSegmentSpec<infer Target, any>
+		? Target
+		: never;
 
 type ValidGraphArg<
 	C extends WorkableContext,
 	Tb extends string,
 	Dir extends GraphDirection,
-> =
-	| StepSegments<C, Tb, Dir>
-	// biome-ignore lint/suspicious/noExplicitAny: filter context is checked by the segment builder
-	| GraphSegmentSpec<Extract<StepSegments<C, Tb, Dir>, string>, any>;
+> = StepSegments<C, Tb, Dir> | SegmentCallback<C, Tb, Dir>;
 
 export type GraphSegmentResult<
 	C extends WorkableContext,
 	Tb extends string,
 	Dir extends GraphDirection,
-	Args extends readonly GraphSegmentArg[],
+	Args extends GraphArgs<C, Tb, Dir>,
 > = Args extends readonly []
-	? StepResult<C, Tb, Dir, ANY>
-	: StepResult<C, Tb, Dir, Args[number]>;
+	? StepResultForTarget<C, Tb, Dir, ANY>
+	: StepResultForTarget<C, Tb, Dir, SegmentArgTarget<Args[number]>>;
 
 /**
- * The valid arguments for a traversal step from `Tb` in direction `Dir`: each
- * is a reachable edge/table name (or the `?` wildcard `ANY`), or a filtered
- * segment spec. Used as the constraint on a traversal method's `const Args`
- * type parameter — constraining the parameter directly (rather than validating
- * via an intersection on the parameter type) is what lets the editor suggest
- * the reachable names, while `Args` still captures the literal tuple that
+ * The valid arguments for a traversal step from `Tb` in direction `Dir`: each is
+ * a reachable edge/table name, the `?` wildcard `ANY`, or a segment callback
+ * (`(g) => g("edge").where(...)`) for a filtered alternative. The forms mix
+ * freely within one step: `out("a", (g) => g("b").where(...))` → `->(a, b WHERE …)`.
+ * Used as the constraint on a traversal method's `const Args` type parameter —
+ * constraining the parameter directly (rather than validating via an
+ * intersection on the parameter type) is what lets the editor suggest the
+ * reachable names, while `Args` still captures the literal tuple that
  * `GraphSegmentResult` needs to type the landing node.
  */
 export type GraphArgs<
