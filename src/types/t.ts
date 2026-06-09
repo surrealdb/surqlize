@@ -93,11 +93,15 @@ export function literal<T extends string | number | boolean>(
 	return new LiteralType<T>(value);
 }
 
-/** Create a record reference type, optionally scoped to a specific table. */
-export function record<T extends string | undefined>(
-	table?: T extends string ? T : T extends undefined ? T : never,
-) {
-	return new RecordType<T>(table as T);
+/**
+ * Create a record reference type, optionally scoped to one or more tables.
+ * Passing an array (e.g. `t.record(["post", "user"])`) yields a link that
+ * accepts a record from any of the given tables (`record<post | user>`).
+ */
+export function record<const T extends string | undefined = undefined>(
+	table?: T | readonly T[],
+): RecordType<T> {
+	return new RecordType<T>(table as T | readonly T[]);
 }
 
 /** Extract the inferred TypeScript type from a type definition or workable. */

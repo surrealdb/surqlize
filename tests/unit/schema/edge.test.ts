@@ -128,6 +128,59 @@ describe("EdgeSchema", () => {
 		expect(authored.validate(validRecord)).toBe(true);
 	});
 
+	test("supports multiple in and out tables", () => {
+		const tagged = edge(["post", "user"], "tagged", ["tag", "topic"], {});
+
+		expect(tagged.from).toEqual(["post", "user"]);
+		expect(tagged.to).toEqual(["tag", "topic"]);
+
+		const fields = tagged.fields;
+		expect(fields.in.tb).toEqual(["post", "user"]);
+		expect(fields.out.tb).toEqual(["tag", "topic"]);
+		expect(fields.in.expected).toBe("RecordId<post | user>");
+
+		// `in` accepts a record from either source table, and rejects others.
+		expect(fields.in.validate(new RecordId("post", "1"))).toBe(true);
+		expect(fields.in.validate(new RecordId("user", "alice"))).toBe(true);
+		expect(fields.in.validate(new RecordId("tag", "ts"))).toBe(false);
+
+		// `out` accepts a record from either target table.
+		expect(fields.out.validate(new RecordId("topic", "x"))).toBe(true);
+		expect(fields.out.validate(new RecordId("post", "1"))).toBe(false);
+	});
+
+	test("validates edge records with multi-table in/out", () => {
+		const tagged = edge(["post", "user"], "tagged", "tag", {});
+
+		const fromPost = {
+			id: new RecordId("tagged", "1"),
+			in: new RecordId("post", "post1"),
+			out: new RecordId("tag", "ts"),
+		};
+		const fromUser = {
+			id: new RecordId("tagged", "2"),
+			in: new RecordId("user", "alice"),
+			out: new RecordId("tag", "ts"),
+		};
+		const fromTag = {
+			id: new RecordId("tagged", "3"),
+			in: new RecordId("tag", "nope"), // not a valid source table
+			out: new RecordId("tag", "ts"),
+		};
+
+		expect(tagged.validate(fromPost)).toBe(true);
+		expect(tagged.validate(fromUser)).toBe(true);
+		expect(tagged.validate(fromTag)).toBe(false);
+	});
+
+	test("single-table edges still store bare strings", () => {
+		const authored = edge("user", "authored", "post", {});
+		expect(authored.from).toBe("user");
+		expect(authored.to).toBe("post");
+		expect(authored.fields.in.tb).toBe("user");
+		expect(authored.fields.in.expected).toBe("RecordId<user>");
+	});
+
 	test("handles self-referential edges", () => {
 		const follows = edge("user", "follows", "user", {
 			since: t.date(),

@@ -1,5 +1,5 @@
 import type { Orm } from "../schema";
-import type { AbstractType } from "../types";
+import { type AbstractType, ArrayType, GraphType } from "../types";
 import type { DisplayContext } from "./display";
 
 export const __display: unique symbol = Symbol("display");
@@ -15,7 +15,8 @@ export type Workable<
 	[__ctx]: C;
 };
 
-export type WorkableContext<O extends Orm = Orm> = {
+// biome-ignore lint/suspicious/noExplicitAny: default context must accept any typed ORM instance
+export type WorkableContext<O extends Orm<any> = Orm<any>> = {
 	orm: O;
 	id: symbol;
 };
@@ -44,7 +45,17 @@ export function intoWorkable<C extends WorkableContext, T extends AbstractType>(
 }
 
 export function workableGet(workable: Workable, key: string | number) {
-	const [type, path] = workable[__type].get(key);
+	let [type, path] = workable[__type].get(key);
+
+	if (workable[__type] instanceof GraphType && workable[__type].tb !== "*") {
+		const table = workable[__ctx].orm.tables[workable[__type].tb];
+		const schema = table?.schema;
+		if (schema) {
+			const [fieldType, fieldPath] = schema.get(key);
+			type = new ArrayType(fieldType);
+			path = fieldPath;
+		}
+	}
 
 	return {
 		[__ctx]: workable[__ctx],
@@ -71,7 +82,7 @@ export function isWorkable<C extends WorkableContext>(
 	value: unknown,
 ): value is Workable<C> {
 	return (
-		typeof value === "object" &&
+		(typeof value === "object" || typeof value === "function") &&
 		value !== null &&
 		(value as Workable<C>)[__ctx] !== undefined
 	);

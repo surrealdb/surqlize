@@ -1,117 +1,95 @@
 import type { SelectQuery } from "../../query/select";
-import type { EdgeSchema } from "../../schema/edge";
 import type {
-	FromOf,
-	IncomingEdges,
-	OutgoingEdges,
-	RecurseOpts,
-	ToOf,
-	TraverseOpts,
+	GraphArgs,
+	GraphDirection,
+	GraphSegmentResult,
 } from "../../schema/traversal";
 import type { GraphType, RecordType } from "../../types";
 import { __ctx, type Workable, type WorkableContext } from "../../utils";
 import type { Actionable } from "../../utils/actionable";
-import { edgeFilter, recursionOf, traverse } from "../utils";
+import {
+	edgeFilter,
+	graphAlternatives,
+	graphResultTarget,
+	type RenderedGraphAlternative,
+	traverse,
+} from "../utils";
 
-/** Read an edge schema by its registered name. */
-function edgeSchema<C extends WorkableContext>(
+function tableSchema<C extends WorkableContext>(
 	workable: Workable<C>,
-	edge: string,
-): EdgeSchema {
-	return (workable[__ctx].orm.tables as Record<string, EdgeSchema>)[edge]!;
+	target: string,
+) {
+	return workable[__ctx].orm.tables[target]?.schema;
+}
+
+function graph<
+	C extends WorkableContext,
+	Tb extends keyof C["orm"]["tables"] & string,
+	Dir extends GraphDirection,
+	const Args extends GraphArgs<C, Tb, Dir>,
+>(workable: Workable<C, RecordType<Tb>>, direction: Dir, args: Args) {
+	const alternatives = graphAlternatives<C>(args);
+	const rendered: RenderedGraphAlternative[] = alternatives.map(
+		(alternative) => {
+			const schema =
+				typeof alternative.target === "string"
+					? tableSchema(workable, alternative.target)
+					: undefined;
+			return {
+				target: alternative.target,
+				where: schema
+					? edgeFilter(workable[__ctx], schema, alternative.filter)
+					: undefined,
+			};
+		},
+	);
+	const target = graphResultTarget(alternatives);
+
+	return traverse(
+		workable,
+		direction,
+		rendered,
+		target,
+	) as unknown as Actionable<
+		C,
+		GraphType<GraphSegmentResult<C, Tb, Dir, Args>>
+	>;
 }
 
 export const functions = {
 	select<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-	>(this: Workable<C, RecordType<Tb>>) {
-		return this[__ctx].orm.select(this);
+	>(this: Workable<C, RecordType<Tb>>): SelectQuery<C["orm"], C, Tb> {
+		return this[__ctx].orm.select(this) as unknown as SelectQuery<
+			C["orm"],
+			C,
+			Tb
+		>;
 	},
 
 	out<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends OutgoingEdges<C, Tb>,
-	>(
-		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
-	) {
-		const schema = edgeSchema(this, edge);
-		const where = edgeFilter(this[__ctx], schema.schema, opts?.where);
-		return traverse(
-			this,
-			"out",
-			edge,
-			schema.to,
-			where,
-			recursionOf(opts),
-		) as unknown as Actionable<C, GraphType<ToOf<C, Edge>>>;
+		const Args extends GraphArgs<C, Tb, "out">,
+	>(this: Workable<C, RecordType<Tb>>, ...args: Args) {
+		return graph(this, "out", args);
 	},
 
 	in<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends IncomingEdges<C, Tb>,
-	>(
-		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
-	) {
-		const schema = edgeSchema(this, edge);
-		const where = edgeFilter(this[__ctx], schema.schema, opts?.where);
-		return traverse(
-			this,
-			"in",
-			edge,
-			schema.from,
-			where,
-			recursionOf(opts),
-		) as unknown as Actionable<C, GraphType<FromOf<C, Edge>>>;
+		const Args extends GraphArgs<C, Tb, "in">,
+	>(this: Workable<C, RecordType<Tb>>, ...args: Args) {
+		return graph(this, "in", args);
 	},
 
-	outEdge<
+	both<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends OutgoingEdges<C, Tb>,
-	>(
-		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
-	) {
-		const where = edgeFilter(
-			this[__ctx],
-			edgeSchema(this, edge).schema,
-			opts?.where,
-		);
-		return traverse(
-			this,
-			"outEdge",
-			edge,
-			edge,
-			where,
-		) as unknown as Actionable<C, GraphType<Edge>>;
-	},
-
-	inEdge<
-		C extends WorkableContext,
-		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends IncomingEdges<C, Tb>,
-	>(
-		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
-	) {
-		const where = edgeFilter(
-			this[__ctx],
-			edgeSchema(this, edge).schema,
-			opts?.where,
-		);
-		return traverse(this, "inEdge", edge, edge, where) as unknown as Actionable<
-			C,
-			GraphType<Edge>
-		>;
+		const Args extends GraphArgs<C, Tb, "both">,
+	>(this: Workable<C, RecordType<Tb>>, ...args: Args) {
+		return graph(this, "both", args);
 	},
 } satisfies Functions;
 
@@ -121,53 +99,30 @@ export type Functions = {
 		Tb extends keyof C["orm"]["tables"] & string,
 	>(this: Workable<C, RecordType<Tb>>): SelectQuery<C["orm"], C, Tb>;
 
-	/**
-	 * Traverse outgoing through `edge` to the far node: `->edge->target`. Pass
-	 * `depth` / `collect` / `shortest` to recurse (`head.{depth}(->edge->target)`).
-	 */
 	out<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends OutgoingEdges<C, Tb>,
+		const Args extends GraphArgs<C, Tb, "out">,
 	>(
 		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
-	): Actionable<C, GraphType<ToOf<C, Edge>>>;
+		...args: Args
+	): Actionable<C, GraphType<GraphSegmentResult<C, Tb, "out", Args>>>;
 
-	/**
-	 * Traverse incoming through `edge` to the far node: `<-edge<-source`. Pass
-	 * `depth` / `collect` / `shortest` to recurse.
-	 */
 	in<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends IncomingEdges<C, Tb>,
+		const Args extends GraphArgs<C, Tb, "in">,
 	>(
 		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
-	): Actionable<C, GraphType<FromOf<C, Edge>>>;
+		...args: Args
+	): Actionable<C, GraphType<GraphSegmentResult<C, Tb, "in", Args>>>;
 
-	/** Traverse outgoing and stop on the edge itself: `->edge`. */
-	outEdge<
+	both<
 		C extends WorkableContext,
 		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends OutgoingEdges<C, Tb>,
+		const Args extends GraphArgs<C, Tb, "both">,
 	>(
 		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
-	): Actionable<C, GraphType<Edge>>;
-
-	/** Traverse incoming and stop on the edge itself: `<-edge`. */
-	inEdge<
-		C extends WorkableContext,
-		Tb extends keyof C["orm"]["tables"] & string,
-		Edge extends IncomingEdges<C, Tb>,
-	>(
-		this: Workable<C, RecordType<Tb>>,
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
-	): Actionable<C, GraphType<Edge>>;
+		...args: Args
+	): Actionable<C, GraphType<GraphSegmentResult<C, Tb, "both", Args>>>;
 };

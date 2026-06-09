@@ -161,7 +161,7 @@ export class SelectQuery<
 		if (typeof subject === "string") {
 			this.tb = subject;
 		} else if (isWorkable(subject)) {
-			this.tb = subject[__type].tb;
+			this.tb = subject[__type].tb as T;
 		} else {
 			this.tb = String(subject.table) as T;
 		}
@@ -451,12 +451,19 @@ function resolveFetchField(
 	tails: string[],
 	orm: Orm,
 ): AbstractType {
-	if (fieldType instanceof RecordType && fieldType.tb) {
-		const target = orm.tables[fieldType.tb as string];
-		if (!target) return fieldType;
-		return tails.length === 0
-			? target.schema
-			: resolveFetchObject(target.schema, tails, orm);
+	if (fieldType instanceof RecordType) {
+		const tb = fieldType.tb;
+		// A multi-table link (`record<a | b>`) has no single schema to expand
+		// into, so leave it unresolved rather than coercing the array to a key.
+		if (typeof tb === "string") {
+			const target = orm.tables[tb];
+			if (target) {
+				return tails.length === 0
+					? target.schema
+					: resolveFetchObject(target.schema, tails, orm);
+			}
+		}
+		return fieldType;
 	}
 	if (fieldType instanceof OptionType) {
 		return new OptionType(resolveFetchField(fieldType.schema, tails, orm));

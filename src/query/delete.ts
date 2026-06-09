@@ -52,7 +52,7 @@ export class DeleteQuery<
 		if (typeof subject === "string") {
 			this.tb = subject;
 		} else if (isWorkable(subject)) {
-			this.tb = subject[__type].tb;
+			this.tb = subject[__type].tb as T;
 		} else {
 			this.tb = String(subject.table) as T;
 		}

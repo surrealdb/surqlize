@@ -1,13 +1,103 @@
-import type { RecordId } from "surrealdb";
-import type { GraphType, RecordType } from "../types";
+import type { GraphType } from "../types";
 import type { Workable, WorkableContext } from "../utils";
 import type { Actionable } from "../utils/actionable";
 import type { EdgeSchema } from "./edge";
+import type { AnyTable, Orm } from "./orm";
+
+/** A type-safe marker for SurrealQL's graph wildcard segment `?`. */
+export const ANY: unique symbol = Symbol("surqlize.graph.ANY");
+
+const GRAPH_SEGMENT: unique symbol = Symbol("surqlize.graph.segment");
+
+export type ANY = typeof ANY;
+export type GraphDirection = "out" | "in" | "both";
+export type GraphSegmentPrimitive = string | ANY;
+
+export type TableFieldsOf<
+	C extends WorkableContext,
+	Tb extends string,
+> = Tb extends keyof C["orm"]["tables"]
+	? C["orm"]["tables"][Tb] extends AnyTable
+		? C["orm"]["tables"][Tb]["schema"]
+		: never
+	: never;
+
+export type GraphFilter<C extends WorkableContext, Target extends string> = (
+	row: Actionable<C, TableFieldsOf<C, Target>>,
+) => Workable<C>;
+
+export type GraphSegmentSpec<
+	Target extends string = string,
+	// biome-ignore lint/suspicious/noExplicitAny: standalone g() is context-free; g.with(orm) supplies a typed context
+	C extends WorkableContext = any,
+> = {
+	readonly [GRAPH_SEGMENT]: true;
+	readonly target: Target;
+	readonly filter?: GraphFilter<C, Target>;
+	where<NextC extends WorkableContext = C>(
+		cb: GraphFilter<NextC, Target>,
+	): GraphSegmentSpec<Target, NextC>;
+};
+
+function createGraphSegment<Target extends string, C extends WorkableContext>(
+	target: Target,
+	filter?: GraphFilter<C, Target>,
+): GraphSegmentSpec<Target, C> {
+	return {
+		[GRAPH_SEGMENT]: true,
+		target,
+		filter,
+		where(cb) {
+			return createGraphSegment(target, cb);
+		},
+	};
+}
+
+export interface GraphSegmentFactory {
+	/** Build a graph segment alternative, optionally with a segment-local filter. */
+	<Target extends string>(target: Target): GraphSegmentSpec<Target>;
+	/**
+	 * Bind the segment factory to an ORM so `.where()` callbacks can use the
+	 * selected table or edge schema.
+	 */
+	with<O extends Orm>(
+		orm: O,
+	): <Target extends keyof O["tables"] & string>(
+		target: Target,
+	) => GraphSegmentSpec<Target, WorkableContext<O>>;
+}
+
+export const g: GraphSegmentFactory = Object.assign(
+	<Target extends string>(target: Target): GraphSegmentSpec<Target> =>
+		createGraphSegment(target),
+	{
+		with<O extends Orm>(orm: O) {
+			void orm;
+			return <Target extends keyof O["tables"] & string>(
+				target: Target,
+			): GraphSegmentSpec<Target, WorkableContext<O>> =>
+				createGraphSegment<Target, WorkableContext<O>>(target);
+		},
+	},
+);
+
+export function isGraphSegmentSpec(
+	value: unknown,
+): value is GraphSegmentSpec<string> {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		(value as GraphSegmentSpec)[GRAPH_SEGMENT] === true
+	);
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: segment specs can be created standalone or ORM-bound
+export type AnyGraphSegmentSpec = GraphSegmentSpec<string, any>;
+
+export type GraphSegmentArg = GraphSegmentPrimitive | AnyGraphSegmentSpec;
 
 /**
- * The target table of an edge — where `->edge->` lands. Resolved directly from
- * the {@link EdgeSchema} generics registered on the ORM, so a single hop is
- * unambiguous (surqlize edges are strictly `from → via → to`).
+ * The target table of an edge, where `->edge->` lands.
  */
 export type ToOf<
 	C extends WorkableContext,
@@ -24,73 +114,7 @@ export type ToOf<
 		: never
 	: never;
 
-/** The edge's own schema (an `ObjectType` of its fields), as actionable. */
-export type EdgeFieldsOf<
-	C extends WorkableContext,
-	Edge extends string,
-> = Edge extends keyof C["orm"]["tables"]
-	? C["orm"]["tables"][Edge]["schema"]
-	: never;
-
-/**
- * Options for a traversal step. `where` filters on the edge mid-traversal,
- * compiling to `->(edge WHERE …)->target`; its callback receives the edge's
- * fields (e.g. `created`, `role`).
- */
-export type TraverseOpts<C extends WorkableContext, Edge extends string> = {
-	where?: (edge: Actionable<C, EdgeFieldsOf<C, Edge>>) => Workable<C>;
-};
-
-/**
- * A recursion depth: an exact number of hops (`{n}`), an inclusive `[min, max]`
- * range (`{min..max}`), or `{ min?, max? }` for open-ended ranges (`{min..}`,
- * `{..max}`, `{..}`). Omitting it with `collect`/`shortest` defaults to `{..}`.
- */
-export type RecurseDepth =
-	| number
-	| readonly [number, number]
-	| { min?: number; max?: number };
-
-/**
- * Recursive / path-finding options for `.out()` / `.in()`. Triggering any of
- * these compiles to SurrealDB's recursive idiom `record.{depth}(->edge->target)`:
- *
- * - `depth` — how many times to repeat the hop; returns the deepest records.
- * - `collect` — gather every unique node encountered (`{depth+collect}`).
- * - `shortest` — the shortest path to a target record (`{depth+shortest=target}`).
- */
-export type RecurseOpts<C extends WorkableContext, Edge extends string> = {
-	depth?: RecurseDepth;
-	collect?: boolean;
-	shortest?: RecordId<ToOf<C, Edge>> | Workable<C, RecordType<ToOf<C, Edge>>>;
-};
-
-/**
- * Row-level traversal sugar: the traversal verbs callable directly on a select
- * row (`user.out("authored")`), rooted at the row's `id`. On edge tables the
- * runtime keeps `in` / `out` resolving as record-link fields (a verb is only
- * dispatched when the table has no field of that name).
- */
-export type RowTraversal<C extends WorkableContext, T extends string> = {
-	out<Edge extends OutgoingEdges<C, T>>(
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
-	): Actionable<C, GraphType<ToOf<C, Edge>>>;
-	in<Edge extends IncomingEdges<C, T>>(
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge> & RecurseOpts<C, Edge>,
-	): Actionable<C, GraphType<FromOf<C, Edge>>>;
-	outEdge<Edge extends OutgoingEdges<C, T>>(
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
-	): Actionable<C, GraphType<Edge>>;
-	inEdge<Edge extends IncomingEdges<C, T>>(
-		edge: Edge,
-		opts?: TraverseOpts<C, Edge>,
-	): Actionable<C, GraphType<Edge>>;
-};
-
-/** The source table of an edge — where `<-edge<-` lands. */
+/** The source table of an edge, where `<-edge<-` lands. */
 export type FromOf<
 	C extends WorkableContext,
 	Edge extends string,
@@ -106,13 +130,127 @@ export type FromOf<
 		: never
 	: never;
 
+type IsEdgeTable<
+	C extends WorkableContext,
+	Tb extends string,
+> = Tb extends keyof C["orm"]["tables"]
+	? C["orm"]["tables"][Tb] extends EdgeSchema
+		? true
+		: false
+	: false;
+
+export type OutStepSegments<C extends WorkableContext, Tb extends string> =
+	IsEdgeTable<C, Tb> extends true
+		? ToOf<C, Tb> | ANY
+		: OutgoingEdges<C, Tb> | ANY;
+
+export type InStepSegments<C extends WorkableContext, Tb extends string> =
+	IsEdgeTable<C, Tb> extends true
+		? FromOf<C, Tb> | ANY
+		: IncomingEdges<C, Tb> | ANY;
+
+export type BothStepSegments<C extends WorkableContext, Tb extends string> =
+	IsEdgeTable<C, Tb> extends true
+		? FromOf<C, Tb> | ToOf<C, Tb> | ANY
+		: OutgoingEdges<C, Tb> | IncomingEdges<C, Tb> | ANY;
+
+export type StepSegments<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+> = Dir extends "out"
+	? OutStepSegments<C, Tb>
+	: Dir extends "in"
+		? InStepSegments<C, Tb>
+		: BothStepSegments<C, Tb>;
+
+type AnyOutStep<C extends WorkableContext, Tb extends string> =
+	IsEdgeTable<C, Tb> extends true ? ToOf<C, Tb> : OutgoingEdges<C, Tb>;
+
+type AnyInStep<C extends WorkableContext, Tb extends string> =
+	IsEdgeTable<C, Tb> extends true ? FromOf<C, Tb> : IncomingEdges<C, Tb>;
+
+type AnyBothStep<C extends WorkableContext, Tb extends string> =
+	IsEdgeTable<C, Tb> extends true
+		? FromOf<C, Tb> | ToOf<C, Tb>
+		: OutgoingEdges<C, Tb> | IncomingEdges<C, Tb>;
+
+type SegmentTarget<Segment extends GraphSegmentArg> =
+	// biome-ignore lint/suspicious/noExplicitAny: only the segment target matters for path typing
+	Segment extends GraphSegmentSpec<infer Target, any>
+		? Target
+		: Segment extends GraphSegmentPrimitive
+			? Segment
+			: never;
+
+type StepResultForTarget<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+	Target,
+> = Target extends ANY
+	? Dir extends "out"
+		? AnyOutStep<C, Tb>
+		: Dir extends "in"
+			? AnyInStep<C, Tb>
+			: AnyBothStep<C, Tb>
+	: Extract<Target, StepSegments<C, Tb, Dir> & string>;
+
+export type StepResult<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+	Segment extends GraphSegmentArg,
+> = StepResultForTarget<C, Tb, Dir, SegmentTarget<Segment>>;
+
+type ValidGraphArg<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+> =
+	| StepSegments<C, Tb, Dir>
+	// biome-ignore lint/suspicious/noExplicitAny: filter context is checked by the segment builder
+	| GraphSegmentSpec<Extract<StepSegments<C, Tb, Dir>, string>, any>;
+
+export type GraphSegmentResult<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+	Args extends readonly GraphSegmentArg[],
+> = Args extends readonly []
+	? StepResult<C, Tb, Dir, ANY>
+	: StepResult<C, Tb, Dir, Args[number]>;
+
 /**
- * The edge names reachable in the outgoing (`->`) direction from a node:
- * every registered edge whose `from` table is `Tb`. Resolved by scanning the
- * edge schemas directly (rather than the one-hop adjacency map, which collapses
- * `via` names across edges once a schema has more than one), so a `.out()` only
- * accepts edges that actually originate at `Tb`. A node with no outgoing edges
- * resolves to `never`, making `.out()` uncallable at compile time.
+ * The valid arguments for a traversal step from `Tb` in direction `Dir`: each
+ * is a reachable edge/table name (or the `?` wildcard `ANY`), or a filtered
+ * segment spec. Used as the constraint on a traversal method's `const Args`
+ * type parameter — constraining the parameter directly (rather than validating
+ * via an intersection on the parameter type) is what lets the editor suggest
+ * the reachable names, while `Args` still captures the literal tuple that
+ * `GraphSegmentResult` needs to type the landing node.
+ */
+export type GraphArgs<
+	C extends WorkableContext,
+	Tb extends string,
+	Dir extends GraphDirection,
+> = readonly ValidGraphArg<C, Tb, Dir>[];
+
+/** Row-level traversal sugar, rooted at the row's `id`. */
+export type RowTraversal<C extends WorkableContext, T extends string> = {
+	out<const Args extends GraphArgs<C, T, "out">>(
+		...args: Args
+	): Actionable<C, GraphType<GraphSegmentResult<C, T, "out", Args>>>;
+	in<const Args extends GraphArgs<C, T, "in">>(
+		...args: Args
+	): Actionable<C, GraphType<GraphSegmentResult<C, T, "in", Args>>>;
+	both<const Args extends GraphArgs<C, T, "both">>(
+		...args: Args
+	): Actionable<C, GraphType<GraphSegmentResult<C, T, "both", Args>>>;
+};
+
+/**
+ * The edge names reachable in the outgoing (`->`) direction from a node.
  */
 export type OutgoingEdges<C extends WorkableContext, Tb extends string> = {
 	[K in keyof C["orm"]["tables"] &
@@ -132,8 +270,7 @@ export type OutgoingEdges<C extends WorkableContext, Tb extends string> = {
 }[keyof C["orm"]["tables"] & string];
 
 /**
- * The edge names reachable in the incoming (`<-`) direction into a node: every
- * registered edge whose `to` table is `Tb`.
+ * The edge names reachable in the incoming (`<-`) direction into a node.
  */
 export type IncomingEdges<C extends WorkableContext, Tb extends string> = {
 	[K in keyof C["orm"]["tables"] &

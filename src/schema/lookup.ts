@@ -125,21 +125,28 @@ type LookupState = {
 	from: Record<string, readonly string[]>;
 };
 
+const asArray = (x: string | readonly string[]): readonly string[] =>
+	Array.isArray(x) ? x : [x];
+
 function ensureNode(lookup: LookupState, node: string): void {
 	if (!lookup.to[node]) lookup.to[node] = [];
 	if (!lookup.from[node]) lookup.from[node] = [];
 }
 
 function addEdgeConnections(lookup: LookupState, schema: EdgeSchema): void {
-	const { from, tb: via, to } = schema;
+	const { tb: via } = schema;
 
-	// To direction
-	(lookup.to[from]! as string[]).push(via);
-	(lookup.to[via]! as string[]).push(to);
+	// Each source connects to the edge, and the edge back to each source.
+	for (const from of asArray(schema.from)) {
+		(lookup.to[from]! as string[]).push(via);
+		(lookup.from[via]! as string[]).push(from);
+	}
 
-	// From direction
-	(lookup.from[to]! as string[]).push(via);
-	(lookup.from[via]! as string[]).push(from);
+	// The edge connects to each target, and each target back to the edge.
+	for (const to of asArray(schema.to)) {
+		(lookup.to[via]! as string[]).push(to);
+		(lookup.from[to]! as string[]).push(via);
+	}
 }
 
 // Helper function to create the actual lookup object
@@ -154,9 +161,9 @@ export function createLookupFromSchemas<
 	// Initialize empty arrays for all nodes
 	for (const schema of schemas) {
 		if (schema instanceof EdgeSchema) {
-			ensureNode(lookup, schema.from);
+			for (const from of asArray(schema.from)) ensureNode(lookup, from);
 			ensureNode(lookup, schema.tb);
-			ensureNode(lookup, schema.to);
+			for (const to of asArray(schema.to)) ensureNode(lookup, to);
 		} else {
 			ensureNode(lookup, schema.tb);
 		}

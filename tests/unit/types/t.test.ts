@@ -243,6 +243,13 @@ describe("Type builders", () => {
 			expect(type.name).toBe("record");
 			expect(type.tb).toBe("user");
 		});
+
+		test("creates a multi-table RecordType from an array", () => {
+			const type = t.record(["user", "post"]);
+			expect(type.name).toBe("record");
+			expect(type.tb).toEqual(["user", "post"]);
+			expect(type.expected).toBe("RecordId<user | post>");
+		});
 	});
 
 	describe("parse()", () => {
@@ -442,6 +449,17 @@ describe("Type builders", () => {
 		test("rejects RecordId with wrong table", () => {
 			const type = t.record("user");
 			expect(type.validate(new RecordId("post", "1"))).toBe(false);
+		});
+
+		test("validates a RecordId from any table in a multi-table set", () => {
+			const type = t.record(["user", "post"]);
+			expect(type.validate(new RecordId("user", "alice"))).toBe(true);
+			expect(type.validate(new RecordId("post", "1"))).toBe(true);
+		});
+
+		test("rejects a RecordId whose table is not in the set", () => {
+			const type = t.record(["user", "post"]);
+			expect(type.validate(new RecordId("tag", "ts"))).toBe(false);
 		});
 
 		test("rejects non-RecordId values", () => {

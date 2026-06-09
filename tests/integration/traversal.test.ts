@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RecordId } from "surrealdb";
-import { edge, orm, t, table } from "../../src";
+import { edge, g, orm, t, table } from "../../src";
 import { withTestDb } from "./setup";
 
 describe("graph traversal integration tests", () => {
@@ -40,6 +40,7 @@ describe("graph traversal integration tests", () => {
 			.return((u) => ({
 				posts: u.id
 					.out("authored")
+					.out("post")
 					.select()
 					.return((p) => ({ title: p.title })),
 			}))
@@ -57,6 +58,7 @@ describe("graph traversal integration tests", () => {
 			.return((p) => ({
 				authors: p.id
 					.in("authored")
+					.in("user")
 					.select()
 					.return((u) => ({
 						first: u.name.first,
@@ -73,7 +75,7 @@ describe("graph traversal integration tests", () => {
 
 		const result = await db
 			.select("user", "alice")
-			.return((u) => ({ posts: u.id.out("authored") }))
+			.return((u) => ({ posts: u.id.out("authored").out("post") }))
 			.execute();
 
 		expect(result.length).toBe(1);
@@ -92,7 +94,9 @@ describe("graph traversal integration tests", () => {
 			.return((u) => ({
 				tags: u.id
 					.out("authored")
+					.out("post")
 					.out("tagged")
+					.out("tag")
 					.select()
 					.return((tg) => ({ label: tg.label })),
 			}))
@@ -107,13 +111,13 @@ describe("graph traversal integration tests", () => {
 
 		const result = await db
 			.select("user", "carol")
-			.return((u) => ({ posts: u.id.out("authored") }))
+			.return((u) => ({ posts: u.id.out("authored").out("post") }))
 			.execute();
 
 		expect(result).toEqual([{ posts: [] }]);
 	});
 
-	test("outEdge lands on the edge and exposes its fields", async () => {
+	test("out(edge) lands on the edge and exposes its fields", async () => {
 		const { surreal } = getTestDb();
 		const db = orm(surreal, ...schema);
 
@@ -121,7 +125,7 @@ describe("graph traversal integration tests", () => {
 			.select("user", "alice")
 			.return((u) => ({
 				edges: u.id
-					.outEdge("authored")
+					.out("authored")
 					.select()
 					.return((e) => ({
 						when: e.created,
@@ -135,7 +139,7 @@ describe("graph traversal integration tests", () => {
 		expect(edges[0]!.when).toBeInstanceOf(Date);
 	});
 
-	test("inEdge lands on the incoming edge and exposes its fields", async () => {
+	test("in(edge) lands on the incoming edge and exposes its fields", async () => {
 		const { surreal } = getTestDb();
 		const db = orm(surreal, ...schema);
 
@@ -143,7 +147,7 @@ describe("graph traversal integration tests", () => {
 			.select("post", "post1")
 			.return((p) => ({
 				edges: p.id
-					.inEdge("authored")
+					.in("authored")
 					.select()
 					.return((e) => ({
 						when: e.created,
@@ -160,7 +164,7 @@ describe("graph traversal integration tests", () => {
 
 		const result = await db
 			.select("user")
-			.where((u) => u.id.out("authored").len().gt(0))
+			.where((u) => u.id.out("authored").out("post").len().gt(0))
 			.return((u) => ({ first: u.name.first }))
 			.execute();
 
@@ -173,7 +177,7 @@ describe("graph traversal integration tests", () => {
 
 		const result = await db
 			.select("user")
-			.where((u) => u.id.out("authored").isEmpty())
+			.where((u) => u.id.out("authored").out("post").isEmpty())
 			.return((u) => ({ first: u.name.first }))
 			.execute();
 
@@ -189,6 +193,7 @@ describe("graph traversal integration tests", () => {
 			.return((u) => ({
 				posts: u
 					.out("authored")
+					.out("post")
 					.select()
 					.return((p) => ({ title: p.title })),
 			}))
@@ -224,7 +229,12 @@ describe("graph traversal — edge filtering", () => {
 			.select("user", "dave")
 			.return((u) => ({
 				authored: u.id
-					.out("authored", { where: (e) => e.role.eq("author") })
+					.out(
+						g
+							.with(db)("authored")
+							.where((e) => e.role.eq("author")),
+					)
+					.out("post")
 					.select()
 					.return((p) => ({ title: p.title })),
 			}))
@@ -239,75 +249,73 @@ describe("graph traversal — edge filtering", () => {
 
 		const result = await db
 			.select("user", "dave")
-			.return((u) => ({ posts: u.id.out("authored") }))
+			.return((u) => ({ posts: u.id.out("authored").out("post") }))
 			.execute();
 
 		expect(result[0]!.posts.length).toBe(2);
 	});
 });
 
-describe("graph traversal — recursive / path finding", () => {
-	const person = table("person", { name: t.string() });
-	const knows = edge("person", "knows", "person", {});
-	const schema = [person, knows] as const;
+describe("graph traversal — multi-table edges", () => {
+	const post = table("post", { title: t.string() });
+	const user = table("user", { handle: t.string() });
+	const tag = table("tag", { label: t.string() });
+	// `mentioned` may originate from a post OR a user.
+	const mentioned = edge(["post", "user"], "mentioned", "tag", {});
+	const schema = [post, user, tag, mentioned] as const;
 
 	const getTestDb = withTestDb({
 		setup: async ({ surreal }) => {
 			await surreal.query(`
-				CREATE person:alice, person:bob, person:carol, person:dave;
-				RELATE person:alice->knows->person:bob;
-				RELATE person:bob->knows->person:carol;
-				RELATE person:carol->knows->person:dave;
+				CREATE post:p1 SET title = "Hello";
+				CREATE user:alice SET handle = "alice";
+				CREATE tag:ts SET label = "typescript";
+				RELATE post:p1->mentioned->tag:ts;
+				RELATE user:alice->mentioned->tag:ts;
 			`);
 		},
 	});
 
-	const ids = (arr: { id: unknown }[] | RecordId[]) =>
-		(arr as RecordId[]).map((r) => String(r));
-
-	test("exact depth lands on the node at that depth", async () => {
+	test("the same edge traverses from either source table", async () => {
 		const { surreal } = getTestDb();
 		const db = orm(surreal, ...schema);
 
-		const result = await db
-			.select("person", "alice")
-			.return((p) => ({ net: p.out("knows", { depth: 2 }) }))
-			.execute();
-
-		expect(ids(result[0]!.net)).toEqual(["person:carol"]);
-	});
-
-	test("collect gathers every node along the recursion", async () => {
-		const { surreal } = getTestDb();
-		const db = orm(surreal, ...schema);
-
-		const result = await db
-			.select("person", "alice")
-			.return((p) => ({ net: p.out("knows", { collect: true }) }))
-			.execute();
-
-		expect(ids(result[0]!.net).sort()).toEqual([
-			"person:bob",
-			"person:carol",
-			"person:dave",
-		]);
-	});
-
-	test("shortest finds the path to a target record", async () => {
-		const { surreal } = getTestDb();
-		const db = orm(surreal, ...schema);
-
-		const result = await db
-			.select("person", "alice")
+		const fromPost = await db
+			.select("post", "p1")
 			.return((p) => ({
-				path: p.out("knows", { shortest: new RecordId("person", "dave") }),
+				tags: p.id
+					.out("mentioned")
+					.out("tag")
+					.select()
+					.return((tg) => ({ label: tg.label })),
 			}))
 			.execute();
 
-		expect(ids(result[0]!.path)).toEqual([
-			"person:bob",
-			"person:carol",
-			"person:dave",
-		]);
+		const fromUser = await db
+			.select("user", "alice")
+			.return((u) => ({
+				tags: u.id
+					.out("mentioned")
+					.out("tag")
+					.select()
+					.return((tg) => ({ label: tg.label })),
+			}))
+			.execute();
+
+		expect(fromPost).toEqual([{ tags: [{ label: "typescript" }] }]);
+		expect(fromUser).toEqual([{ tags: [{ label: "typescript" }] }]);
+	});
+
+	test("incoming traversal finds an edge from every source", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		const result = await db
+			.select("tag", "ts")
+			.return((tg) => ({ mentions: tg.id.in("mentioned") }))
+			.execute();
+
+		// Mentioned once by a post and once by a user → two edge records.
+		expect(result[0]!.mentions.length).toBe(2);
 	});
 });

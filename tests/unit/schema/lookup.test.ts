@@ -70,6 +70,33 @@ describe("createLookupFromSchemas", () => {
 		expect(lookup.from.follows).toContain("user");
 	});
 
+	test("multi-table edge wires every source and target", () => {
+		const post = table("post", { title: t.string() });
+		const user = table("user", { name: t.string() });
+		const tag = table("tag", { label: t.string() });
+		const topic = table("topic", { name: t.string() });
+		const tagged = edge(["post", "user"], "tagged", ["tag", "topic"], {});
+
+		const lookup = createLookupFromSchemas([post, user, tag, topic, tagged]);
+
+		// Every source connects to the edge...
+		expect(lookup.to.post).toContain("tagged");
+		expect(lookup.to.user).toContain("tagged");
+		// ...and the edge connects to every target.
+		expect(lookup.to.tagged).toContain("tag");
+		expect(lookup.to.tagged).toContain("topic");
+
+		// From direction is the mirror image.
+		expect(lookup.from.tag).toContain("tagged");
+		expect(lookup.from.topic).toContain("tagged");
+		expect(lookup.from.tagged).toContain("post");
+		expect(lookup.from.tagged).toContain("user");
+
+		// No array-stringified key (e.g. "post,user") leaks into the maps.
+		expect(Object.keys(lookup.to)).not.toContain("post,user");
+		expect(Object.keys(lookup.from)).not.toContain("tag,topic");
+	});
+
 	test("empty input returns empty lookup", () => {
 		const lookup = createLookupFromSchemas([]);
 

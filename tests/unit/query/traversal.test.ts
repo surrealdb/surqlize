@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { RecordId, Surreal } from "surrealdb";
 import {
 	__display,
+	ANY,
 	displayContext,
 	edge,
+	type FromOf,
+	g,
 	type IncomingEdges,
 	type OutgoingEdges,
 	orm,
@@ -37,65 +40,106 @@ const render = (q: {
 }) => q[__display](displayContext());
 
 describe("graph traversal — SurrealQL generation", () => {
-	test("outgoing single hop: ->edge->target", () => {
+	test("outgoing edge step: ->edge", () => {
 		const q = db
 			.select("user")
-			.return((u) => ({ posts: u.id.out("authored") }));
+			.return((u) => ({ edges: u.id.out("authored") }));
+		const sql = render(q);
+		expect(sql).toContain("->authored");
+		expect(sql).toContain("$this.id->authored");
+		expect(sql).not.toContain("->authored->post");
+	});
+
+	test("outgoing edge then node: ->edge->target", () => {
+		const q = db
+			.select("user")
+			.return((u) => ({ posts: u.id.out("authored").out("post") }));
 		const sql = render(q);
 		expect(sql).toContain("->authored->post");
 		expect(sql).toContain("$this.id->authored->post");
 	});
 
-	test("incoming single hop: <-edge<-source", () => {
-		const q = db
-			.select("post")
-			.return((p) => ({ authors: p.id.in("authored") }));
-		const sql = render(q);
-		expect(sql).toContain("<-authored<-user");
-	});
-
-	test("multi-hop chaining: ->authored->post->tagged->tag", () => {
-		const q = db
-			.select("user")
-			.return((u) => ({ tags: u.id.out("authored").out("tagged") }));
-		const sql = render(q);
-		expect(sql).toContain("->authored->post->tagged->tag");
-	});
-
-	test("outEdge lands on the edge, not the far node", () => {
-		const q = db
-			.select("user")
-			.return((u) => ({ edges: u.id.outEdge("authored") }));
-		const sql = render(q);
-		expect(sql).toContain("->authored");
-		expect(sql).not.toContain("->authored->post");
-	});
-
-	test("inEdge lands on the edge in the incoming direction", () => {
-		const q = db
-			.select("post")
-			.return((p) => ({ edges: p.id.inEdge("authored") }));
+	test("incoming edge step: <-edge", () => {
+		const q = db.select("post").return((p) => ({ edges: p.id.in("authored") }));
 		const sql = render(q);
 		expect(sql).toContain("<-authored");
 		expect(sql).not.toContain("<-authored<-user");
 	});
 
+	test("incoming edge then node: <-edge<-source", () => {
+		const q = db
+			.select("post")
+			.return((p) => ({ authors: p.id.in("authored").in("user") }));
+		const sql = render(q);
+		expect(sql).toContain("<-authored<-user");
+	});
+
+	test("multi-hop chaining: ->authored->post->tagged->tag", () => {
+		const q = db.select("user").return((u) => ({
+			tags: u.id.out("authored").out("post").out("tagged").out("tag"),
+		}));
+		const sql = render(q);
+		expect(sql).toContain("->authored->post->tagged->tag");
+	});
+
+	test("multiple args are alternatives in one segment", () => {
+		const q = db
+			.select("user")
+			.return((u) => ({ edges: u.id.out("authored", ANY) }));
+		const sql = render(q);
+		expect(sql).toContain("->(authored, ?)");
+	});
+
+	test("edge rows expose their fields", () => {
+		const q = db.select("user").return((u) => ({
+			edges: u.id
+				.out("authored")
+				.select()
+				.return((e) => ({ role: e.role })),
+		}));
+		const sql = render(q);
+		expect(sql).toContain("FROM $parent.id->authored");
+		expect(sql).toContain("role: $this.role");
+	});
+
+	test("incoming edge rows expose their fields", () => {
+		const q = db.select("post").return((p) => ({
+			edges: p.id
+				.in("authored")
+				.select()
+				.return((e) => ({ role: e.role })),
+		}));
+		const sql = render(q);
+		expect(sql).toContain("FROM $parent.id<-authored");
+		expect(sql).toContain("role: $this.role");
+	});
+
 	test("WHERE: array::len over a traversal", () => {
-		const q = db.select("user").where((u) => u.id.out("authored").len().gt(0));
+		const q = db
+			.select("user")
+			.where((u) => u.id.out("authored").out("post").len().gt(0));
 		const sql = render(q);
 		expect(sql).toContain("array::len($this.id->authored->post)");
 		expect(sql).toContain(" > ");
 	});
 
 	test("WHERE: array::is_empty over a traversal", () => {
-		const q = db.select("user").where((u) => u.id.out("authored").isEmpty());
+		const q = db
+			.select("user")
+			.where((u) => u.id.out("authored").out("post").isEmpty());
 		const sql = render(q);
 		expect(sql).toContain("array::is_empty($this.id->authored->post)");
 	});
 
 	test("edge filtering: ->(edge WHERE …)->target", () => {
 		const q = db.select("user").return((u) => ({
-			posts: u.id.out("authored", { where: (e) => e.role.eq("author") }),
+			posts: u.id
+				.out(
+					g
+						.with(db)("authored")
+						.where((e) => e.role.eq("author")),
+				)
+				.out("post"),
 		}));
 		const sql = render(q);
 		expect(sql).toContain("->(authored WHERE role = ");
@@ -106,6 +150,7 @@ describe("graph traversal — SurrealQL generation", () => {
 		const q = db.select("user").return((u) => ({
 			posts: u.id
 				.out("authored")
+				.out("post")
 				.select()
 				.return((p) => ({ title: p.title })),
 		}));
@@ -119,9 +164,23 @@ describe("graph traversal — SurrealQL generation", () => {
 	test("bare step renders inside a projection", () => {
 		const q = db
 			.select("user")
-			.return((u) => ({ posts: u.id.out("authored") }));
+			.return((u) => ({ edges: u.id.out("authored") }));
 		const sql = render(q);
-		expect(sql).toContain("{ posts: $this.id->authored->post }");
+		expect(sql).toContain("{ edges: $this.id->authored }");
+	});
+
+	test("orm.value(record id) can start a typed graph traversal", () => {
+		const id = new RecordId("user", "alice");
+		const expr = db.value(id).out("authored").out("post");
+		const ctx = displayContext();
+		const sql = expr[__display](ctx);
+
+		expect(sql).toMatch(/\$_v\d+->authored->post/);
+		expect(Object.values(ctx.variables)).toContainEqual(id);
+
+		type R = t.infer<typeof expr>;
+		const _check: Equal<R, RecordId<"post">[]> = true;
+		expect(_check).toBe(true);
 	});
 });
 
@@ -140,12 +199,28 @@ describe("graph traversal — type-level", () => {
 		expect(_out && _in).toBe(true);
 	});
 
-	test("bare traversal infers as an array of record links", () => {
+	test("bare edge traversal infers as edge record links", () => {
 		const q = db
 			.select("user")
-			.return((u) => ({ posts: u.id.out("authored") }));
+			.return((u) => ({ edges: u.id.out("authored") }));
+		type R = t.infer<typeof q>;
+		const _check: Equal<R, { edges: RecordId<"authored">[] }[]> = true;
+		expect(_check).toBe(true);
+	});
+
+	test("edge then node traversal infers as node record links", () => {
+		const q = db
+			.select("user")
+			.return((u) => ({ posts: u.id.out("authored").out("post") }));
 		type R = t.infer<typeof q>;
 		const _check: Equal<R, { posts: RecordId<"post">[] }[]> = true;
+		expect(_check).toBe(true);
+	});
+
+	test("ANY is type-safe for the current graph step", () => {
+		const q = db.select("user").return((u) => ({ edges: u.id.out(ANY) }));
+		type R = t.infer<typeof q>;
+		const _check: Equal<R, { edges: RecordId<"authored">[] }[]> = true;
 		expect(_check).toBe(true);
 	});
 
@@ -153,6 +228,7 @@ describe("graph traversal — type-level", () => {
 		const q = db.select("user").return((u) => ({
 			posts: u.id
 				.out("authored")
+				.out("post")
 				.select()
 				.return((p) => ({ title: p.title })),
 		}));
@@ -172,6 +248,14 @@ describe("graph traversal — type-level", () => {
 				// @ts-expect-error "tagged" starts at post, not user
 				x: u.id.out("tagged"),
 			}));
+			db.select("user").return((u) => ({
+				// @ts-expect-error after "authored", the outgoing node step is "post"
+				x: u.id.out("authored").out("tag"),
+			}));
+			db.select("user").return((u) => ({
+				// @ts-expect-error g("tagged") is not an outgoing alternative from user
+				x: u.id.out(g("tagged")),
+			}));
 		};
 		expect(typeof _typeErrors).toBe("function");
 	});
@@ -179,23 +263,31 @@ describe("graph traversal — type-level", () => {
 
 describe("graph traversal — row-level sugar", () => {
 	test("user.out(edge) roots at the row's id", () => {
-		const q = db.select("user").return((u) => ({ posts: u.out("authored") }));
+		const q = db
+			.select("user")
+			.return((u) => ({ posts: u.out("authored").out("post") }));
 		const sql = render(q);
 		expect(sql).toContain("$this.id->authored->post");
 	});
 
 	test("sugar works in WHERE", () => {
-		const q = db.select("user").where((u) => u.out("authored").len().gt(0));
+		const q = db
+			.select("user")
+			.where((u) => u.out("authored").out("post").len().gt(0));
 		const sql = render(q);
 		expect(sql).toContain("array::len($this.id->authored->post)");
 	});
 
 	test("sugar matches the explicit .id form", () => {
 		const sugar = render(
-			db.select("user").return((u) => ({ posts: u.out("authored") })),
+			db
+				.select("user")
+				.return((u) => ({ posts: u.out("authored").out("post") })),
 		);
 		const explicit = render(
-			db.select("user").return((u) => ({ posts: u.id.out("authored") })),
+			db
+				.select("user")
+				.return((u) => ({ posts: u.id.out("authored").out("post") })),
 		);
 		expect(sugar).toBe(explicit);
 	});
@@ -211,54 +303,68 @@ describe("graph traversal — row-level sugar", () => {
 	});
 });
 
-describe("graph traversal — recursive / path finding", () => {
-	const person = table("person", { name: t.string() });
-	const knows = edge("person", "knows", "person", {});
-	const rdb = orm(new Surreal(), person, knows);
+describe("graph traversal — multi-table edges", () => {
+	const mPost = table("post", { title: t.string() });
+	const mUser = table("user", { handle: t.string() });
+	const mTag = table("tag", { label: t.string() });
+	const mTopic = table("topic", { name: t.string() });
+	// A polymorphic edge: in ∈ {post, user}, out ∈ {tag, topic}.
+	const mentioned = edge(["post", "user"], "mentioned", ["tag", "topic"], {});
+	const mdb = orm(new Surreal(), mPost, mUser, mTag, mTopic, mentioned);
 
-	test("range depth: head.{min..max}(->edge->target)", () => {
-		const q = rdb
-			.select("person")
-			.return((p) => ({ net: p.out("knows", { depth: [1, 3] }) }));
-		expect(render(q)).toContain("$this.id.{1..3}(->knows->person)");
+	type Ctx = { orm: typeof mdb; id: symbol };
+
+	test("renders ->edge identically regardless of source table", () => {
+		const fromPost = render(
+			mdb.select("post").return((p) => ({ m: p.id.out("mentioned") })),
+		);
+		const fromUser = render(
+			mdb.select("user").return((u) => ({ m: u.id.out("mentioned") })),
+		);
+		// The source-table union is a type/validation concern; the SurrealQL is
+		// the same plain `->mentioned` from either root.
+		expect(fromPost).toContain("$this.id->mentioned");
+		expect(fromUser).toContain("$this.id->mentioned");
 	});
 
-	test("exact depth: .{n}", () => {
-		const q = rdb
-			.select("person")
-			.return((p) => ({ net: p.out("knows", { depth: 2 }) }));
-		expect(render(q)).toContain(".{2}(->knows->person)");
+	test("renders a step through the edge to a target node", () => {
+		const sql = render(
+			mdb
+				.select("post")
+				.return((p) => ({ t: p.id.out("mentioned").out("tag") })),
+		);
+		expect(sql).toContain("->mentioned->tag");
 	});
 
-	test("open-ended depth: .{..max}", () => {
-		const q = rdb
-			.select("person")
-			.return((p) => ({ net: p.out("knows", { depth: { max: 5 } }) }));
-		expect(render(q)).toContain(".{..5}(->knows->person)");
+	test("FromOf / ToOf resolve to the union of tables", () => {
+		const _from: Equal<FromOf<Ctx, "mentioned">, "post" | "user"> = true;
+		const _to: Equal<ToOf<Ctx, "mentioned">, "tag" | "topic"> = true;
+		expect(_from && _to).toBe(true);
 	});
 
-	test("collect modifier: .{..+collect}", () => {
-		const q = rdb
-			.select("person")
-			.return((p) => ({ net: p.out("knows", { collect: true }) }));
-		expect(render(q)).toContain(".{..+collect}(->knows->person)");
+	test("the edge is outgoing from each source and incoming to each target", () => {
+		const _outPost: Equal<OutgoingEdges<Ctx, "post">, "mentioned"> = true;
+		const _outUser: Equal<OutgoingEdges<Ctx, "user">, "mentioned"> = true;
+		const _inTag: Equal<IncomingEdges<Ctx, "tag">, "mentioned"> = true;
+		const _inTopic: Equal<IncomingEdges<Ctx, "topic">, "mentioned"> = true;
+		expect(_outPost && _outUser && _inTag && _inTopic).toBe(true);
 	});
 
-	test("shortest path binds the target as a parameter", () => {
-		const target = new RecordId("person", "z");
-		const q = rdb
-			.select("person")
-			.return((p) => ({ path: p.out("knows", { shortest: target }) }));
-		const ctx = displayContext();
-		const sql = q[__display](ctx);
-		expect(sql).toMatch(/\.\{\.\.\+shortest=\$_v\d+\}\(->knows->person\)/);
-		expect(Object.values(ctx.variables)).toContainEqual(target);
+	test("a multi-table edge still infers as edge record links", () => {
+		const q = mdb.select("post").return((p) => ({ m: p.id.out("mentioned") }));
+		type R = t.infer<typeof q>;
+		const _check: Equal<R, { m: RecordId<"mentioned">[] }[]> = true;
+		expect(_check).toBe(true);
 	});
 
-	test("recursion composes with an edge filter", () => {
-		const q = rdb.select("person").return((p) => ({
-			net: p.out("knows", { depth: [1, 2], where: (e) => e.id.trueish() }),
-		}));
-		expect(render(q)).toContain(".{1..2}(->(knows WHERE");
+	test("a non-source table cannot traverse the edge", () => {
+		// Never invoked — present only so `tsc` checks the @ts-expect-error case.
+		const _typeErrors = () => {
+			mdb.select("tag").return((tg) => ({
+				// @ts-expect-error "tag" is a target of "mentioned", not a source
+				x: tg.id.out("mentioned"),
+			}));
+		};
+		expect(typeof _typeErrors).toBe("function");
 	});
 });

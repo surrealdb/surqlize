@@ -8,6 +8,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils";
+import { type Actionable, actionable } from "../utils/actionable";
 
 /**
  * Abstract base class for all query types. Implements `Workable` so queries can
@@ -168,7 +169,10 @@ export abstract class Query<
 	}
 }
 
-type Then<Q extends Query> = <TResult1 = Q["type"], TResult2 = never>(
+type Then<Q extends { type: unknown }> = <
+	TResult1 = Q["type"],
+	TResult2 = never,
+>(
 	onFulfilled?:
 		| ((value: Q["type"]) => TResult1 | PromiseLike<TResult1>)
 		| undefined
@@ -186,7 +190,7 @@ type ResultElement<T> = T extends readonly (infer E)[] ? E : T;
  * Convenience accessors hung off {@link Query.then} for reaching into a query's
  * result array without first awaiting it into a variable.
  */
-type ThenAccessors<Q extends Query> = {
+type ThenAccessors<Q extends { type: unknown }> = {
 	/** Execute the query and resolve to the first result, or `undefined`. */
 	val(): Promise<ResultElement<Q["type"]> | undefined>;
 	/**

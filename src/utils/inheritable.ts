@@ -73,12 +73,12 @@ export function inheritableIntoWorkable<
 	C extends WorkableContext,
 	T extends Inheritable<C>,
 >(value: T): InheritableIntoWorkable<C, T> {
-	if (typeof value !== "object" || value === null) {
-		throw new TypeParseError("inheritable", "object", value);
-	}
-
 	if (isWorkable(value)) {
 		return value as unknown as InheritableIntoWorkable<C, T>;
+	}
+
+	if (typeof value !== "object" || value === null) {
+		throw new TypeParseError("inheritable", "object", value);
 	}
 
 	if (Array.isArray(value)) {

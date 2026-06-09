@@ -204,22 +204,26 @@ export class RecordType<
 > extends AbstractType<RecordId<Tb extends string ? Tb : string>> {
 	name = "record" as const;
 	get expected() {
-		if (this.tb === undefined) return "RecordId";
-		return `RecordId<${this.tb}>`;
+		if (this._tb === undefined) return "RecordId";
+		const tables = Array.isArray(this._tb) ? this._tb : [this._tb];
+		return `RecordId<${tables.join(" | ")}>`;
 	}
 
-	constructor(private _tb: Tb) {
+	constructor(private _tb: Tb | readonly Tb[]) {
 		super();
 	}
 
-	get tb() {
+	get tb(): Tb | readonly Tb[] {
 		return this._tb;
 	}
 
 	validate(value: unknown): value is this["infer"] {
 		if (!(value instanceof RecordId)) return false;
-		if (this.tb === undefined) return true;
-		return String(value.table) === this.tb;
+		if (this._tb === undefined) return true;
+		const table = String(value.table);
+		return Array.isArray(this._tb)
+			? this._tb.some((t) => t === table)
+			: this._tb === table;
 	}
 }
 
@@ -227,8 +231,9 @@ export class RecordType<
  * The result of a graph traversal (e.g. `->authored->post`). A traversal yields
  * an array of record links to the table it lands on, so its inferred type is
  * `RecordId<Tb>[]`. Carrying the target table name on `.tb` lets `.select()` and
- * further `.out()`/`.in()` steps resolve against it, while the array `infer`
- * keeps a bare traversal (dropped straight into a projection) correctly typed.
+ * further `.out()`/`.in()`/`.both()` steps resolve against it, while the array
+ * `infer` keeps a bare traversal (dropped straight into a projection) correctly
+ * typed.
  */
 export class GraphType<Tb extends string = string> extends AbstractType<
 	RecordId<Tb>[]
@@ -248,6 +253,7 @@ export class GraphType<Tb extends string = string> extends AbstractType<
 
 	validate(value: unknown): value is this["infer"] {
 		if (!Array.isArray(value)) return false;
+		if (this._tb === "*") return value.every((v) => v instanceof RecordId);
 		return value.every(
 			(v) => v instanceof RecordId && String(v.table) === this._tb,
 		);

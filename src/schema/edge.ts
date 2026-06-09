@@ -35,9 +35,9 @@ type GetEdgeInferType<
  * Automatically includes typed `id`, `in`, and `out` fields. Use the
  * {@link edge} factory function to create instances.
  *
- * @typeParam From - The source table name.
+ * @typeParam From - The source table name, or a union of names.
  * @typeParam Tb - The edge table name.
- * @typeParam To - The target table name.
+ * @typeParam To - The target table name, or a union of names.
  * @typeParam Fd - The user-defined fields for the edge.
  */
 export class EdgeSchema<
@@ -47,9 +47,9 @@ export class EdgeSchema<
 	Fd extends EdgeFields = EdgeFields,
 > {
 	constructor(
-		public readonly from: From,
+		public readonly from: From | readonly From[],
 		public readonly tb: Tb,
-		public readonly to: To,
+		public readonly to: To | readonly To[],
 		public readonly _fields: Fd,
 	) {}
 
@@ -60,9 +60,9 @@ export class EdgeSchema<
 	} & {} {
 		return {
 			...this._fields,
-			id: t.record(this.tb as string),
-			in: t.record(this.from as string),
-			out: t.record(this.to as string),
+			id: t.record(this.tb),
+			in: t.record(this.from),
+			out: t.record(this.to),
 		} as Fd & {
 			id: RecordType<Tb>;
 			in: RecordType<From>;
@@ -86,9 +86,11 @@ export class EdgeSchema<
  * Define a SurrealDB edge (graph relationship) table schema. Fields `id`, `in`,
  * and `out` are automatically added with the appropriate record types.
  *
- * @param from - The source table name.
+ * @param from - The source table name, or an array of names for an edge that
+ *   may originate from any of several tables (`in` becomes `record<a | b>`).
  * @param tb - The edge table name.
- * @param to - The target table name.
+ * @param to - The target table name, or an array of names for an edge that may
+ *   point at any of several tables (`out` becomes `record<a | b>`).
  * @param fields - A record of additional field names to type definitions.
  * @returns An {@link EdgeSchema} instance.
  *
@@ -97,18 +99,21 @@ export class EdgeSchema<
  * const authored = edge("user", "authored", "post", {
  *   created: t.date(),
  * });
+ *
+ * // An edge whose source may be a post or a user:
+ * const tagged = edge(["post", "user"], "tagged", "tag", {});
  * ```
  */
 export function edge<
-	From extends string,
+	const From extends string,
 	Tb extends string,
-	To extends string,
+	const To extends string,
 	Fd extends Record<Exclude<string, "id" | "in" | "out">, AbstractType>,
 >(
-	from: From extends string ? From : never,
+	from: From | readonly From[],
 	tb: Tb extends string ? Tb : never,
-	to: To extends string ? To : never,
+	to: To | readonly To[],
 	fields: Fd,
-) {
-	return new EdgeSchema(from, tb, to, fields);
+): EdgeSchema<From, Tb, To, Fd> {
+	return new EdgeSchema<From, Tb, To, Fd>(from, tb, to, fields);
 }

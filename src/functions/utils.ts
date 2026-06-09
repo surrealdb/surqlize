@@ -1,12 +1,14 @@
-import type { RecordId } from "surrealdb";
-import type { RecurseDepth } from "../schema/traversal";
+import {
+	ANY,
+	type GraphSegmentArg,
+	isGraphSegmentSpec,
+} from "../schema/traversal";
 import { type AbstractType, GraphType, type ObjectType } from "../types";
 import {
 	__ctx,
 	__display,
 	__type,
 	type DisplayContext,
-	isWorkable,
 	type Workable,
 	type WorkableContext,
 } from "../utils";
@@ -26,102 +28,85 @@ export function databaseFunction<
 	});
 }
 
-/** Direction + landing of a single graph-traversal step. */
-export type TraversalKind = "out" | "in" | "outEdge" | "inEdge";
+/** Direction of a graph-traversal segment. */
+export type TraversalKind = "out" | "in" | "both";
 
-/** Recursion spec for a recursive / path-finding traversal step. */
-export type Recursion<C extends WorkableContext> = {
-	depth?: RecurseDepth;
-	collect?: boolean;
-	shortest?: RecordId | Workable<C>;
+export type RuntimeGraphAlternative<C extends WorkableContext> = {
+	target: string | typeof ANY;
+	// biome-ignore lint/suspicious/noExplicitAny: stored graph filters are retyped by the public call signatures
+	filter?: (row: any) => Workable<C>;
 };
 
-/** Render a {@link RecurseDepth} as the brace range, e.g. `1..3`, `..3`, `..`. */
-function formatDepth(depth: RecurseDepth | undefined): string {
-	if (depth === undefined) return "..";
-	if (typeof depth === "number") return String(depth);
-	if (Array.isArray(depth)) return `${depth[0]}..${depth[1]}`;
-	const { min, max } = depth as { min?: number; max?: number };
-	return `${min ?? ""}..${max ?? ""}`;
+export type RenderedGraphAlternative = {
+	target: string | typeof ANY;
+	where?: (ctx: DisplayContext) => string;
+};
+
+export function graphAlternatives<C extends WorkableContext>(
+	args: readonly GraphSegmentArg[],
+): RuntimeGraphAlternative<C>[] {
+	const raw: readonly GraphSegmentArg[] = args.length === 0 ? [ANY] : args;
+	return raw.map((arg) => {
+		if (arg === ANY) return { target: ANY };
+		if (isGraphSegmentSpec(arg)) {
+			return { target: arg.target, filter: arg.filter };
+		}
+		return { target: arg as string | typeof ANY };
+	});
 }
 
-/** The full brace expression for a recursion, e.g. `.{1..3}`, `.{..+collect}`. */
-function recursionBraces<C extends WorkableContext>(
-	ctx: DisplayContext,
-	recursion: Recursion<C>,
+export function graphResultTarget(
+	alternatives: readonly { target: string | typeof ANY }[],
 ): string {
-	let modifier = "";
-	if (recursion.shortest !== undefined) {
-		const tgt = isWorkable(recursion.shortest)
-			? recursion.shortest[__display](ctx)
-			: ctx.var(recursion.shortest);
-		modifier = `+shortest=${tgt}`;
-	} else if (recursion.collect) {
-		modifier = "+collect";
+	if (
+		alternatives.length === 1 &&
+		typeof alternatives[0]?.target === "string"
+	) {
+		return alternatives[0].target;
 	}
-	return `.{${formatDepth(recursion.depth)}${modifier}}`;
+	return "*";
+}
+
+function renderGraphTarget(target: string | typeof ANY): string {
+	return target === ANY ? "?" : target;
+}
+
+function renderGraphAlternative(
+	alternative: RenderedGraphAlternative,
+	ctx: DisplayContext,
+): string {
+	const target = renderGraphTarget(alternative.target);
+	if (!alternative.where) return target;
+	return `${target} WHERE ${alternative.where(ctx)}`;
 }
 
 /**
- * Build a graph-traversal expression by appending an edge segment to `parent`'s
- * idiom. `out`/`in` traverse through the edge to the far node
- * (`->edge->target` / `<-edge<-target`); `outEdge`/`inEdge` stop on the edge
- * itself (`->edge` / `<-edge`). An optional `whereSql` renders an edge filter as
- * `->(edge WHERE …)->target`.
- *
- * When `recursion` is given, the hop is wrapped in SurrealDB's recursive idiom
- * `head.{depth}(->edge->target)`, optionally with a `+collect` or
- * `+shortest=target` modifier for path finding.
- *
- * The result is a {@link GraphType} workable carrying the table it lands on, so
- * it chains (`.out()`/`.in()`), materialises (`.select()`), or — used bare —
- * infers as an array of record links.
+ * Build one graph-traversal segment. A single method call maps directly to one
+ * SurrealQL arrow part: `out("reports_to", "mentors")` renders as
+ * `->(reports_to, mentors)`, while `out("authored").out("post")` renders as
+ * `->authored->post`.
  */
 export function traverse<C extends WorkableContext, Target extends string>(
 	parent: Workable<C>,
 	kind: TraversalKind,
-	edge: string,
+	alternatives: readonly RenderedGraphAlternative[],
 	target: Target,
-	whereSql?: (ctx: DisplayContext) => string,
-	recursion?: Recursion<C>,
 ): Actionable<C, GraphType<Target>> {
-	const arrow = kind === "out" || kind === "outEdge" ? "->" : "<-";
-	const landsOnEdge = kind === "outEdge" || kind === "inEdge";
+	const arrow = kind === "out" ? "->" : kind === "in" ? "<-" : "<->";
 
 	return actionable({
 		[__ctx]: parent[__ctx],
 		[__type]: new GraphType(target),
 		[__display](ctx: DisplayContext) {
 			const head = parent[__display](ctx);
-			const edgeFrag = whereSql ? `(${edge} WHERE ${whereSql(ctx)})` : edge;
-			const tail = landsOnEdge ? "" : `${arrow}${target}`;
-			const body = `${arrow}${edgeFrag}${tail}`;
-
-			return recursion
-				? `${head}${recursionBraces(ctx, recursion)}(${body})`
-				: `${head}${body}`;
+			const hasFilter = alternatives.some((alternative) => alternative.where);
+			const body = alternatives
+				.map((alternative) => renderGraphAlternative(alternative, ctx))
+				.join(", ");
+			const segment = alternatives.length > 1 || hasFilter ? `(${body})` : body;
+			return `${head}${arrow}${segment}`;
 		},
 	});
-}
-
-/**
- * Distil the recursion-related options of a traversal step into a
- * {@link Recursion} spec, or `undefined` when none are set (a plain hop).
- */
-export function recursionOf<C extends WorkableContext>(
-	opts:
-		| {
-				depth?: RecurseDepth;
-				collect?: boolean;
-				shortest?: RecordId | Workable<C>;
-		  }
-		| undefined,
-): Recursion<C> | undefined {
-	if (!opts) return undefined;
-	const { depth, collect, shortest } = opts;
-	if (depth === undefined && !collect && shortest === undefined)
-		return undefined;
-	return { depth, collect, shortest };
 }
 
 /**

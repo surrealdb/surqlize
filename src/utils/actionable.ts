@@ -1,8 +1,10 @@
 import { OrmError } from "../error";
 import { type GetFunctions, getFunctions } from "../functions";
+import type { TableFieldsOf } from "../schema/traversal";
 import type {
 	AbstractType,
 	ArrayType,
+	GraphType,
 	ObjectType,
 	OptionType,
 	StringType,
@@ -13,21 +15,25 @@ import { type Workable, type WorkableContext, workableGet } from "./workable";
 export type ActionableProps<C extends WorkableContext, T extends AbstractType> =
 	T extends ObjectType<infer O>
 		? { [K in keyof O]: Actionable<C, O[K]> }
-		: T extends ArrayType<infer A>
-			? A extends AbstractType
-				? {
-						[K: number]: Actionable<C, OptionType<A>>;
-					}
-				: A extends AbstractType[]
-					? ({
-							[K in keyof A as K extends keyof Array<unknown>
-								? never
-								: K]: A[K] extends AbstractType ? Actionable<C, A[K]> : never;
-						} & {
-							[K: number]: Actionable<C, OptionType<UnionType<A>>>;
-						})
-					: never
-			: unknown;
+		: T extends GraphType<infer Tb>
+			? TableFieldsOf<C, Tb> extends ObjectType<infer O>
+				? { [K in keyof O]: Actionable<C, ArrayType<O[K]>> }
+				: unknown
+			: T extends ArrayType<infer A>
+				? A extends AbstractType
+					? {
+							[K: number]: Actionable<C, OptionType<A>>;
+						}
+					: A extends AbstractType[]
+						? {
+								[K in keyof A as K extends keyof unknown[]
+									? never
+									: K]: A[K] extends AbstractType ? Actionable<C, A[K]> : never;
+							} & {
+								[K: number]: Actionable<C, OptionType<UnionType<A>>>;
+							}
+						: never
+				: unknown;
 
 export type Actionable<
 	C extends WorkableContext,
