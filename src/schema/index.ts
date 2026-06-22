@@ -7,7 +7,6 @@ export * from "./table";
 // `isGraphSegmentSpec` runtime helpers are internal plumbing (imported directly
 // by ./functions/utils) and must stay private, consistent with the curated root
 // barrel. `ANY` is the only public runtime export; everything else is type-only.
-export { ANY } from "./traversal";
 export type {
 	AnyGraphSegmentSpec,
 	BothStepSegments,
@@ -30,3 +29,4 @@ export type {
 	TableFieldsOf,
 	ToOf,
 } from "./traversal";
+export { ANY } from "./traversal";
