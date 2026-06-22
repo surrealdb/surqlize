@@ -205,6 +205,13 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		Tb extends keyof this["tables"] & string,
 	>(tb: Tb): SelectQuery<this, C, Tb>;
 
+	// Multiple tables — a heterogeneous select whose rows are the merged schema
+	// of every named table (`SELECT … FROM user, company`).
+	select<
+		C extends WorkableContext<this>,
+		const Tb extends keyof this["tables"] & string,
+	>(tbs: readonly Tb[]): SelectQuery<this, C, Tb>;
+
 	// RecordId
 	select<
 		C extends WorkableContext<this>,
@@ -229,10 +236,15 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		C extends WorkableContext<this>,
 		Tb extends keyof this["tables"] & string,
 	>(
-		tb: Tb | RecordId<Tb> | Workable<C, RecordType<Tb> | GraphType<Tb>>,
+		tb:
+			| Tb
+			| readonly Tb[]
+			| RecordId<Tb>
+			| Workable<C, RecordType<Tb> | GraphType<Tb>>,
 		id?: RecordIdValue,
 	) {
 		if (tb instanceof RecordId) return new SelectQuery(this, tb);
+		if (Array.isArray(tb)) return new SelectQuery(this, tb as readonly Tb[]);
 		if (isWorkable(tb))
 			return new SelectQuery(this, tb as Workable<C, RecordType<Tb>>);
 		if (id === undefined) return new SelectQuery(this, tb as Tb);

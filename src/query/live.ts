@@ -29,6 +29,7 @@ import {
 	type FetchPaths,
 	resolveFetchObject,
 } from "./select.ts";
+import { resolveSubjectSchema } from "./subject.ts";
 import { escapeIdiomPath } from "./utils.ts";
 
 /** The underlying SDK subscription returned by `surreal.liveOf()`. */
@@ -128,7 +129,7 @@ export class LiveQuery<
 	private _fetch?: string[];
 	private _fetchResolvedType?: AbstractType;
 	private _diff = false;
-	private tb: T;
+	private tb: T | readonly T[];
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
 	constructor(orm: O, subject: T | RecordId<T> | Workable<C, RecordType<T>>) {
@@ -142,9 +143,10 @@ export class LiveQuery<
 		if (typeof subject === "string") {
 			this.tb = subject;
 		} else if (isWorkable(subject)) {
-			this.tb = subject[__type].tb as T;
+			// A polymorphic link (`t.record(["a", "b"])`) carries an array here.
+			this.tb = (subject[__type] as RecordType<T>).tb;
 		} else {
-			this.tb = String(subject.table) as T;
+			this.tb = String((subject as RecordId<T>).table) as T;
 		}
 	}
 
@@ -153,7 +155,7 @@ export class LiveQuery<
 		// and takes precedence over the fetch-resolved schema.
 		return (this._entry?.[__type] ??
 			this._fetchResolvedType ??
-			this[__ctx].orm.tables[this.tb]!.schema) as E;
+			resolveSubjectSchema(this[__ctx].orm, this.tb)) as E;
 	}
 
 	get [__type](): E {
@@ -205,7 +207,7 @@ export class LiveQuery<
 	): this {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
-			[__type]: this[__ctx].orm.tables[this.tb]!.schema,
+			[__type]: resolveSubjectSchema(this[__ctx].orm, this.tb),
 			[__display]: ({ contextId }) => {
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
@@ -229,7 +231,7 @@ export class LiveQuery<
 		// Reuse SelectQuery's resolved-schema logic so notification values are
 		// validated as the resolved records instead of expecting RecordIds.
 		const currentSchema =
-			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb]!.schema;
+			this._entry?.[__type] ?? resolveSubjectSchema(this[__ctx].orm, this.tb);
 		const resolved =
 			currentSchema instanceof ObjectType
 				? resolveFetchObject(currentSchema, fields, this[__ctx].orm)
@@ -258,7 +260,8 @@ export class LiveQuery<
 	}
 
 	private displaySubject(ctx: DisplayContext): string {
-		if (typeof this.subject === "string") return ctx.var(new Table(this.tb));
+		if (typeof this.subject === "string")
+			return ctx.var(new Table(this.subject));
 		if (isWorkable(this.subject)) return this.subject[__display](ctx);
 		return ctx.var(this.subject);
 	}
