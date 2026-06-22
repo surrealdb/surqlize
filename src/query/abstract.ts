@@ -1,3 +1,4 @@
+import { BoundQuery } from "surrealdb";
 import type { AbstractType } from "../types";
 import {
 	__ctx,
@@ -166,6 +167,32 @@ export abstract class Query<
 			ctx.variables,
 		);
 		return this.parseResult(result);
+	}
+
+	/**
+	 * Compile this query into a fully-typed SurrealDB {@link BoundQuery} — the
+	 * query string plus its bindings — that can be handed straight to the SDK's
+	 * `surreal.query(...)`, including inside a manual transaction
+	 * (`await db.begin()`):
+	 *
+	 * ```ts
+	 * const prepared = orm
+	 *   .select("user")
+	 *   .return((user) => ({ fullName: user.name, email: user.email }))
+	 *   .prepare();
+	 *
+	 * const [users] = await db.query(prepared); // users is fully typed
+	 * ```
+	 *
+	 * The result type is preserved (`BoundQuery<[this["type"]]>`), so the SDK
+	 * types the response from the ORM's inferred schema. Unlike {@link execute},
+	 * the SDK's raw result is **not** run through this query's {@link parseResult}
+	 * — the caller owns decoding.
+	 */
+	prepare(): BoundQuery<[this["type"]]> {
+		const ctx = displayContext();
+		const query = this[__display](ctx);
+		return new BoundQuery<[this["type"]]>(query, ctx.variables);
 	}
 }
 
