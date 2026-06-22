@@ -483,6 +483,11 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 			throw e;
 		}
 	}
+
+	// Run a raw query on the SurrealSession
+	async query(query: string, params: Record<string, unknown> ) {
+		return this.surreal.query(query, params);
+	}
 }
 
 /**
