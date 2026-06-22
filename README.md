@@ -1286,17 +1286,17 @@ db.select("post").return((post) => ({
 
 ### Reading edge fields
 
-`.outEdge()` / `.inEdge()` stop on the edge itself, so you can read its own
-fields (such as `created` or `role`):
+Edges are tables too, so to read an edge's own fields (such as `created` or
+`role`) select the edge table directly. `.in` / `.out` give you its endpoints:
 
 ```typescript
-db.select("user").return((user) => ({
-  authorships: user.outEdge("authored").select().return((e) => ({
-    when: e.created,
-    role: e.role,
-  })),
+db.select("authored").return((e) => ({
+  when: e.created,
+  role: e.role,
+  author: e.in, // the user
+  post: e.out, // the post
 }));
-// ->authored
+// SELECT created, role, in, out FROM authored
 ```
 
 ### Filtering traversals
@@ -1330,43 +1330,6 @@ db.select("user").where((user) => user.out("authored").len().gt(0));
 // Users who have authored none
 db.select("user").where((user) => user.out("authored").isEmpty());
 ```
-
-### Recursive traversal & path finding
-
-Repeat a hop with `depth` to walk several levels deep — this compiles to
-SurrealDB's recursive idiom `record.{depth}(->edge->target)` and returns the
-records reached at the deepest level. `depth` is an exact number, an inclusive
-`[min, max]` range, or `{ min?, max? }` for open-ended ranges:
-
-```typescript
-const person = table("person", { name: t.string() });
-const knows = edge("person", "knows", "person", {});
-const db = orm(new Surreal(), person, knows);
-
-// Connections between one and three hops away
-db.select("person").return((p) => ({
-  network: p.out("knows", { depth: [1, 3] }),
-}));
-// person.{1..3}(->knows->person)
-```
-
-Add `collect` to gather every unique node encountered, or `shortest` to find the
-shortest path to a target record:
-
-```typescript
-// Everyone reachable through `knows`
-db.select("person").return((p) => ({
-  reachable: p.out("knows", { collect: true }), // .{..+collect}(->knows->person)
-}));
-
-// Shortest path from one person to another (the target binds as a parameter)
-db.select("person", "alice").return((p) => ({
-  path: p.out("knows", { shortest: new RecordId("person", "dave") }),
-}));
-// person:alice.{..+shortest=$target}(->knows->person)
-```
-
-`depth` / `collect` / `shortest` compose with edge filtering (`where`) too.
 
 ### Edge adjacency metadata
 
@@ -1538,7 +1501,7 @@ This project is in active development. Planned features include:
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
-- [x] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
+- [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [ ] **Performance optimizations** - Query caching, connection pooling
 - [ ] **Schema migrations** - Version control for database schemas
 - [ ] **Documentation site** - Comprehensive guides and API reference
