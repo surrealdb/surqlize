@@ -29,6 +29,7 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
+import { type ResolveEntry, resolveSubjectSchema } from "./subject.ts";
 import { escapeIdiomPath } from "./utils.ts";
 
 type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
@@ -143,12 +144,20 @@ export class SelectQuery<
 	private _fetch?: string[];
 	private _fetchResolvedType?: AbstractType;
 	private _timeout?: string;
-	private tb: T;
-	private subject: T | RecordId<T> | Workable<C, RecordType<T> | GraphType<T>>;
+	private tb: T | readonly T[];
+	private subject:
+		| T
+		| readonly T[]
+		| RecordId<T>
+		| Workable<C, RecordType<T> | GraphType<T>>;
 
 	constructor(
 		orm: O,
-		subject: T | RecordId<T> | Workable<C, RecordType<T> | GraphType<T>>,
+		subject:
+			| T
+			| readonly T[]
+			| RecordId<T>
+			| Workable<C, RecordType<T> | GraphType<T>>,
 	) {
 		super();
 		this[__ctx] = {
@@ -160,10 +169,16 @@ export class SelectQuery<
 
 		if (typeof subject === "string") {
 			this.tb = subject;
+		} else if (Array.isArray(subject)) {
+			this.tb = subject;
 		} else if (isWorkable(subject)) {
-			this.tb = subject[__type].tb as T;
+			// A polymorphic link (`t.record(["a", "b"])`) carries an array here; an
+			// ordinary link or graph step carries a single table name.
+			this.tb = (subject[__type] as RecordType<T> | GraphType<T>).tb;
 		} else {
-			this.tb = String(subject.table) as T;
+			// `Array.isArray` cannot narrow `readonly T[]` out of the union, so the
+			// remaining case (a RecordId) needs an explicit cast.
+			this.tb = String((subject as RecordId<T>).table) as T;
 		}
 	}
 
@@ -176,7 +191,7 @@ export class SelectQuery<
 		// *before* assigning `_entry`.
 		return (this._entry?.[__type] ??
 			this._fetchResolvedType ??
-			this[__ctx].orm.tables[this.tb]!.schema) as E;
+			resolveSubjectSchema(this[__ctx].orm, this.tb)) as E;
 	}
 
 	get [__type](): ArrayType<E> {
@@ -196,16 +211,22 @@ export class SelectQuery<
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
 		}) as Actionable<C, S>;
-		return traversableRow(base, this[__ctx].orm.tables[this.tb]!.schema.schema);
+		return traversableRow(
+			base,
+			resolveSubjectSchema(this[__ctx].orm, this.tb).schema,
+		);
 	}
 
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
 	>(
-		cb: (tb: Actionable<C, E> & RowTraversal<C, T>) => P,
+		cb: (tb: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>) => P,
 	): SelectQuery<O, C, T, R> {
-		const tb = this.rowActionable(this.entry) as Actionable<C, E> &
+		const tb = this.rowActionable(this.entry) as Actionable<
+			C,
+			ResolveEntry<E>
+		> &
 			RowTraversal<C, T>;
 
 		const predicable = cb(tb);
@@ -221,12 +242,14 @@ export class SelectQuery<
 
 	where(
 		cb: (
-			tb: Actionable<C, O["tables"][T]["schema"]> & RowTraversal<C, T>,
+			tb: Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
+				RowTraversal<C, T>,
 		) => Workable<C>,
 	) {
 		const tb = this.rowActionable(
-			this[__ctx].orm.tables[this.tb]!.schema,
-		) as Actionable<C, O["tables"][T]["schema"]> & RowTraversal<C, T>;
+			resolveSubjectSchema(this[__ctx].orm, this.tb),
+		) as Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
+			RowTraversal<C, T>;
 
 		const filter = sanitizeWorkable(cb(tb));
 		return this.derive((next) => {
@@ -249,7 +272,9 @@ export class SelectQuery<
 	private _addOrderBy(
 		field:
 			| FieldKeys<O, T>
-			| ((record: Actionable<C, E> & RowTraversal<C, T>) => Workable<C>),
+			| ((
+					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
+			  ) => Workable<C>),
 		direction?: "ASC" | "DESC",
 		opts?: { collate?: boolean; numeric?: boolean },
 	): this {
@@ -259,7 +284,10 @@ export class SelectQuery<
 				: {
 						field: sanitizeWorkable(
 							field(
-								this.rowActionable(this.entry) as Actionable<C, E> &
+								this.rowActionable(this.entry) as Actionable<
+									C,
+									ResolveEntry<E>
+								> &
 									RowTraversal<C, T>,
 							),
 						),
@@ -274,7 +302,9 @@ export class SelectQuery<
 	orderBy(
 		field:
 			| FieldKeys<O, T>
-			| ((record: Actionable<C, E> & RowTraversal<C, T>) => Workable<C>),
+			| ((
+					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
+			  ) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
 		return this._addOrderBy(field, direction);
@@ -283,7 +313,9 @@ export class SelectQuery<
 	orderByNumeric(
 		field:
 			| FieldKeys<O, T>
-			| ((record: Actionable<C, E> & RowTraversal<C, T>) => Workable<C>),
+			| ((
+					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
+			  ) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
 		return this._addOrderBy(field, direction, { numeric: true });
@@ -292,7 +324,9 @@ export class SelectQuery<
 	orderByCollate(
 		field:
 			| FieldKeys<O, T>
-			| ((record: Actionable<C, E> & RowTraversal<C, T>) => Workable<C>),
+			| ((
+					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
+			  ) => Workable<C>),
 		direction?: "ASC" | "DESC",
 	): this {
 		return this._addOrderBy(field, direction, { collate: true });
@@ -325,7 +359,7 @@ export class SelectQuery<
 		// RecordIds. SurrealDB expands every record along a fetched path, so
 		// `out.author` resolves both `out` and its nested `author`.
 		const currentSchema =
-			this._entry?.[__type] ?? this[__ctx].orm.tables[this.tb]!.schema;
+			this._entry?.[__type] ?? resolveSubjectSchema(this[__ctx].orm, this.tb);
 		const resolved =
 			currentSchema instanceof ObjectType
 				? resolveFetchObject(currentSchema, fields, this[__ctx].orm)
@@ -344,9 +378,12 @@ export class SelectQuery<
 	}
 
 	private displaySubject(ctx: DisplayContext): string {
-		if (typeof this.subject === "string") return ctx.var(new Table(this.tb));
+		if (typeof this.subject === "string")
+			return ctx.var(new Table(this.subject));
+		if (Array.isArray(this.subject))
+			return this.subject.map((name) => ctx.var(new Table(name))).join(", ");
 		if (isWorkable(this.subject)) return this.subject[__display](ctx);
-		return ctx.var(this.subject);
+		return ctx.var(this.subject as RecordId<T>);
 	}
 
 	private displayOrderBy(ctx: DisplayContext): string {

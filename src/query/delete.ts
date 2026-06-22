@@ -23,6 +23,7 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
+import { resolveSubjectSchema } from "./subject.ts";
 
 /**
  * A fluent DELETE query builder. Supports WHERE, RETURN, and TIMEOUT clauses.
@@ -37,7 +38,7 @@ export class DeleteQuery<
 	private _filter?: Workable<C>;
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
 	private _timeout?: string;
-	private tb: T;
+	private tb: T | readonly T[];
 	private subject: T | RecordId<T> | Workable<C, RecordType<T>>;
 
 	constructor(orm: O, subject: T | RecordId<T> | Workable<C, RecordType<T>>) {
@@ -52,14 +53,15 @@ export class DeleteQuery<
 		if (typeof subject === "string") {
 			this.tb = subject;
 		} else if (isWorkable(subject)) {
-			this.tb = subject[__type].tb as T;
+			// A polymorphic link (`t.record(["a", "b"])`) carries an array here.
+			this.tb = (subject[__type] as RecordType<T>).tb;
 		} else {
-			this.tb = String(subject.table) as T;
+			this.tb = String((subject as RecordId<T>).table) as T;
 		}
 	}
 
 	get schema(): E {
-		return this[__ctx].orm.tables[this.tb]!.schema as unknown as E;
+		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
 	get [__type](): ArrayType<E> {
@@ -72,7 +74,7 @@ export class DeleteQuery<
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
-			[__type]: this[__ctx].orm.tables[this.tb]!.schema,
+			[__type]: resolveSubjectSchema(this[__ctx].orm, this.tb),
 			[__display]: ({ contextId }) => {
 				return contextId === this[__ctx].id ? "$this" : "$parent";
 			},
@@ -136,7 +138,7 @@ export class DeleteQuery<
 
 		const thing =
 			typeof this.subject === "string"
-				? ctx.var(new Table(this.tb))
+				? ctx.var(new Table(this.subject))
 				: isWorkable(this.subject)
 					? this.subject[__display](ctx)
 					: ctx.var(this.subject);
