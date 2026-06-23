@@ -16,6 +16,7 @@ import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
 	type Inheritable,
 	type InheritableIntoType,
+	type InheritableObject,
 	inheritableIntoWorkable,
 } from "../utils/inheritable.ts";
 import { traversableRow } from "../utils/traversal.ts";
@@ -36,6 +37,29 @@ type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
 	O["tables"][T]["schema"] extends ObjectType<infer F>
 		? keyof F & string
 		: string;
+
+/**
+ * The `.extend({ … })` method exposed on the `.return()` row: it projects every
+ * field of the row, merged with (and overridden by) the given computed fields,
+ * returning a single object projection — see issue #39. `RE` is the row's
+ * resolved entry `ObjectType`, so its fields carry through with their declared
+ * types and the caller's keys take precedence.
+ */
+type RowExtend<C extends WorkableContext, RE extends AbstractType> =
+	RE extends ObjectType<infer F>
+		? {
+				extend<Ex extends InheritableObject<C>>(
+					extra: Ex,
+				): Workable<
+					C,
+					ObjectType<
+						Omit<F, keyof Ex> & {
+							[K in keyof Ex]: InheritableIntoType<C, Ex[K]>;
+						}
+					>
+				>;
+			}
+		: { extend(extra: InheritableObject<C>): Workable<C, ObjectType> };
 
 /**
  * Every valid FETCH path for a table: a top-level field, or a dotted path
@@ -221,13 +245,18 @@ export class SelectQuery<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
 	>(
-		cb: (tb: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>) => P,
+		cb: (
+			tb: Actionable<C, ResolveEntry<E>> &
+				RowTraversal<C, T> &
+				RowExtend<C, ResolveEntry<E>>,
+		) => P,
 	): SelectQuery<O, C, T, R> {
 		const tb = this.rowActionable(this.entry) as Actionable<
 			C,
 			ResolveEntry<E>
 		> &
-			RowTraversal<C, T>;
+			RowTraversal<C, T> &
+			RowExtend<C, ResolveEntry<E>>;
 
 		const predicable = cb(tb);
 		const workable = inheritableIntoWorkable<C, P>(

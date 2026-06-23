@@ -1,6 +1,11 @@
 import type { AbstractType } from "../types";
 import type { Actionable } from "./actionable";
-import type { WorkableContext } from "./workable";
+import {
+	type Inheritable,
+	type InheritableObject,
+	inheritableIntoWorkable,
+} from "./inheritable";
+import type { Workable, WorkableContext } from "./workable";
 
 /** Traversal verbs that the row sugar exposes by delegating to the row's `id`. */
 const TRAVERSAL_VERBS = new Set(["out", "in", "both"]);
@@ -20,6 +25,21 @@ export function traversableRow<
 >(row: Actionable<C, T>, fields: Record<string, unknown>): Actionable<C, T> {
 	return new Proxy(row, {
 		get(target, prop) {
+			// `row.extend({ … })` projects every field of the row plus (or
+			// overriding with) the given computed fields — see issue #39. The
+			// caller's keys win over the spread fields via assign order.
+			if (prop === "extend") {
+				return (extra: InheritableObject<C>) => {
+					const merged: Record<string, Inheritable<C>> = {};
+					const row = target as unknown as Record<string, Inheritable<C>>;
+					for (const key of Object.keys(fields)) {
+						merged[key] = row[key]!;
+					}
+					Object.assign(merged, extra);
+					return inheritableIntoWorkable(merged) as Workable<C>;
+				};
+			}
+
 			if (typeof prop === "string" && TRAVERSAL_VERBS.has(prop)) {
 				// biome-ignore lint/suspicious/noExplicitAny: dynamic dispatch onto the row's id-record traversal verb
 				const idRecord = (target as any).id;

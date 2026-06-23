@@ -4,10 +4,10 @@ import {
 	type BoolType,
 	type LiteralType,
 	type NumberType,
-	type OptionType,
+	OptionType,
 	type StringType,
 	t,
-	type UnionType,
+	UnionType,
 } from "../../types";
 import {
 	__ctx,
@@ -21,6 +21,12 @@ import type { Actionable } from "../../utils/actionable";
 import type { At } from "../../utils/types";
 import { comparingFilter } from "../filters";
 import { databaseFunction } from "../utils";
+
+/** The element type of an array: the single schema, or a union for a tuple. */
+function elementType(arr: ArrayType): AbstractType {
+	const schema = arr.schema;
+	return Array.isArray(schema) ? new UnionType(schema) : schema;
+}
 
 export const functions = {
 	// Contains
@@ -822,7 +828,12 @@ function at<C extends WorkableContext, T extends AbstractType>(
 	n: IntoWorkable<C, NumberType>,
 ) {
 	const v = intoWorkable(this[__ctx], t.number(), n);
-	return databaseFunction(this[__ctx], this[__type], "array::at", this, v);
+	// `array::at` yields the element (or NONE when out of bounds), not the array,
+	// so further field access resolves against the element type — see issue #36.
+	const element = elementType(this[__type]);
+	const type =
+		element instanceof OptionType ? element : new OptionType(element);
+	return databaseFunction(this[__ctx], type, "array::at", this, v);
 }
 
 function val<C extends WorkableContext, T extends AbstractType[]>(

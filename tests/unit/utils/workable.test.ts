@@ -103,6 +103,56 @@ describe("workableGet", () => {
 		const child = workableGet(workable, "age");
 		expect(child[__type].name).toBe("number");
 	});
+
+	test("resolves a record-link field against the linked table schema", () => {
+		const designer = table("designer", { name: t.string() });
+		const product = table("product", { designer: t.record("designer") });
+		const db = orm(new Surreal(), designer, product);
+
+		// a workable representing a `record<designer>` reference
+		const link = {
+			[__ctx]: { orm: db, id: Symbol() },
+			[__display]: () => "$this.designer",
+			[__type]: t.record("designer"),
+		};
+
+		const child = workableGet(link, "name");
+		expect(child[__type].name).toBe("string");
+		expect(child[__display](displayContext())).toBe("$this.designer.name");
+	});
+
+	test("an unregistered record-link table falls back to none", () => {
+		const db = orm(new Surreal(), table("a", { x: t.string() }));
+		const link = {
+			[__ctx]: { orm: db, id: Symbol() },
+			[__display]: () => "$this.ref",
+			[__type]: t.record("missing"),
+		};
+
+		const child = workableGet(link, "whatever");
+		expect(child[__type].name).toBe("none");
+	});
+
+	test("an option<object> field keeps the accessed field optional", () => {
+		const schema = t.object({
+			profile: t.option(t.object({ bio: t.string() })),
+		});
+		const workable = {
+			[__ctx]: { orm: {} as never, id: Symbol() },
+			[__display]: () => "$this",
+			[__type]: schema,
+		};
+
+		const profile = workableGet(workable, "profile");
+		expect(profile[__type].name).toBe("option");
+
+		// accessing through the option stays optional, without double-wrapping
+		const bio = workableGet(profile, "bio");
+		expect(bio[__type].name).toBe("option");
+		expect(
+			(bio[__type] as unknown as { schema: { name: string } }).schema.name,
+		).toBe("string");
+	});
 });
 
 describe("sanitizeWorkable", () => {

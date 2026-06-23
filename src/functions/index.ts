@@ -34,6 +34,10 @@ export type GetFunctions<
 	C extends WorkableContext,
 	T extends AbstractType,
 > = BaseFunctions["any"] &
+	// An `option<T>` exposes only its own `option` functions (`map`, `unwrap`, …).
+	// Field/index access through the option resolves transparently (see
+	// `ActionableProps`); to call a *type-specific* method on the inner value
+	// (e.g. `.at()` on an `option<array>`), `unwrap()` it first.
 	(T["name"] extends keyof BaseFunctions
 		? BaseFunctions[T["name"]]
 		: Record<

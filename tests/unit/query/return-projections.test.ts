@@ -145,6 +145,45 @@ describe("SELECT return projections", () => {
 		const query = db.select("user").return((r) => r.age);
 		expect(query[__display](displayContext())).toContain("SELECT VALUE");
 	});
+
+	// ─── #39 — row.extend({ … }) ─────────────────────────────────────────────
+
+	test("extend({ … }) projects every row field plus the computed field", () => {
+		const query = db
+			.select("user")
+			.return((r) => r.extend({ fullName: r.email }));
+		const result = query[__display](displayContext());
+
+		expect(result).toContain("SELECT VALUE");
+		// every existing field is spread in…
+		expect(result).toContain("name: $this.name");
+		expect(result).toContain("age: $this.age");
+		expect(result).toContain("email: $this.email");
+		expect(result).toContain("tags: $this.tags");
+		// …plus the added field
+		expect(result).toContain("fullName: $this.email");
+	});
+
+	test("extend({ … }) lets a computed field override an existing one", () => {
+		const query = db
+			.select("user")
+			.return((r) => r.extend({ email: r.name.first }));
+		const result = query[__display](displayContext());
+
+		// the override wins; the field is not also emitted with its original value
+		expect(result).toContain("email: $this.name.first");
+		expect(result).not.toContain("email: $this.email");
+	});
+
+	test("extend({ … }) accepts a nested object as a computed field", () => {
+		const query = db
+			.select("user")
+			.return((r) => r.extend({ contact: { mail: r.email } }));
+		const result = query[__display](displayContext());
+
+		expect(result).toContain("contact: {");
+		expect(result).toContain("mail: $this.email");
+	});
 });
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ type Collect<F, K extends PropertyKey> = F extends unknown
  * their (possibly unioned) type, fields missing from some member become
  * `option<…>`. Mirrors the runtime {@link mergeSchemas}.
  */
-type MergeFields<F extends ObjectTypeInner> = {
+export type MergeFields<F extends ObjectTypeInner> = {
 	[K in AllKeys<F>]: false extends PresentInAll<F, K>
 		? OptionType<Collect<F, K> & AbstractType>
 		: Collect<F, K> & AbstractType;
@@ -83,7 +83,7 @@ export function resolveSubjectSchema(
  *   (`option<…>` → `T | undefined`), because SurrealDB returns `NONE` for that
  *   field on rows whose table does not define it.
  */
-function mergeSchemas(members: ObjectType[]): ObjectType {
+export function mergeSchemas(members: ObjectType[]): ObjectType {
 	const occurrences = new Map<string, AbstractType[]>();
 	for (const member of members) {
 		for (const [key, type] of Object.entries(member.schema)) {
