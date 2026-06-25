@@ -2,7 +2,6 @@ import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
-	type ArrayType,
 	type ObjectType,
 	type RecordType,
 	t,
@@ -23,7 +22,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
 import {
 	applyContent,
 	applyMerge,
@@ -48,11 +47,13 @@ export class UpdateQuery<
 		C extends WorkableContext<O>,
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
+		Only extends boolean = false,
 	>
-	extends Query<C, ArrayType<E>>
+	extends Query<C, QueryResult<E, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
+	private _only = false;
 	_set?: Record<string, unknown>;
 	_unset?: string[];
 	_content?: unknown;
@@ -89,11 +90,18 @@ export class UpdateQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
-		}
-		return t.array(this.schema);
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+	}
+
+	only(): UpdateQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as UpdateQuery<O, C, T, E, true>;
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
@@ -141,7 +149,7 @@ export class UpdateQuery<
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): UpdateQuery<O, C, T, R>;
+	>(cb: (tb: Actionable<C, E>) => P): UpdateQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
@@ -194,7 +202,7 @@ export class UpdateQuery<
 					? this.subject[__display](ctx)
 					: ctx.var(this.subject);
 
-		let query = /* surql */ `UPDATE ${thing}`;
+		let query = /* surql */ `UPDATE ${this._only ? "ONLY " : ""}${thing}`;
 
 		query += displayModificationClause(this, ctx);
 

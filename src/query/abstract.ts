@@ -1,5 +1,5 @@
 import { BoundQuery } from "surrealdb";
-import type { AbstractType } from "../types";
+import type { AbstractType, ArrayType } from "../types";
 import {
 	__ctx,
 	__display,
@@ -10,6 +10,11 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+
+export type QueryResult<
+	E extends AbstractType,
+	Only extends boolean,
+> = Only extends true ? E : ArrayType<E>;
 
 /**
  * Abstract base class for all query types. Implements `Workable` so queries can

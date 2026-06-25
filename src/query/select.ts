@@ -29,7 +29,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
 import { type ResolveEntry, resolveSubjectSchema } from "./subject.ts";
 import { escapeIdiomPath } from "./utils.ts";
 
@@ -151,8 +151,10 @@ export class SelectQuery<
 	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, ArrayType<E>> {
+	Only extends boolean = false,
+> extends Query<C, QueryResult<E, Only>> {
 	readonly [__ctx]: C;
+	private _only = false;
 	private _start?: number;
 	private _limit?: number;
 	private _filter?: Workable<C>;
@@ -218,8 +220,17 @@ export class SelectQuery<
 			resolveSubjectSchema(this[__ctx].orm, this.tb)) as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		return t.array(this.entry);
+	get [__type](): QueryResult<E, Only> {
+		return (this._only ? this.entry : t.array(this.entry)) as QueryResult<
+			E,
+			Only
+		>;
+	}
+
+	only(): SelectQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as SelectQuery<O, C, T, E, true>;
 	}
 
 	/**
@@ -250,7 +261,7 @@ export class SelectQuery<
 				RowTraversal<C, T> &
 				RowExtend<C, ResolveEntry<E>>,
 		) => P,
-	): SelectQuery<O, C, T, R> {
+	): SelectQuery<O, C, T, R, Only> {
 		const tb = this.rowActionable(this.entry) as Actionable<
 			C,
 			ResolveEntry<E>
@@ -265,8 +276,8 @@ export class SelectQuery<
 		const entry = sanitizeWorkable(workable);
 
 		return this.derive((next) => {
-			(next as unknown as SelectQuery<O, C, T, R>)._entry = entry;
-		}) as unknown as SelectQuery<O, C, T, R>;
+			(next as unknown as SelectQuery<O, C, T, R, Only>)._entry = entry;
+		}) as unknown as SelectQuery<O, C, T, R, Only>;
 	}
 
 	where(
@@ -381,7 +392,7 @@ export class SelectQuery<
 
 	fetch<P extends FetchPaths<O, T>>(
 		...fields: P[]
-	): SelectQuery<O, C, T, FetchedSchema<O, E, P>> {
+	): SelectQuery<O, C, T, FetchedSchema<O, E, P>, Only> {
 		// Build a resolved schema where fetched record references are replaced
 		// with the referenced table's ObjectType schema, recursing into nested
 		// paths so parse() validates the resolved objects instead of expecting
@@ -397,7 +408,7 @@ export class SelectQuery<
 		return this.derive((next) => {
 			next._fetch = fields;
 			if (resolved) next._fetchResolvedType = resolved;
-		}) as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>>;
+		}) as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>, Only>;
 	}
 
 	timeout(duration: string): this {
@@ -447,7 +458,7 @@ export class SelectQuery<
 		const predicates = this._entry
 			? /* surql */ `VALUE ${this._entry[__display](ctx)}`
 			: "*";
-		let query = /* surql */ `SELECT ${predicates} FROM ${thing}`;
+		let query = /* surql */ `SELECT ${predicates} FROM ${this._only ? "ONLY " : ""}${thing}`;
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;

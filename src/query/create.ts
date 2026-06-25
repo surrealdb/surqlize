@@ -1,11 +1,6 @@
 import { RecordId, type RecordIdValue, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
-import {
-	type AbstractType,
-	type ArrayType,
-	type ObjectType,
-	t,
-} from "../types";
+import { type AbstractType, type ObjectType, t } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
@@ -21,7 +16,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
 import {
 	applyContent,
 	applyMerge,
@@ -44,11 +39,13 @@ export class CreateQuery<
 		C extends WorkableContext<O>,
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
+		Only extends boolean = false,
 	>
-	extends Query<C, ArrayType<E>>
+	extends Query<C, QueryResult<E, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
+	private _only = false;
 	_set?: Record<string, unknown>;
 	_content?: unknown;
 	_merge?: unknown;
@@ -76,11 +73,18 @@ export class CreateQuery<
 		return this[__ctx].orm.tables[this.tb]!.schema as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
-		}
-		return t.array(this.schema);
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+	}
+
+	only(): CreateQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as CreateQuery<O, C, T, E, true>;
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
@@ -110,7 +114,7 @@ export class CreateQuery<
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return(
 		cb: (record: Actionable<C, E>) => Inheritable<C>,
-	): CreateQuery<O, C, T, InheritableIntoType<C, ReturnType<typeof cb>>>;
+	): CreateQuery<O, C, T, InheritableIntoType<C, ReturnType<typeof cb>>, Only>;
 	return(
 		value:
 			| "none"
@@ -163,7 +167,7 @@ export class CreateQuery<
 			target = ctx.var(new Table(this.tb));
 		}
 
-		let query = /* surql */ `CREATE ${target}`;
+		let query = /* surql */ `CREATE ${this._only ? "ONLY " : ""}${target}`;
 
 		query += displayModificationClause(this, ctx);
 
