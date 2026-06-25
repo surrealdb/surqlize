@@ -126,7 +126,7 @@ type LookupState = {
 };
 
 const asArray = (x: string | readonly string[]): readonly string[] =>
-	Array.isArray(x) ? x : [x];
+	typeof x === "string" ? [x] : x;
 
 function ensureNode(lookup: LookupState, node: string): void {
 	if (!lookup.to[node]) lookup.to[node] = [];
