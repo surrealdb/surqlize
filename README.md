@@ -261,14 +261,60 @@ const specificUser = await db.select(new RecordId("user", "john")).then.val();
 // Or get a specific item:
 const specificUser = await db.select(new RecordId("user", "john")).then.at(0);
 
+// Use .only() to emit SurrealQL ONLY and return a single object instead of an array
+const user = await db.select("user", "john").only();
+// user: User  (not User[])
+
 // Nested queries (JOIN-like)
 const postsWithAuthors = db.select("post").return((post) => ({
   title: post.title,
-  author: post.authorId.select().return((author) => ({
+  author: post.authorId.select().only().return((author) => ({
     name: author.name,
     email: author.email,
   })),
 }));
+
+// Without .only(), post.authorId.select() returns an array per post.
+// With .only(), each post returns a single author object.
+```
+
+#### Using `.only()` for single-record queries
+
+By default surqlize queries always return arrays. The `.only()` modifier emits the SurrealQL `ONLY` clause and changes both the generated query and the TypeScript return type to a single object:
+
+```typescript
+// Without .only() — returns User[] (array with 0 or 1 item)
+const users = await db.select("user", "john");
+
+// With .only() — emits "SELECT * FROM ONLY user:john" and returns User
+const user = await db.select("user", "john").only();
+```
+
+This is different from `.then.val()` which extracts the first element client-side from an array result. `.only()` changes the query sent to SurrealDB.
+
+#### Nested record selects with `.only()`
+
+When selecting through a record link, omitting `.only()` returns an array per parent record. Use `.only()` when each parent has exactly one related record:
+
+```typescript
+// Without .only(): post.author.select() returns User[] per post → nested arrays
+const posts = await db.select("post").return((post) => ({
+  title: post.title,
+  author: post.author.select().return((author) => ({
+    id: author.id,
+    username: author.username,
+  })),
+}));
+
+// With .only(): each post returns a single author object
+const posts = await db.select("post").return((post) => ({
+  title: post.title,
+  author: post.author.select().only().return((author) => ({
+    id: author.id,
+    username: author.username,
+  })),
+}));
+// Result: Array<{ title: string; author: { id: RecordId<"user">; username: string } }>
 ```
 
 #### Sorting with ORDER BY
@@ -416,6 +462,13 @@ const user = await db.create("user", "alice123").set({
 const created = await db.create("user")
   .set({ name: "Bob" })
   .return("after"); // or "before", "none", "diff"
+
+// Use .only() to return a single object instead of an array
+const user = await db
+  .create("user", "john")
+  .only()
+  .set({ name: "John" });
+// user: User  (not User[])
 ```
 
 ### INSERT statements
@@ -502,6 +555,13 @@ await db.upsert("user", "alice")
 await db.upsert("user")
   .where((u) => u.email.eq("alice@example.com"))
   .set({ lastSeen: new Date() });
+
+// Use .only() to return a single object instead of an array
+const upserted = await db
+  .upsert("user", "john")
+  .only()
+  .set({ name: "John" });
+// upserted: User  (not User[])
 ```
 
 ### UPDATE statements
@@ -555,6 +615,13 @@ const updated = await db.update("user")
   .where((u) => u.age.gt(65))
   .set({ status: "senior" })
   .return("after");
+
+// Use .only() to return a single object instead of an array
+const user = await db
+  .update("user", "john")
+  .only()
+  .set({ name: "Johnny" });
+// user: User  (not User[])
 ```
 
 ### RELATE statements
@@ -624,6 +691,12 @@ const edgeInfo = await db.relate(
 const userQuery = db.select("user", "alice");
 const postQuery = db.select("post", "hello");
 await db.relate("authored", userQuery, postQuery);
+
+// Use .only() to return a single edge object instead of an array
+const relation = await db
+  .relate("authored", new RecordId("user", "alice"), new RecordId("post", "hello-world"))
+  .only();
+// relation: Authored  (not Authored[])
 ```
 
 ### DELETE statements
@@ -645,6 +718,14 @@ const deleted = await db.delete("user")
 const deletedNames = await db.delete("user")
   .where((u) => u.email.endsWith("@spam.com"))
   .return((u) => ({ name: u.name }));
+
+// Use .only() to return a single object instead of an array.
+// DELETE ONLY is most useful with RETURN BEFORE when the deleted record should be returned.
+const deleted = await db
+  .delete("user", "alice")
+  .only()
+  .return("before");
+// deleted: User  (not User[])
 ```
 
 ## Batch
