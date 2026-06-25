@@ -131,9 +131,10 @@ export function sanitizeWorkable<
 	C extends WorkableContext,
 	T extends AbstractType,
 >(workable: Workable<C, T>): Workable<C, T> {
+	const display = workable[__display].bind(workable);
 	return {
 		[__ctx]: workable[__ctx],
-		[__display]: workable[__display],
+		[__display]: display,
 		[__type]: workable[__type],
 	};
 }
