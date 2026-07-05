@@ -64,6 +64,9 @@ jobs:
       - name: Run TypeScript type check
         run: bun run type-check
 
+      - name: Build and validate bundled type declarations
+        run: bun run build
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

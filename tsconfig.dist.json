@@ -1,0 +1,14 @@
+{
+	// Validates the bundled declarations that consumers with `skipLibCheck:
+	// false` will parse. The dts bundler rewrites declaration names, so the
+	// emitted files can be invalid even when `src/` type-checks (see #50,
+	// where `t.infer` was flattened into a bare `type infer<T>` reference).
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"skipLibCheck": false,
+		// The dist files import nothing from bun/node; keep runtime type
+		// packages out so their own lib requirements don't fail this check.
+		"types": []
+	},
+	"files": ["dist/index.d.ts", "dist/index.d.cts"]
+}
