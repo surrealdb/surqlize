@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Surreal } from "surrealdb";
-import { edge, orm, t, table } from "../../../src";
+import { Duration, Surreal } from "surrealdb";
+import { __type, edge, orm, t, table } from "../../../src";
 
 // Compile-time equality assertion helper.
 type Equal<A, B> =
@@ -101,5 +101,19 @@ describe("orm() object form keeps full type support", () => {
 		const sample: Result = [{ name: "Alice", email: "alice@example.com" }];
 
 		expect(sample[0]?.name).toBe("Alice");
+	});
+});
+
+describe("orm() value inference", () => {
+	test("infers Duration values as duration types", () => {
+		const db = orm(new Surreal(), user);
+		const duration = new Duration("1h");
+		const value = db.value(duration);
+
+		type Value = t.infer<typeof value>;
+		const typed: Value = duration;
+
+		expect(value[__type].name).toBe("duration");
+		expect(typed).toBe(duration);
 	});
 });

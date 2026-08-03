@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RecordId } from "surrealdb";
+import { Duration, RecordId } from "surrealdb";
 import { t, table } from "../../../src";
 
 describe("TableSchema", () => {
@@ -149,5 +149,22 @@ describe("TableSchema", () => {
 		};
 
 		expect(post.validate(validRecord)).toBe(true);
+	});
+
+	test("validates duration fields", () => {
+		const task = table("task", { duration: t.duration() });
+
+		expect(
+			task.validate({
+				id: new RecordId("task", "1"),
+				duration: new Duration("1h"),
+			}),
+		).toBe(true);
+		expect(
+			task.validate({
+				id: new RecordId("task", "2"),
+				duration: "1h",
+			}),
+		).toBe(false);
 	});
 });
