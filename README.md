@@ -112,6 +112,7 @@ const user = table("user", {
   age: t.number(),
   isActive: t.bool(),
   created: t.date(),
+  duration: t.duration(),
   userId: t.uuid(),
 
   // Complex objects

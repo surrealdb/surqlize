@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { RecordId } from "surrealdb";
-import { t } from "../../../src";
+import { Duration, RecordId } from "surrealdb";
+import { DurationType, t } from "../../../src";
 import { TypeParseError } from "../../../src/error";
 import { NoneType, UnionType } from "../../../src/types/classes";
 
@@ -95,6 +95,30 @@ describe("Type builders", () => {
 			const type = t.uuid();
 			expect(type).toBeDefined();
 			expect(type.name).toBe("uuid");
+		});
+	});
+
+	describe("duration()", () => {
+		test("creates DurationType", () => {
+			const type = t.duration();
+			expect(type).toBeDefined();
+			expect(type.name).toBe("duration");
+		});
+
+		test("validates Duration values", () => {
+			const type = t.duration();
+			expect(type.validate(new Duration("1h"))).toBe(true);
+			expect(type.validate("1h")).toBe(false);
+			expect(type.validate(3600)).toBe(false);
+		});
+
+		test("accepts and preserves Duration instances", () => {
+			const duration = new Duration("1h");
+			const type = new DurationType();
+
+			expect(type.validate(duration)).toBe(true);
+			expect(type.parse(duration)).toBe(duration);
+			expect(t.duration().parse(duration)).toBe(duration);
 		});
 	});
 
@@ -363,6 +387,15 @@ describe("Type builders", () => {
 
 		test("DateType.parse() throws for invalid value", () => {
 			expect(() => t.date().parse("2024-01-01")).toThrow(TypeParseError);
+		});
+
+		test("DurationType.parse() returns Duration passthrough", () => {
+			const duration = new Duration("1h");
+			expect(t.duration().parse(duration)).toBe(duration);
+		});
+
+		test("DurationType.parse() throws for invalid value", () => {
+			expect(() => t.duration().parse("1h")).toThrow(TypeParseError);
 		});
 
 		test("OptionType.parse() returns undefined for absent value", () => {
