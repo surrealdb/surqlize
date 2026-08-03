@@ -160,34 +160,18 @@ export class DateType extends AbstractType<Date> {
 export class DurationType extends AbstractType<Duration> {
 	name = "duration" as const;
 	expected = "Duration";
+
 	validate(value: unknown): value is this["infer"] {
-		// Accept SurrealDB Duration object
-		if (value instanceof Duration) return true;
-		// Check if it's a Duration object from SurrealDB v2
-		return !!(
-			value &&
-			typeof value === "object" &&
-			"toDuration" in value &&
-			typeof (value as Record<string, unknown>).toDuration === "function"
-		);
+		return value instanceof Duration;
 	}
 
 	/**
-	 * Parse a value into a `Duration`, converting SurrealDB `Duration` objects.
+	 * Return an existing SurrealDB `Duration` instance.
 	 *
 	 * @throws {TypeParseError} If `value` is not a `Duration`.
 	 */
 	parse(value: unknown): this["infer"] {
 		if (value instanceof Duration) return value;
-		// Convert DurationTime to Duration if needed
-		if (
-			value &&
-			typeof value === "object" &&
-			"toDuration" in value &&
-			typeof (value as Record<string, unknown>).toDuration === "function"
-		) {
-			return (value as { toDuration: () => Duration }).toDuration();
-		}
 		throw new TypeParseError(this.name, this.expected, value);
 	}
 }
