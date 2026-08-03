@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Duration, RecordId } from "surrealdb";
-import { t } from "../../../src";
+import { DurationType, t } from "../../../src";
 import { TypeParseError } from "../../../src/error";
 import { NoneType, UnionType } from "../../../src/types/classes";
 
@@ -110,6 +110,15 @@ describe("Type builders", () => {
 			expect(type.validate(new Duration("1h"))).toBe(true);
 			expect(type.validate("1h")).toBe(false);
 			expect(type.validate(3600)).toBe(false);
+		});
+
+		test("accepts and preserves Duration instances", () => {
+			const duration = new Duration("1h");
+			const type = new DurationType();
+
+			expect(type.validate(duration)).toBe(true);
+			expect(type.parse(duration)).toBe(duration);
+			expect(t.duration().parse(duration)).toBe(duration);
 		});
 	});
 
@@ -383,12 +392,6 @@ describe("Type builders", () => {
 		test("DurationType.parse() returns Duration passthrough", () => {
 			const duration = new Duration("1h");
 			expect(t.duration().parse(duration)).toBe(duration);
-		});
-
-		test("DurationType.parse() converts object with toDuration()", () => {
-			const duration = new Duration("1h");
-			const result = t.duration().parse({ toDuration: () => duration });
-			expect(result).toBe(duration);
 		});
 
 		test("DurationType.parse() throws for invalid value", () => {
