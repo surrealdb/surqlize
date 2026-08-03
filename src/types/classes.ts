@@ -1,4 +1,4 @@
-import { RecordId, Uuid } from "surrealdb";
+import { Duration, RecordId, Uuid } from "surrealdb";
 import { TypeParseError } from "../error";
 
 /** Matches strings usable as a bare SurrealQL identifier in an idiom path. */
@@ -152,6 +152,41 @@ export class DateType extends AbstractType<Date> {
 			typeof (value as Record<string, unknown>).toDate === "function"
 		) {
 			return (value as { toDate: () => Date }).toDate();
+		}
+		throw new TypeParseError(this.name, this.expected, value);
+	}
+}
+
+export class DurationType extends AbstractType<Duration> {
+	name = "duration" as const;
+	expected = "Duration";
+	validate(value: unknown): value is this["infer"] {
+		// Accept SurrealDB Duration object
+		if (value instanceof Duration) return true;
+		// Check if it's a Duration object from SurrealDB v2
+		return !!(
+			value &&
+			typeof value === "object" &&
+			"toDuration" in value &&
+			typeof (value as Record<string, unknown>).toDuration === "function"
+		);
+	}
+
+	/**
+	 * Parse a value into a `Duration`, converting SurrealDB `Duration` objects.
+	 *
+	 * @throws {TypeParseError} If `value` is not a `Duration`.
+	 */
+	parse(value: unknown): this["infer"] {
+		if (value instanceof Duration) return value;
+		// Convert DurationTime to Duration if needed
+		if (
+			value &&
+			typeof value === "object" &&
+			"toDuration" in value &&
+			typeof (value as Record<string, unknown>).toDuration === "function"
+		) {
+			return (value as { toDuration: () => Duration }).toDuration();
 		}
 		throw new TypeParseError(this.name, this.expected, value);
 	}
