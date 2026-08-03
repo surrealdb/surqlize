@@ -855,6 +855,9 @@ db.select("user").where((user) =>
   user.age.lt(65)                   // <
   user.age.lte(64)                  // <=
 
+  // Full-text search
+  user.bio.search("typescript")     // @@
+
   // Array membership
   user.status.inside(["active", "pending"])    // IN
   user.status.notInside(["banned", "deleted"]) // NOT IN
@@ -914,6 +917,7 @@ Both `and()` and `or()` require at least two conditions and accept any number of
 
 ```typescript
 db.select("user").where((user) =>
+  user.bio.search("typescript")
   user.email.startsWith("admin@")
   user.name.endsWith("son")
   user.email.contains("@example.com")

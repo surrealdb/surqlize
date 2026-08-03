@@ -13,6 +13,16 @@ describe("String functions", () => {
 
 	const db = orm(new Surreal(), user);
 
+	test("search() generates the @@ operator", () => {
+		const query = db
+			.select("user")
+			.where(($this) => $this.email.search("test"));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("@@");
+	});
+
 	test("join() generates string::join function", () => {
 		const query = db.select("user").return((user) => ({
 			fullName: user.name.first.join(" ", user.name.last),
