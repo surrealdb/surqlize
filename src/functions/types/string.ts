@@ -13,9 +13,17 @@ import {
 	type WorkableContext,
 } from "../../utils";
 import type { Actionable } from "../../utils/actionable";
+import { comparingFilter } from "../filters";
 import { databaseFunction } from "../utils";
 
 export const functions = {
+	search<C extends WorkableContext>(
+		this: Workable<C, StringType>,
+		value: IntoWorkable<C, StringType>,
+	) {
+		return comparingFilter(this[__ctx], "@@", this, value);
+	},
+
 	startsWith<C extends WorkableContext>(
 		this: Workable<C, StringType>,
 		v: IntoWorkable<C, StringType>,
@@ -521,6 +529,11 @@ export const functions = {
 } satisfies Functions;
 
 export type Functions = {
+	search<C extends WorkableContext>(
+		this: Workable<C, StringType>,
+		value: IntoWorkable<C, StringType>,
+	): Actionable<C, BoolType>;
+
 	startsWith<C extends WorkableContext>(
 		this: Workable<C, StringType>,
 		v: IntoWorkable<C, StringType>,
