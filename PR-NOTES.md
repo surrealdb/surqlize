@@ -342,6 +342,38 @@ SurrealQL as a plain string, because for them there is no other reading.
 
 ---
 
+## Named environments
+
+One checked-in config file can describe several deployments, with `--env`
+selecting between them:
+
+```ts
+export default {
+  schema: "./schema.ts",
+  url: "ws://localhost:8000",
+  environments: {
+    staging: { url: "wss://staging.example.com", database: "app" },
+    production: { url: "wss://example.com", database: "app" },
+  },
+};
+```
+
+An environment overrides only what it names, and sits between the file's base
+settings and the `SURREAL_*` variables — so a deployment can still redirect a
+named environment without editing it, and a flag still wins over everything.
+Naming one that does not exist lists the ones that do.
+
+`sur config` prints the settings in force and the environments available, with
+the password masked. It is chiefly a way to check that `--env production`
+resolves to what you think it does before running anything against it.
+
+The integration test stands up a **second SurrealDB on another port** and
+asserts the migration lands on that one and not the default. Asserting on
+printed configuration would pass even if the flag were wired to nothing —
+verified by disconnecting it, which fails three tests including that one.
+
+---
+
 ## Naming
 
 ### An event's body is `body`, not `then`

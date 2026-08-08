@@ -5,7 +5,7 @@ import { Surreal } from "surrealdb";
 import { applied, migrate, plan, rollback } from "../migrator";
 import type { DefinableSchema } from "../schema/ddl/define";
 import { type DiagramLevel, mermaid } from "../schema/mermaid";
-import { type CliConfig, loadConfig } from "./config";
+import { availableEnvironments, type CliConfig, loadConfig } from "./config";
 import { fail, info, printStatements, style, success, warn } from "./output";
 import { type Definition, loadDefinitions } from "./schema";
 
@@ -22,6 +22,7 @@ ${style.bold("Commands")}
   status      List the migrations that have been applied
   rollback    Undo the most recent migration
   validate    Load the schema and report what it declares, without connecting
+  config      Show the settings in force, and the environments available
   mermaid     Draw an ER diagram of the schema
 
 ${style.bold("Options")}
@@ -31,6 +32,7 @@ ${style.bold("Options")}
   -U, --username <name>        Username
   -p, --password <pass>        Password
   -s, --schema <path>          Path to the schema module
+  -e, --env <name>             Use a named environment from the config file
       --level <minimal|detailed>  How much detail a diagram carries
   -o, --output <path>          Where to write a diagram (default schema-diagram.mermaid)
       --stdout                 Print the diagram instead of writing it
@@ -49,6 +51,7 @@ const OPTIONS = {
 	username: { type: "string", short: "U" },
 	password: { type: "string", short: "p" },
 	schema: { type: "string", short: "s" },
+	env: { type: "string", short: "e" },
 	level: { type: "string" },
 	output: { type: "string", short: "o" },
 	stdout: { type: "boolean" },
@@ -113,6 +116,8 @@ async function dispatch(
 		schema: flags.schema as string | undefined,
 	};
 
+	const environment = flags.env as string | undefined;
+
 	const options = {
 		removeMissing: flags["remove-missing"] === true,
 		assumeYes: flags.yes === true,
@@ -121,23 +126,44 @@ async function dispatch(
 	switch (command) {
 		case "init":
 			return initCommand();
+		case "config":
+			return configCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+				environment,
+			);
 		case "validate":
-			return validateCommand(await loadConfig(overrides));
+			return validateCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+			);
 		case "mermaid":
-			return mermaidCommand(await loadConfig(overrides), {
-				level: flags.level as string | undefined,
-				output: flags.output as string | undefined,
-				stdout: flags.stdout === true,
-			});
+			return mermaidCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+				{
+					level: flags.level as string | undefined,
+					output: flags.output as string | undefined,
+					stdout: flags.stdout === true,
+				},
+			);
 		case "plan":
 		case "diff":
-			return planCommand(await loadConfig(overrides), options);
+			return planCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+				options,
+			);
 		case "migrate":
-			return migrateCommand(await loadConfig(overrides), options);
+			return migrateCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+				options,
+			);
 		case "status":
-			return statusCommand(await loadConfig(overrides));
+			return statusCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+			);
 		case "rollback":
-			return rollbackCommand(await loadConfig(overrides), options);
+			return rollbackCommand(
+				await loadConfig(overrides, process.cwd(), environment),
+				options,
+			);
 		default:
 			fail(`Unknown command: ${command}`);
 			info(USAGE);
@@ -258,6 +284,33 @@ async function validateCommand(config: CliConfig): Promise<number> {
 	info(`  Tables and edges: ${names(tables).join(", ") || "none"}`);
 	if (entities.length)
 		info(`  Other definitions: ${names(entities).join(", ")}`);
+
+	return 0;
+}
+
+/**
+ * Report the settings in force and the environments available.
+ *
+ * Chiefly a way to check that `--env production` resolves to what you think it
+ * does before running anything against it.
+ */
+async function configCommand(
+	config: CliConfig,
+	environment: string | undefined,
+): Promise<number> {
+	if (environment) success(`Environment: ${environment}`);
+
+	for (const [key, value] of Object.entries(config)) {
+		// Never print a password, even one that came from a checked-in file.
+		info(`  ${key.padEnd(10)} ${key === "password" ? "********" : value}`);
+	}
+
+	const environments = await availableEnvironments();
+	info(
+		environments.length
+			? `\n  Environments: ${environments.join(", ")}`
+			: "\n  No environments defined",
+	);
 
 	return 0;
 }

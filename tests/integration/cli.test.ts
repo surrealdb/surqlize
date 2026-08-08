@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -249,5 +249,166 @@ describe("init", () => {
 		expect(existsSync(join(fresh, "schema.ts"))).toBe(true);
 
 		await rm(fresh, { recursive: true, force: true });
+	});
+});
+
+/**
+ * `--env` against two servers.
+ *
+ * Asserting on printed configuration would pass even if the flag were wired to
+ * nothing, so this stands up a second SurrealDB and checks that the migration
+ * lands on that one and not the default. Two servers is the only way to tell
+ * the difference between selecting an environment and merely reporting one.
+ */
+describe("Named environments", () => {
+	const SECOND_PORT = 18098;
+	const second = `ws://127.0.0.1:${SECOND_PORT}`;
+
+	let server: { kill: () => void } | undefined;
+	let envDir: string;
+	let envNamespace: string;
+
+	beforeAll(async () => {
+		server = Bun.spawn(
+			[
+				"surreal",
+				"start",
+				"--user",
+				"root",
+				"--pass",
+				"root",
+				"--bind",
+				`127.0.0.1:${SECOND_PORT}`,
+				"memory",
+			],
+			{ stdout: "ignore", stderr: "ignore" },
+		);
+
+		await waitForHealth(SECOND_PORT);
+
+		envDir = await mkdtemp(join(tmpdir(), "surqlize-env-"));
+		// The servers outlive a single run, so each run needs its own namespace
+		// or the previous run's tables look like this one's.
+		envNamespace = `envtest_${Date.now()}`;
+
+		await writeFile(
+			join(envDir, "schema.ts"),
+			`import { t, table } from "${resolve(import.meta.dir, "../../src")}";
+
+export const widget = table("widget", { name: t.string() });
+`,
+			"utf-8",
+		);
+
+		await writeFile(
+			join(envDir, "surqlize.config.ts"),
+			`export default {
+  schema: "./schema.ts",
+  url: "${URL_}",
+  namespace: "${envNamespace}",
+  database: "primary",
+  environments: {
+    secondary: { url: "${second}", database: "secondary" },
+  },
+};`,
+			"utf-8",
+		);
+	});
+
+	afterAll(async () => {
+		server?.kill();
+		await rm(envDir, { recursive: true, force: true });
+	});
+
+	/** Wait for a SurrealDB instance to answer on `port`. */
+	async function waitForHealth(port: number): Promise<void> {
+		for (let attempt = 0; attempt < 60; attempt++) {
+			try {
+				const response = await fetch(`http://127.0.0.1:${port}/health`);
+				if (response.ok) return;
+			} catch {
+				// Not up yet
+			}
+			await Bun.sleep(150);
+		}
+
+		throw new Error(`SurrealDB did not start on port ${port}`);
+	}
+
+	/** Run `sur` in the environment fixture directory, with no SURREAL_* set. */
+	async function run(...args: string[]): Promise<Run> {
+		const env = { ...process.env };
+		for (const key of Object.keys(env)) {
+			if (key.startsWith("SURREAL_")) delete env[key];
+		}
+
+		const proc = Bun.spawn(["bun", CLI, ...args], {
+			cwd: envDir,
+			env,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		const [stdout, stderr, code] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		]);
+
+		return { code, stdout, stderr, output: stdout + stderr };
+	}
+
+	/** Whether `url` has the widget table in `database`. */
+	async function hasWidget(url: string, database: string): Promise<boolean> {
+		const { Surreal } = await import("surrealdb");
+		const surreal = new Surreal();
+
+		await surreal.connect(url, { reconnect: false });
+		await surreal.signin({ username: "root", password: "root" });
+		await surreal.use({ namespace: envNamespace, database });
+
+		const [info] =
+			await surreal.query<[{ tables: Record<string, string> }]>("INFO FOR DB;");
+		await surreal.close();
+
+		return "widget" in info.tables;
+	}
+
+	test("config reports the environments the file defines", async () => {
+		const listed = await run("config");
+
+		expect(listed.code).toBe(0);
+		expect(listed.output).toContain("secondary");
+	});
+
+	test("config resolves the named one, and never prints the password", async () => {
+		const resolved = await run("config", "--env", "secondary");
+
+		expect(resolved.output).toContain(second);
+		expect(resolved.output).toContain("secondary");
+		expect(resolved.output).toMatch(/password\s+\*+$/m);
+		expect(resolved.output).not.toMatch(/password\s+root/);
+	});
+
+	test("an unknown environment is refused, listing the ones that exist", async () => {
+		const bad = await run("config", "--env", "nope");
+
+		expect(bad.code).toBe(1);
+		expect(bad.output).toContain("secondary");
+	});
+
+	test("migrate lands on the named server, not the default", async () => {
+		const applied = await run("migrate", "--env", "secondary");
+		expect(applied.code).toBe(0);
+
+		expect(await hasWidget(second, "secondary")).toBe(true);
+		expect(await hasWidget(URL_, "primary")).toBe(false);
+	});
+
+	test("and without the flag it lands on the default", async () => {
+		const applied = await run("migrate");
+		expect(applied.code).toBe(0);
+
+		expect(await hasWidget(URL_, "primary")).toBe(true);
 	});
 });
