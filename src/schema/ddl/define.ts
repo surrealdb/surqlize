@@ -45,7 +45,7 @@ export function defineField(
 	if (ddl.default !== undefined) {
 		parts.push(
 			ddl.default.always ? "DEFAULT ALWAYS" : "DEFAULT",
-			literal(ddl.default.value),
+			literal(ddl.default.value, ddl.default.literal),
 		);
 	}
 
@@ -242,9 +242,9 @@ function tableList(tables: string | readonly string[]): string {
  * expression that must not be quoted. Anything that looks like a call, a
  * variable, a block or a comparison is passed through untouched.
  */
-function literal(value: unknown): string {
+function literal(value: unknown, forceLiteral = false): string {
 	if (typeof value === "string") {
-		return isExpression(value) ? value : quote(value, "'");
+		return !forceLiteral && isExpression(value) ? value : quote(value, "'");
 	}
 	if (value === null) return "NULL";
 	if (value === undefined) return "NONE";

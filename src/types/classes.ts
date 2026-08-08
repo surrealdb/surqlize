@@ -81,6 +81,18 @@ export abstract class AbstractType<T = unknown> {
 		});
 	}
 
+	/**
+	 * Set a `DEFAULT` that is always data, even if it looks like SurrealQL.
+	 *
+	 * `default("time::now()")` calls the function, because a string carrying
+	 * parentheses is read as an expression. This stores the characters instead.
+	 */
+	defaultLiteral<S extends AbstractType>(this: S, value: string): S {
+		return patchDdl(this, (d) => {
+			d.default = { value, always: false, literal: true };
+		});
+	}
+
 	/** Set a `DEFAULT ALWAYS` value, re-applied on every update. */
 	defaultAlways<S extends AbstractType>(this: S, value: unknown): S {
 		return patchDdl(this, (d) => {

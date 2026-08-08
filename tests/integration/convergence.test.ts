@@ -288,18 +288,28 @@ describe("Defaults converge and mean what they say", () => {
 		expect(created?.[0]?.label).toBe("some::thing");
 	});
 
-	test("a literal that looks like a call is treated as a call", async () => {
-		// A known limitation, pinned rather than hidden: whether a string default
-		// is SurrealQL or text is decided by looking at it, and a value carrying
-		// parentheses is read as an expression. There is no way to ask for the
-		// literal text `time::now()` in a string field.
+	test("a string that looks like a call is read as one", async () => {
+		// Right almost always — `time::now()` should be called
 		const probe = table("probe", { label: t.string().default("time::now()") });
 
-		const before = await introspect(db().surreal);
-		const { up } = diff([probe], before);
+		const { up } = diff([probe], await introspect(db().surreal));
 
 		expect(up.join("\n")).toContain("DEFAULT time::now()");
-		expect(up.join("\n")).not.toContain("DEFAULT 'time::now()'");
+	});
+
+	test("defaultLiteral stores the characters instead", async () => {
+		// The escape hatch for the one case the heuristic cannot express
+		const probe = table("probe", {
+			label: t.string().defaultLiteral("time::now()"),
+		});
+
+		expect(await applyTwice([probe])).toEqual([]);
+
+		const [created] = await db().surreal.query<[{ label: string }[]]>(
+			"CREATE probe RETURN label;",
+		);
+
+		expect(created?.[0]?.label).toBe("time::now()");
 	});
 });
 

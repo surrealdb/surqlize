@@ -30,6 +30,14 @@ export type OnDeleteAction =
 export interface FieldDefault {
 	value: unknown;
 	always: boolean;
+	/**
+	 * Emit a string value as data, never as SurrealQL.
+	 *
+	 * Without this a string default is read as an expression when it looks like
+	 * one, which is right almost always — `time::now()` should be called — but
+	 * leaves no way to store those characters as text.
+	 */
+	literal?: boolean;
 }
 
 /** A `REFERENCE` clause and its deletion behaviour. */

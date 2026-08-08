@@ -325,13 +325,20 @@ command runs in CI. It defaults to `minimal`.
 
 Whether a string `DEFAULT` is SurrealQL or literal text is decided by looking at
 it: a value containing parentheses, or starting with `$`, `{` or `[`, is emitted
-unquoted. That is right almost always — `time::now()` should be called — but it
-means there is no way to store the literal text `time::now()` in a string field.
+unquoted. That is right almost always — `time::now()` should be called — but on
+its own it leaves no way to store those characters as text.
 
-Pinned in `tests/integration/convergence.test.ts` rather than hidden. If you
-would rather have an explicit escape hatch, the obvious shapes are a
-`.defaultLiteral(value)` modifier or a `raw()` wrapper for the expression case;
-happy to add either.
+`.defaultLiteral(value)` is the escape hatch, and the only thing that changes:
+
+```ts
+t.string().default("time::now()")         // calls the function
+t.string().defaultLiteral("time::now()")  // stores the eleven characters
+```
+
+A `raw()` wrapper for the opposite case was considered and rejected. It would
+have meant making a bare string always literal, which reads well in isolation
+but breaks the symmetry with `valueExpr()` and `computed()` — both of which take
+SurrealQL as a plain string, because for them there is no other reading.
 
 ---
 

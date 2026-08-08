@@ -54,6 +54,23 @@ describe("Strings", () => {
 		expect(defaultClause("$auth.id", t.record("user"))).toBe("$auth.id");
 	});
 
+	test("defaultLiteral stores a call as text rather than calling it", () => {
+		// The escape hatch for the one case the heuristic cannot express
+		const schema = table("probe", {
+			f: t.string().defaultLiteral("time::now()"),
+		});
+		const flat = flattenFields(schema.fields).find((f) => f.name === "f");
+
+		expect(defineField("probe", flat!)).toContain("DEFAULT 'time::now()'");
+	});
+
+	test("defaultLiteral quotes a value that needs no help too", () => {
+		const schema = table("probe", { f: t.string().defaultLiteral("draft") });
+		const flat = flattenFields(schema.fields).find((f) => f.name === "f");
+
+		expect(defineField("probe", flat!)).toContain("DEFAULT 'draft'");
+	});
+
 	test("a bare word with a namespace but no call is quoted", () => {
 		// Without parentheses there is nothing to distinguish `a::b` from text,
 		// and quoting is the safe reading — an unquoted one is a parse error.

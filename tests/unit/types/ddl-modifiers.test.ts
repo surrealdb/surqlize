@@ -50,6 +50,18 @@ describe("Modifiers record their metadata", () => {
 		});
 	});
 
+	test("defaultLiteral marks the value as data", () => {
+		expect(t.string().defaultLiteral("time::now()").ddl.default).toEqual({
+			value: "time::now()",
+			always: false,
+			literal: true,
+		});
+	});
+
+	test("a plain default is not marked literal", () => {
+		expect(t.string().default("draft").ddl.default?.literal).toBeUndefined();
+	});
+
 	test("readonly and flexible", () => {
 		expect(t.string().readonly().ddl.readonly).toBe(true);
 		expect(t.object({}).flexible().ddl.flexible).toBe(true);
