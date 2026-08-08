@@ -87,7 +87,8 @@ export async function run(
 
 	if (flags.help || !command) {
 		info(USAGE);
-		return command ? 0 : 1;
+		// Asking for help is a successful invocation; being given nothing is not.
+		return flags.help ? 0 : 1;
 	}
 
 	try {
@@ -144,6 +145,36 @@ async function dispatch(
 	}
 }
 
+/** How long to wait for a connection before giving up. */
+const CONNECT_TIMEOUT_MS = 10_000;
+
+/** Reject with `message` if `work` has not settled within `ms`. */
+async function withTimeout<T>(
+	work: Promise<T>,
+	ms: number,
+	message: string,
+): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	try {
+		return await Promise.race([
+			work,
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(() => reject(new Error(message)), ms);
+			}),
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
+/** The name of each definition, for reporting what a schema declares. */
+function names(definitions: Definition[]): string[] {
+	return definitions.map((definition) =>
+		"tb" in definition ? definition.tb : definition.name,
+	);
+}
+
 /** Whether a definition is a table or edge, which is all a diagram draws. */
 function isDefinable(definition: Definition): definition is DefinableSchema {
 	return "tb" in definition;
@@ -153,15 +184,29 @@ function isDefinable(definition: Definition): definition is DefinableSchema {
 async function connect(config: CliConfig): Promise<Surreal> {
 	const surreal = new Surreal();
 
-	await surreal.connect(config.url);
-	await surreal.signin({
-		username: config.username,
-		password: config.password,
-	});
-	await surreal.use({
-		namespace: config.namespace,
-		database: config.database,
-	});
+	try {
+		// The driver retries a WebSocket connection indefinitely, which is right
+		// for a long-running app and wrong for a command: a mistyped URL would
+		// hang with nothing on screen. One attempt, with a deadline, then say so.
+		await withTimeout(
+			surreal.connect(config.url, { reconnect: false }),
+			CONNECT_TIMEOUT_MS,
+			`Could not reach ${config.url} within ${CONNECT_TIMEOUT_MS / 1000}s.`,
+		);
+		await surreal.signin({
+			username: config.username,
+			password: config.password,
+		});
+		await surreal.use({
+			namespace: config.namespace,
+			database: config.database,
+		});
+	} catch (error) {
+		// A half-open socket keeps the process alive, so a failure that is
+		// reported but not closed would hang instead of exiting.
+		await surreal.close().catch(() => {});
+		throw error;
+	}
 
 	return surreal;
 }
@@ -210,8 +255,9 @@ async function validateCommand(config: CliConfig): Promise<number> {
 	const entities = definitions.filter((d) => "kind" in d);
 
 	success(`${config.schema} is valid`);
-	info(`  Tables and edges: ${tables.length}`);
-	if (entities.length) info(`  Other definitions: ${entities.length}`);
+	info(`  Tables and edges: ${names(tables).join(", ") || "none"}`);
+	if (entities.length)
+		info(`  Other definitions: ${names(entities).join(", ")}`);
 
 	return 0;
 }

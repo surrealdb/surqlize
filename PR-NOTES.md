@@ -346,6 +346,45 @@ with a `then` property is treated as a thenable by `await`, and Biome's
 
 ---
 
+## What was ported from smig's test suite, and what was not
+
+smig had 515 tests. This branch has ~1200, but the two numbers are not
+comparable: the coverage was ported, not the case count. Where an API survived,
+the tests were rewritten against it; where it did not, the invariant was
+re-expressed; where nothing was left to protect, the file was dropped. The
+dropped ones are listed here so it is clear they were considered.
+
+Everything was converted to `bun:test`. Vitest was not added — it brings a
+second runner and 39 transitive packages to a repo with three devDependencies,
+and 26 of smig's 32 files used no Vitest-specific API at all.
+
+### Dropped, with the reason
+
+| File | Cases | Why |
+|---|---|---|
+| `alter.test.ts` | 41 | Tests `ALTER` generators. `ALTER` is *not* rejected by 3.2 — only `ALTER … RENAME TO` is — so this is a design choice, not a forced one: the differ compares whole canonicalised definitions, so it knows *that* two differ, not *which clauses*. Clause-level `ALTER` would also reintroduce an unset trap, since `DEFAULT NONE` parses but stores a literal `NONE` and only `DROP DEFAULT` clears it. `DEFINE … OVERWRITE` preserves fields, indexes, events and rows. |
+| `introspection.test.ts` | 35 | Tests parsers. Comparison is by canonicalised statement, so there is no parser. The fixture strings were salvaged — they are real 3.2 output and are now the inputs to `tests/unit/migrator/canonical.test.ts`. |
+| `surreal-client.test.ts` | 13 | Tests a connection wrapper the SDK replaces. Not ours to test. |
+| `event-validation-examples.test.ts` | 10 | Error-message ergonomics for a builder that no longer exists. |
+| `integration/alter-statements.test.ts` | 5 | Asserts on `ALTER` output, which the engine no longer emits. |
+| parser tails of `new-features`, `surrealdb-32-grammar` | 12 | Same reason as `introspection`. |
+| `new-entities.test.ts`, in part | ~25 | Covers `user()`, `model()`, `config()` and JWT/BEARER access, none of which this branch exposes. Users are never introspected, a model's binary is not recoverable, and only RECORD access is supported. |
+
+### Mocking was removed rather than translated
+
+Six of smig's files used `vi.mock`. None was translated:
+
+- the global `fs` mock in `tests/setup.ts` and in `config-loader.test.ts` mocked
+  `fs` while the code imported `node:fs`, so it never applied to the code under
+  test. Config precedence now runs against a real temporary directory.
+- the mocks of `SurrealClient` are unnecessary by construction: `migrate` and
+  `diff` take a session as an argument, so a plain stub object is the seam.
+
+Surqlize's existing suite contains no mocking at all, and `mock.module` is
+process-global in bun — it does not unwind between files.
+
+---
+
 ## Type-system notes
 
 ### Do not use a polymorphic `this` return type on `AbstractType`
