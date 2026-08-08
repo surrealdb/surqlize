@@ -673,18 +673,15 @@ export class GeometryType<
 	}
 }
 
-/** A bounded range of values. */
+/**
+ * A bounded range of values.
+ *
+ * SurrealDB has no element type for ranges — `range<int>` is a parse error, and
+ * `INFO FOR TABLE` reports a bare `range` — so this carries no inner type.
+ */
 export class RangeType extends AbstractType<Range<unknown, unknown>> {
 	name = "range" as const;
 	expected = "Range";
-
-	constructor(private _inner?: AbstractType) {
-		super();
-	}
-
-	get inner(): AbstractType | undefined {
-		return this._inner;
-	}
 
 	validate(value: unknown): value is this["infer"] {
 		return value instanceof Range;

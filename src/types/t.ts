@@ -75,9 +75,9 @@ export function geometry<const K extends GeometryKind | undefined = undefined>(
 	return new GeometryType<K>(kind);
 }
 
-/** Create a range type, optionally over a specific inner type. */
-export function range(inner?: AbstractType) {
-	return new RangeType(inner);
+/** Create a range type. SurrealDB ranges are untyped — there is no `range<T>`. */
+export function range() {
+	return new RangeType();
 }
 
 /** Create a set type: an array whose elements must be unique. */
