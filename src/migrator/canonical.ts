@@ -30,8 +30,6 @@ const RULES: [RegExp, string][] = [
 	[/`([A-Za-z_][A-Za-z0-9_]*)`/g, "$1"],
 	// Array element fields are reported with dots but defined with brackets
 	[/\[\*\]/g, ".*"],
-	// SurrealDB fills these in; their absence means the same thing
-	[/\s+PERMISSIONS\s+(FULL|NONE)\b/gi, ""],
 	// SurrealDB stores string literals single-quoted. Only rewrite literals with
 	// no quote of either kind inside, so an apostrophe cannot change the meaning.
 	[/"([^"'\\]*)"/g, "'$1'"],
@@ -52,8 +50,98 @@ export function canonicalise(statement: string): string {
 		result = result.replace(pattern, replacement);
 	}
 
-	return normaliseTypeClause(result).trim();
+	// COMMENT and PERMISSIONS are written in either order but stored in one, so
+	// both are lifted out and re-appended in a fixed position.
+	const isField = /^DEFINE FIELD\b/i.test(result);
+	const { body, comment, permissions } = extractTrailingClauses(result);
+
+	const parts = [normaliseTypeClause(body).trim()];
+	if (comment) parts.push(`COMMENT ${comment}`);
+	parts.push(normalisePermissions(permissions, isField));
+
+	return parts.join(" ").trim();
 }
+
+/**
+ * Split a statement into its body and its `COMMENT`/`PERMISSIONS` clauses.
+ *
+ * Both are always last, so whichever comes first marks the end of the body.
+ */
+function extractTrailingClauses(statement: string): {
+	body: string;
+	comment: string | null;
+	permissions: string | null;
+} {
+	const comment = statement.match(/\sCOMMENT\s+('[^']*'|"[^"]*")/i);
+	const permissions = statement.match(
+		/\sPERMISSIONS\s+(.+?)(?=\sCOMMENT\s|$)/i,
+	);
+
+	let body = statement;
+	if (comment) body = body.replace(comment[0], "");
+	if (permissions) body = body.replace(permissions[0], "");
+
+	return {
+		body: body.trim(),
+		comment: comment?.[1] ?? null,
+		permissions: permissions?.[1]?.trim() ?? null,
+	};
+}
+
+/**
+ * Expand a `PERMISSIONS` clause to a rule per operation.
+ *
+ * SurrealDB always reports the full expansion, filling in whatever was not
+ * specified — `PERMISSIONS FOR select FULL` on a table comes back as
+ * `FOR select FULL, FOR create, update, delete NONE`. Writing both sides out in
+ * full, in a fixed order, makes the two comparable.
+ *
+ * The default for an unmentioned operation differs by kind: a field is `FULL`,
+ * a table is `NONE`.
+ */
+function normalisePermissions(clause: string | null, isField: boolean): string {
+	const fallback = isField ? "FULL" : "NONE";
+	const rules: Record<Operation, string> = {
+		create: fallback,
+		delete: fallback,
+		select: fallback,
+		update: fallback,
+	};
+
+	if (clause && !/^(FULL|NONE)$/i.test(clause)) {
+		for (const group of clause.split(/\bFOR\b/i)) {
+			const trimmed = group.trim().replace(/,$/, "").trim();
+			if (!trimmed) continue;
+
+			const [operations, rule] = splitOperations(trimmed);
+			for (const operation of operations) rules[operation] = rule;
+		}
+	} else if (clause) {
+		for (const operation of OPERATIONS) rules[operation] = clause.toUpperCase();
+	}
+
+	return `PERMISSIONS ${OPERATIONS.map((op) => `FOR ${op} ${rules[op]}`).join(", ")}`;
+}
+
+/** Split `select, create WHERE x` into its operations and its rule. */
+function splitOperations(group: string): [Operation[], string] {
+	const operations: Operation[] = [];
+	let rest = group;
+
+	while (true) {
+		const match = rest.match(/^(create|delete|select|update)\s*,?\s*/i);
+		if (!match) break;
+		operations.push(match[1]!.toLowerCase() as Operation);
+		rest = rest.slice(match[0].length);
+	}
+
+	return [operations, rest.trim() || "FULL"];
+}
+
+/** The operations a `PERMISSIONS` clause can name, in a fixed order. */
+const OPERATIONS = ["create", "delete", "select", "update"] as const;
+
+type Operation = (typeof OPERATIONS)[number];
 
 /** Whether two `DEFINE` statements define the same thing. */
 export function equivalent(a: string, b: string): boolean {
