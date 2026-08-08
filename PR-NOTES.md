@@ -119,6 +119,45 @@ Anything comparing a declared type against an introspected one has to normalise
 this, or a schema looks permanently modified. Relevant to the "Runtime
 validation" roadmap item as well as to migrations.
 
+### `FLEXIBLE` comes after the type, not before
+
+```surql
+DEFINE FIELD m ON t FLEXIBLE TYPE object;   -- Parse error
+DEFINE FIELD m ON t TYPE object FLEXIBLE;   -- correct
+```
+
+The error is explicit — "FLEXIBLE must be specified after TYPE" — but only if
+you run the statement.
+
+### `id` cannot be defined as `record<tb>`, and cannot be `READONLY`
+
+```
+Cannot use the `record<person>` type on the `id` field, as that's not a valid record id key.
+Cannot use the `READONLY` keyword on the `id` field.
+```
+
+Surqlize injects `id: t.record(tb)` into every schema so a row type has one.
+That is a TypeScript convenience and must never reach DDL — the generator skips
+it, and only emits an `id` the schema explicitly declares. Everything else is
+allowed on `id`: `TYPE string|uuid|int`, `DEFAULT`, `ASSERT`, `COMMENT`.
+
+### Array element fields are created automatically
+
+Defining `items[*].sku` makes SurrealDB create `items[*]` on its own, and every
+array gets an element field whether or not children are declared. Emitting
+`items[*]` by hand means an extra field on the next diff, so the flattener does
+not. Note also that `INFO FOR TABLE` reports these with dot notation
+(`items.*.sku`) while `DEFINE` accepts bracket notation.
+
+### Function namespaces come back backticked
+
+```
+declared:  DEFAULT rand::uuid::v7()
+stored:    DEFAULT `rand`::uuid::v7()
+```
+
+Another normalisation the diff layer has to absorb.
+
 ### Full-text index syntax moved in 3.x
 
 Not hit by this branch, but adjacent and worth knowing if `db.define.index(…)`
