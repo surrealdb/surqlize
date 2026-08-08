@@ -7,6 +7,12 @@ import type { TableDdl, TablePermissions } from "./table-ddl";
 /** Anything that can be rendered as a `DEFINE TABLE` plus its fields. */
 export type DefinableSchema = TableSchema | EdgeSchema;
 
+/** How a `DEFINE` statement should behave when the thing already exists. */
+export interface DefineOptions {
+	/** Replace an existing definition rather than erroring. */
+	overwrite?: boolean;
+}
+
 /**
  * Render a `DEFINE FIELD` statement.
  *
@@ -17,8 +23,16 @@ export type DefinableSchema = TableSchema | EdgeSchema;
  * @param field - The field's path, type and metadata
  * @returns A complete `DEFINE FIELD` statement
  */
-export function defineField(tableName: string, field: FlatField): string {
-	const parts = ["DEFINE FIELD", field.name, "ON TABLE", tableName];
+export function defineField(
+	tableName: string,
+	field: FlatField,
+	options: DefineOptions = {},
+): string {
+	const parts = ["DEFINE FIELD"];
+	// SurrealDB errors with "The field 'x' already exists" rather than replacing,
+	// so changing a field means redefining it with OVERWRITE.
+	if (options.overwrite) parts.push("OVERWRITE");
+	parts.push(field.name, "ON TABLE", tableName);
 	const ddl = field.ddl;
 
 	// FLEXIBLE follows the type — SurrealDB rejects it before with
@@ -52,7 +66,7 @@ export function defineField(tableName: string, field: FlatField): string {
 	}
 
 	if (ddl.permissions) parts.push("PERMISSIONS", ddl.permissions);
-	if (ddl.comment) parts.push("COMMENT", quote(ddl.comment));
+	if (ddl.comment) parts.push("COMMENT", quote(ddl.comment, "'"));
 
 	return `${parts.join(" ")};`;
 }
@@ -63,9 +77,14 @@ export function defineField(tableName: string, field: FlatField): string {
  * @param schema - The table or edge to define
  * @returns A complete `DEFINE TABLE` statement
  */
-export function defineTable(schema: DefinableSchema): string {
+export function defineTable(
+	schema: DefinableSchema,
+	options: DefineOptions = {},
+): string {
 	const ddl: Readonly<TableDdl> = schema.ddl;
-	const parts = ["DEFINE TABLE", schema.tb];
+	const parts = ["DEFINE TABLE"];
+	if (options.overwrite) parts.push("OVERWRITE");
+	parts.push(schema.tb);
 
 	if (schema instanceof EdgeSchema) {
 		parts.push(
@@ -92,7 +111,7 @@ export function defineTable(schema: DefinableSchema): string {
 	}
 
 	if (ddl.permissions) parts.push(permissions(ddl.permissions));
-	if (ddl.comment) parts.push("COMMENT", quote(ddl.comment));
+	if (ddl.comment) parts.push("COMMENT", quote(ddl.comment, "'"));
 
 	return `${parts.join(" ")};`;
 }
@@ -103,13 +122,16 @@ export function defineTable(schema: DefinableSchema): string {
  * @param schema - The table or edge to define
  * @returns The `DEFINE TABLE` statement followed by one per field
  */
-export function defineSchema(schema: DefinableSchema): string[] {
-	const statements = [defineTable(schema)];
+export function defineSchema(
+	schema: DefinableSchema,
+	options: DefineOptions = {},
+): string[] {
+	const statements = [defineTable(schema, options)];
 	const declared = schema._fields;
 
 	for (const field of flattenFields(schema.fields)) {
 		if (isManagedBySurrealDB(schema, field.name, declared)) continue;
-		statements.push(defineField(schema.tb, field));
+		statements.push(defineField(schema.tb, field, options));
 	}
 
 	return statements;
@@ -140,10 +162,48 @@ function isManagedBySurrealDB(
 	return fieldName === "id" && !("id" in declared);
 }
 
-/** Combine several `ASSERT` conditions, parenthesising so `AND` cannot rebind them. */
+/**
+ * Combine several `ASSERT` conditions into one clause.
+ *
+ * `AND` binds tighter than `OR`, so a condition containing a top-level `OR`
+ * must be parenthesised or joining would silently change its meaning. Anything
+ * else is left bare: SurrealDB drops redundant parentheses when it stores a
+ * definition, and emitting them would make the field look permanently modified.
+ */
 function joinAsserts(conditions: string[]): string {
 	if (conditions.length === 1) return conditions[0] as string;
-	return conditions.map((c) => `(${c})`).join(" AND ");
+	return conditions.map((c) => (hasTopLevelOr(c) ? `(${c})` : c)).join(" AND ");
+}
+
+/** Whether `condition` contains an `OR` outside any parentheses or quotes. */
+function hasTopLevelOr(condition: string): boolean {
+	let depth = 0;
+	let quote: string | null = null;
+
+	for (let i = 0; i < condition.length; i++) {
+		const char = condition[i] as string;
+
+		if (quote) {
+			if (char === quote && condition[i - 1] !== "\\") quote = null;
+			continue;
+		}
+		if (char === "'" || char === '"') {
+			quote = char;
+			continue;
+		}
+		if (char === "(") depth += 1;
+		else if (char === ")") depth -= 1;
+		else if (depth === 0 && /\bOR\b/i.test(condition.slice(i, i + 2))) {
+			// Only count a standalone word, not the middle of an identifier
+			const before = condition[i - 1] ?? " ";
+			const after = condition[i + 2] ?? " ";
+			if (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 /** Render a `PERMISSIONS` clause from either form. */
@@ -191,7 +251,13 @@ function isExpression(value: string): boolean {
 	);
 }
 
-/** Quote a string for SurrealQL, escaping any embedded quotes. */
-function quote(value: string, mark = '"'): string {
+/**
+ * Quote a string for SurrealQL, escaping any embedded quotes.
+ *
+ * Single quotes are the default because that is how SurrealDB stores string
+ * literals; emitting double quotes would make every commented field look
+ * modified on the next diff.
+ */
+function quote(value: string, mark = "'"): string {
 	return `${mark}${value.split(mark).join(`\\${mark}`)}${mark}`;
 }
