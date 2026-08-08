@@ -141,7 +141,7 @@ describe("Indexes and events", () => {
 			seen: t.bool().default(false),
 		}).event("mark", {
 			on: "CREATE",
-			then: "UPDATE $after.id SET seen = true",
+			body: "UPDATE $after.id SET seen = true",
 		});
 
 		await apply([post]);
@@ -155,7 +155,7 @@ describe("Indexes and events", () => {
 
 	test("an event with no trigger fires on every change", async () => {
 		const post = table("post", { title: t.string() }).event("always", {
-			then: "RETURN 1",
+			body: "RETURN 1",
 		});
 
 		const up = await apply([post]);
@@ -168,7 +168,7 @@ describe("Indexes and events", () => {
 		const post = table("post", { title: t.string(), n: t.int() }).event("big", {
 			on: ["CREATE", "UPDATE"],
 			when: "$after.n > 10",
-			then: "RETURN 1",
+			body: "RETURN 1",
 		});
 
 		const up = await apply([post]);
@@ -180,7 +180,7 @@ describe("Indexes and events", () => {
 	test("events converge", async () => {
 		const post = table("post", { title: t.string() }).event("audit", {
 			on: "CREATE",
-			then: "RETURN 1",
+			body: "RETURN 1",
 		});
 
 		await apply([post]);

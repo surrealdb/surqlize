@@ -1,105 +1,135 @@
 import { describe, expect, test } from "bun:test";
-import { orm, t, table } from "../../../src";
-import { RecordType, StringType } from "../../../src/types/classes";
+import { t } from "../../../src";
+import { printSurqlType } from "../../../src/schema/ddl/print-type";
 
-describe("Schema modifiers", () => {
-	test("record their metadata", () => {
-		const type = t
-			.string()
-			.assert("string::len($value) > 2")
-			.default("anon")
-			.readonly()
-			.comment("The display name");
+/**
+ * What each field modifier records, and how bounded collections print.
+ *
+ * The modifiers carry DDL metadata only — none of them changes the inferred
+ * TypeScript type, and none mutates the type it was called on.
+ */
 
-		expect(type.ddl.assert).toEqual(["string::len($value) > 2"]);
-		expect(type.ddl.default).toEqual({ value: "anon", always: false });
-		expect(type.ddl.readonly).toBe(true);
-		expect(type.ddl.comment).toBe("The display name");
+describe("Collection bounds", () => {
+	test("an array takes a maximum length", () => {
+		expect(printSurqlType(t.array(t.string(), 10))).toBe("array<string, 10>");
 	});
 
-	test("accumulate multiple asserts in order", () => {
-		const type = t.string().assert("a").assert("b");
-		expect(type.ddl.assert).toEqual(["a", "b"]);
+	test("a set takes a maximum length", () => {
+		expect(printSurqlType(t.set(t.string(), 5))).toBe("set<string, 5>");
 	});
 
-	test("defaultAlways is distinguishable from default", () => {
-		expect(t.date().default("time::now()").ddl.default?.always).toBe(false);
-		expect(t.date().defaultAlways("time::now()").ddl.default?.always).toBe(
-			true,
-		);
+	test("an unbounded collection prints without one", () => {
+		expect(printSurqlType(t.array(t.string()))).toBe("array<string>");
+		expect(printSurqlType(t.set(t.string()))).toBe("set<string>");
 	});
 
-	test("references and onDelete compose into one clause", () => {
-		const type = t.record("user").references("user").onDelete("CASCADE");
-		expect(type.ddl.reference).toEqual({ table: "user", onDelete: "CASCADE" });
+	test("a bound is rejected at parse time, not just declared", () => {
+		const capped = t.array(t.string(), 2);
+
+		expect(capped.validate(["a", "b"])).toBe(true);
+		expect(capped.validate(["a", "b", "c"])).toBe(false);
+		expect(() => capped.parse(["a", "b", "c"])).toThrow();
 	});
 
-	test("was accumulates previous names", () => {
-		expect(t.string().was("a").was("b", "c").ddl.previousNames).toEqual([
-			"a",
-			"b",
-			"c",
-		]);
-	});
-
-	test("are immutable — a modifier never mutates its receiver", () => {
-		// Types are shared freely between fields, so mutating in place would let
-		// one field's constraints leak into another.
-		const base = t.string();
-		const derived = base.assert("x");
-
-		expect(base.ddl.assert).toBeUndefined();
-		expect(derived.ddl.assert).toEqual(["x"]);
-		expect(derived).not.toBe(base);
-	});
-
-	test("preserve the concrete subclass through a chain", () => {
-		// resolveAccessType dispatches on `instanceof RecordType` at runtime, so a
-		// modifier that downgraded the class would break record-link traversal.
-		const type = t.record("user").assert("x").readonly();
-		expect(type).toBeInstanceOf(RecordType);
-		expect(type.tb).toBe("user");
-
-		expect(t.string().comment("c")).toBeInstanceOf(StringType);
-	});
-
-	test("leave validation untouched", () => {
-		const type = t.string().assert("string::len($value) > 2").readonly();
-		expect(type.validate("hi")).toBe(true);
-		expect(type.validate(1)).toBe(false);
+	test("only a maximum is expressible", () => {
+		// `array<string, 1, 10>` is a parse error — SurrealQL takes one bound. A
+		// minimum has to be an ASSERT, which smig emitted as a second argument.
+		expect(printSurqlType(t.array(t.string(), 10))).not.toContain(", 1,");
 	});
 });
 
-describe("Schema modifiers and inference", () => {
-	test("a modified field infers the same type as an unmodified one", () => {
-		const user = table("user", {
-			plain: t.string(),
-			modified: t.string().assert("x").readonly().comment("y"),
-			link: t.record("post").references("post"),
+describe("Modifiers record their metadata", () => {
+	test("default and defaultAlways", () => {
+		expect(t.bool().default(true).ddl.default).toEqual({
+			value: true,
+			always: false,
 		});
-
-		type Row = (typeof user)["type"];
-		const row: Row = {
-			id: null as never,
-			plain: "a",
-			modified: "b",
-			link: null as never,
-		};
-
-		// The assertions that matter are the type annotations above; this keeps
-		// the values used at runtime too.
-		expect(row.plain).toBe("a");
-		expect(row.modified).toBe("b");
+		expect(t.date().defaultAlways("time::now()").ddl.default).toEqual({
+			value: "time::now()",
+			always: true,
+		});
 	});
 
-	test("a modified schema still drives the query builder", () => {
-		const user = table("user", {
-			name: t.string().assert("string::len($value) > 2"),
-			age: t.int().default(0),
-		});
-		const db = orm(null as never, user);
+	test("readonly and flexible", () => {
+		expect(t.string().readonly().ddl.readonly).toBe(true);
+		expect(t.object({}).flexible().ddl.flexible).toBe(true);
+	});
 
-		const query = db.select("user").where((u) => u.age.gte(18));
-		expect(query).toBeDefined();
+	test("valueExpr and computed are kept apart", () => {
+		// SurrealDB stores both as VALUE; only the braced form defers evaluation
+		expect(t.string().valueExpr("$value").ddl.value).toBe("$value");
+		expect(t.string().valueExpr("$value").ddl.computed).toBeUndefined();
+		expect(t.int().computed("1 + 1").ddl.computed).toBe("1 + 1");
+	});
+
+	test("assert accumulates rather than replacing", () => {
+		const age = t.int().assert("$value >= 0").assert("$value <= 150");
+
+		expect(age.ddl.assert).toEqual(["$value >= 0", "$value <= 150"]);
+	});
+
+	test("references and onDelete build one reference", () => {
+		const link = t.record("user").references("user").onDelete("UNSET");
+
+		expect(link.ddl.reference).toEqual({ table: "user", onDelete: "UNSET" });
+	});
+
+	test("onDelete accepts each action SurrealDB parses", () => {
+		// SET NULL, SET DEFAULT and RESTRICT are parse errors in 3.2, so they are
+		// not in the union — UNSET clears the link and REJECT blocks the delete.
+		const actions = ["CASCADE", "IGNORE", "REJECT", "UNSET"] as const;
+
+		for (const action of actions) {
+			expect(t.record("user").onDelete(action).ddl.reference?.onDelete).toBe(
+				action,
+			);
+		}
+
+		expect(
+			t.record("user").onDelete("THEN $this.owner = NONE").ddl.reference
+				?.onDelete,
+		).toBe("THEN $this.owner = NONE");
+	});
+
+	test("permissions and comment", () => {
+		expect(t.string().permissions("FOR select FULL").ddl.permissions).toBe(
+			"FOR select FULL",
+		);
+		expect(t.string().comment("A note").ddl.comment).toBe("A note");
+	});
+
+	test("was accumulates previous names", () => {
+		expect(t.string().was("old").ddl.previousNames).toEqual(["old"]);
+		expect(t.string().was("v1", "v2").ddl.previousNames).toEqual(["v1", "v2"]);
+		expect(t.string().was("first").was("second").ddl.previousNames).toEqual([
+			"first",
+			"second",
+		]);
+	});
+});
+
+describe("Modifiers never mutate", () => {
+	test("the receiver is left untouched", () => {
+		// The same `t.string()` can be assigned to two fields, so mutating in
+		// place would let one field's constraints leak into another.
+		const base = t.string();
+		const derived = base.readonly().comment("Derived");
+
+		expect(base.ddl).toEqual({});
+		expect(derived.ddl.readonly).toBe(true);
+	});
+
+	test("the concrete subclass survives a chain", () => {
+		// `resolveAccessType` dispatches on `instanceof RecordType`, so a modifier
+		// that downgraded the class would break record-link traversal.
+		const link = t.record("user").readonly().comment("x").assert("true");
+
+		expect(printSurqlType(link)).toBe("record<user>");
+	});
+
+	test("a chain does not disturb the printed type", () => {
+		const bounded = t.array(t.string(), 3).default([]).readonly();
+
+		expect(printSurqlType(bounded)).toBe("array<string, 3>");
 	});
 });

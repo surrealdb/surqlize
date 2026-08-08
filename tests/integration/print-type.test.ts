@@ -34,7 +34,9 @@ describe("Generated type expressions are valid SurrealQL", () => {
 		["object", t.object({ a: t.string() })],
 		["option", t.option(t.string())],
 		["array", t.array(t.int())],
+		["array (bounded)", t.array(t.int(), 10)],
 		["set", t.set(t.string())],
+		["set (bounded)", t.set(t.string(), 5)],
 		["record (single)", t.record("user")],
 		["record (multi)", t.record(["post", "user"])],
 		["record (any)", t.record()],
@@ -93,5 +95,59 @@ describe("Generated type expressions are valid SurrealQL", () => {
 		expect(info.fields.deep).toContain(
 			"TYPE none | array<none | record<user>>",
 		);
+	});
+
+	test("a collection bound is stored as declared", async () => {
+		await db().surreal.query(
+			"DEFINE FIELD capped ON TABLE type_probe TYPE array<string, 10>;",
+		);
+
+		const [info] = await db().surreal.query<
+			[{ fields: Record<string, string> }]
+		>("INFO FOR TABLE type_probe;");
+
+		expect(info.fields.capped).toContain("TYPE array<string, 10>");
+	});
+});
+
+/**
+ * The `ON DELETE` actions SurrealDB 3.2 actually parses.
+ *
+ * The SQL spellings do not apply: `SET NULL`, `SET DEFAULT` and `RESTRICT` are
+ * all parse errors. `UNSET` clears the link and `REJECT` blocks the delete.
+ * smig offered the SQL spellings, which could only ever fail at migration time.
+ */
+describe("Reference delete actions", () => {
+	const db = withTestDb(async (testDb) => {
+		await testDb.surreal.query("DEFINE TABLE ref_probe SCHEMAFULL;");
+	});
+
+	const accepted = ["CASCADE", "IGNORE", "REJECT", "UNSET", "THEN $this.x = 1"];
+
+	test.each(accepted)("ON DELETE %s parses", async (action) => {
+		const field = `r_${accepted.indexOf(action)}`;
+
+		await db().surreal.query(
+			`DEFINE FIELD ${field} ON TABLE ref_probe TYPE record<other> REFERENCE ON DELETE ${action};`,
+		);
+
+		const [info] = await db().surreal.query<
+			[{ fields: Record<string, string> }]
+		>("INFO FOR TABLE ref_probe;");
+
+		expect(info.fields[field]).toBeDefined();
+	});
+
+	test("the SQL spellings are rejected", async () => {
+		for (const action of ["SET NULL", "SET DEFAULT", "RESTRICT"]) {
+			const error = await db()
+				.surreal.query(
+					`DEFINE FIELD bad ON TABLE ref_probe TYPE record<other> REFERENCE ON DELETE ${action};`,
+				)
+				.then(() => null)
+				.catch((reason: unknown) => String(reason));
+
+			expect(error).toContain("Parse error");
+		}
 	});
 });

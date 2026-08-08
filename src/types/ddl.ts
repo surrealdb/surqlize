@@ -8,13 +8,23 @@
  * the inferred TypeScript type of a field.
  */
 
-/** What SurrealDB should do to a record when the row it references is deleted. */
+/**
+ * What SurrealDB should do to a record when the row it references is deleted.
+ *
+ * These are the only forms SurrealDB 3.2 parses. `SET NULL`, `SET DEFAULT` and
+ * `RESTRICT` — the SQL spellings, and the ones smig offered — are all parse
+ * errors; `UNSET` is what removes the link, and `REJECT` is what blocks the
+ * delete.
+ *
+ * `THEN <expression>` runs arbitrary SurrealQL against the referencing record,
+ * e.g. `` `THEN $this.status = 'orphaned'` ``.
+ */
 export type OnDeleteAction =
 	| "CASCADE"
-	| "SET NULL"
-	| "SET DEFAULT"
-	| "RESTRICT"
-	| "IGNORE";
+	| "IGNORE"
+	| "REJECT"
+	| "UNSET"
+	| `THEN ${string}`;
 
 /** A `DEFAULT` clause, and whether it re-applies on update (`DEFAULT ALWAYS`). */
 export interface FieldDefault {

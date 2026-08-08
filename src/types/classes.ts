@@ -475,7 +475,16 @@ export class ArrayType<
 		return `${str} ]`;
 	}
 
-	constructor(private _schema: T) {
+	/**
+	 * @param _schema - The element type, or a tuple of types
+	 * @param _max - The most elements the array may hold, as SurrealDB's
+	 *   `array<T, max>`. SurrealQL takes a maximum only — a lower bound is a
+	 *   parse error — so a minimum has to be an `ASSERT`.
+	 */
+	constructor(
+		private _schema: T,
+		private _max?: number,
+	) {
 		super();
 	}
 
@@ -483,19 +492,29 @@ export class ArrayType<
 		return this._schema;
 	}
 
+	/** The declared maximum length, if any. */
+	get max() {
+		return this._max;
+	}
+
+	/** Whether `length` is within the declared maximum, if there is one. */
+	protected withinBound(length: number): boolean {
+		return this._max === undefined || length <= this._max;
+	}
+
 	validate(value: unknown): value is this["infer"] {
 		if (!Array.isArray(value)) return false;
-		if (Array.isArray(this.schema)) {
-			if (this.schema.length !== value.length) return false;
-			for (let i = 0; i < this.schema.length; i++) {
-				if (!this.schema[i]!.validate(value[i])) return false;
-			}
-		} else {
-			for (const item of value) {
-				if (!this.schema.validate(item)) return false;
-			}
+		if (!this.withinBound(value.length)) return false;
+
+		const schema = this.schema;
+		if (Array.isArray(schema)) {
+			return (
+				schema.length === value.length &&
+				schema.every((item, i) => item.validate(value[i]))
+			);
 		}
-		return true;
+
+		return value.every((item) => schema.validate(item));
 	}
 
 	/**
@@ -503,10 +522,12 @@ export class ArrayType<
 	 * returning a new array of the parsed (and possibly converted) elements.
 	 *
 	 * @throws {TypeParseError} If `value` is not an array, has the wrong length
-	 *   (tuple), or an element fails validation.
+	 *   (tuple), exceeds the declared maximum, or an element fails validation.
 	 */
 	parse(value: unknown): this["infer"] {
 		if (!Array.isArray(value))
+			throw new TypeParseError(this.name, this.expected, value);
+		if (!this.withinBound(value.length))
 			throw new TypeParseError(this.name, this.expected, value);
 		const schema = this.schema;
 		if (Array.isArray(schema)) {
@@ -711,6 +732,9 @@ export class SetType<
 	get expected() {
 		return `Set<${this.schema.expected}>`;
 	}
+
+	// `name` stays "array" so the array function family still resolves; the
+	// distinction is carried by the class and read by the type printer.
 
 	validate(value: unknown): value is this["infer"] {
 		if (!super.validate(value)) return false;

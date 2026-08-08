@@ -200,6 +200,32 @@ create, update, delete NONE`. Both sides are written out in full for comparison,
 with the default that applies to the kind: `FULL` for a field, `NONE` for a
 table.
 
+### `ON DELETE` does not take the SQL spellings
+
+```
+DEFINE FIELD f ON t TYPE record<u> REFERENCE ON DELETE SET NULL;
+--< Parse error: Unexpected token `SET`, expected `REJECT`, `CASCASE`, `IGNORE`, `UNSET` or `THEN`
+```
+
+The accepted set is `CASCADE`, `IGNORE`, `REJECT`, `UNSET` and `THEN <expr>`.
+`SET NULL`, `SET DEFAULT` and `RESTRICT` — the SQL spellings, and the ones smig
+offered — are all parse errors. `OnDeleteAction` now matches, with `THEN` typed
+as a template literal so an expression can be supplied.
+
+(The error message's `CASCASE` is SurrealDB's own typo, not a transcription
+error here.)
+
+### A collection takes a maximum length, and only a maximum
+
+```surql
+DEFINE FIELD f ON t TYPE array<string, 10>;      -- valid, stored as written
+DEFINE FIELD f ON t TYPE array<string, 1, 10>;   -- Parse error
+```
+
+`t.array(inner, max)` and `t.set(inner, max)` take the bound, and it is enforced
+by `validate`/`parse` as well as declared. A lower bound has to be an `ASSERT`.
+smig emitted two arguments, which SurrealDB rejects.
+
 ### Smaller normalisations
 
 - `COMMENT` and `PERMISSIONS` can be written in either order but are stored in
@@ -246,6 +272,17 @@ Two decisions worth noting:
 
 `--level` and `--stdout` are flags rather than an interactive prompt, so the
 command runs in CI. It defaults to `minimal`.
+
+---
+
+## Naming
+
+### An event's body is `body`, not `then`
+
+`defineEvent({ then })` reads directly off the SurrealQL clause, but an object
+with a `then` property is treated as a thenable by `await`, and Biome's
+`noThenProperty` rejects it. It is `body`, which also matches
+`storedFunction({ body })`.
 
 ---
 

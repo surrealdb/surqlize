@@ -13,8 +13,13 @@ export interface EventOptions {
 	on?: EventTrigger | EventTrigger[];
 	/** An extra condition, ANDed onto the trigger guard. */
 	when?: string;
-	/** The SurrealQL to run. */
-	then: string;
+	/**
+	 * The SurrealQL to run.
+	 *
+	 * Named `body` rather than `then` — matching `storedFunction` — because an
+	 * object carrying a `then` property is treated as a thenable by `await`.
+	 */
+	body: string;
 	comment?: string;
 	/** Previous names, so a rename redefines rather than dropping and recreating. */
 	previousNames?: string[];
@@ -43,7 +48,7 @@ export function defineEvent(
 	parts.push(event.name, "ON TABLE", tableName);
 
 	parts.push("WHEN", buildWhen(event));
-	parts.push("THEN", wrapThen(event.then));
+	parts.push("THEN", wrapThen(event.body));
 
 	if (event.comment) {
 		parts.push("COMMENT", `'${event.comment.replace(/'/g, "\\'")}'`);
@@ -80,8 +85,8 @@ function buildWhen(event: EventOptions): string {
 }
 
 /** Wrap a multi-statement body in a block, which SurrealDB requires. */
-function wrapThen(then: string): string {
-	const trimmed = then.trim();
+function wrapThen(body: string): string {
+	const trimmed = body.trim();
 	if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
 	if (trimmed.includes(";") || /\b(FOR|IF|LET)\b/.test(trimmed)) {
 		return `{ ${trimmed} }`;

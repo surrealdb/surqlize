@@ -52,12 +52,14 @@ function printComposite(type: AbstractType): string | null {
 		return `option<${printSurqlType(type.schema)}>`;
 	}
 
+	// SurrealDB takes a maximum length only — `array<string, 1, 10>` is a parse
+	// error — so a lower bound has to be expressed as an ASSERT.
 	if (type instanceof SetType) {
-		return `set<${printSurqlType(type.schema as AbstractType)}>`;
+		return `set<${printSurqlType(type.schema as AbstractType)}${bound(type.max)}>`;
 	}
 
 	if (type instanceof ArrayType) {
-		return `array<${printElements(type.schema)}>`;
+		return `array<${printElements(type.schema)}${bound(type.max)}>`;
 	}
 
 	if (type instanceof RecordType) {
@@ -78,6 +80,11 @@ function printComposite(type: AbstractType): string | null {
 	}
 
 	return null;
+}
+
+/** Render a maximum length as the trailing argument of `array` or `set`. */
+function bound(max: number | undefined): string {
+	return max === undefined ? "" : `, ${max}`;
 }
 
 /**

@@ -80,9 +80,14 @@ export function range() {
 	return new RangeType();
 }
 
-/** Create a set type: an array whose elements must be unique. */
-export function set<T extends AbstractType>(schema: T) {
-	return new SetType(schema);
+/**
+ * Create a set type: an array whose elements must be unique.
+ *
+ * @param schema - The element type
+ * @param max - The most elements the set may hold, as `set<T, max>`
+ */
+export function set<T extends AbstractType>(schema: T, max?: number) {
+	return new SetType(schema, max);
 }
 
 /** Create a boolean type. */
@@ -126,11 +131,27 @@ export function object<T extends Record<string, AbstractType>>(schema: T) {
 	return new ObjectType(schema);
 }
 
-/** Create an array type. Pass a single type for a homogeneous array, or a tuple of types. */
-export function array<T extends AbstractType>(schema: T): ArrayType<T>;
-export function array<T extends AbstractType[]>(schema: [...T]): ArrayType<T>;
-export function array<T extends AbstractType[] | AbstractType>(schema: T) {
-	return new ArrayType(schema);
+/**
+ * Create an array type. Pass a single type for a homogeneous array, or a tuple
+ * of types.
+ *
+ * @param schema - The element type, or a tuple of types
+ * @param max - The most elements the array may hold, as `array<T, max>`.
+ *   SurrealQL takes a maximum only; a minimum has to be an `ASSERT`.
+ */
+export function array<T extends AbstractType>(
+	schema: T,
+	max?: number,
+): ArrayType<T>;
+export function array<T extends AbstractType[]>(
+	schema: [...T],
+	max?: number,
+): ArrayType<T>;
+export function array<T extends AbstractType[] | AbstractType>(
+	schema: T,
+	max?: number,
+) {
+	return new ArrayType(schema, max);
 }
 
 /** Create a union type that matches any of the given types. */
