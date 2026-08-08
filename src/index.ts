@@ -21,6 +21,8 @@ export * from "./query/update";
 export * from "./query/upsert";
 // Schema builders (orm, table, edge, fn, api) and their types
 export * from "./schema";
+// Generating SurrealQL definitions from a schema
+export * from "./schema/ddl";
 // Type system: the `t.*` builders and the `*Type` classes
 export * from "./types";
 export type {

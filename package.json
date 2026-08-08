@@ -25,6 +25,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
+		},
+		"./migrate": {
+			"types": "./dist/migrate.d.ts",
+			"import": "./dist/migrate.js",
+			"require": "./dist/migrate.cjs"
 		}
 	},
 	"files": [

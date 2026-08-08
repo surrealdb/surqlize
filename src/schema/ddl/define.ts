@@ -177,33 +177,35 @@ function joinAsserts(conditions: string[]): string {
 
 /** Whether `condition` contains an `OR` outside any parentheses or quotes. */
 function hasTopLevelOr(condition: string): boolean {
+	return maskNested(condition).search(/\bOR\b/i) !== -1;
+}
+
+/**
+ * Blank out everything inside quotes or parentheses.
+ *
+ * Replacing rather than removing keeps offsets intact, so a word boundary either
+ * side of the remaining text still means what it did in the original.
+ */
+function maskNested(input: string): string {
+	// Blank quoted runs first, so a bracket inside a string cannot shift depth.
+	const unquoted = input.replace(/'[^']*'|"[^"]*"/g, (match) =>
+		" ".repeat(match.length),
+	);
+
+	const out: string[] = [];
 	let depth = 0;
-	let quote: string | null = null;
 
-	for (let i = 0; i < condition.length; i++) {
-		const char = condition[i] as string;
-
-		if (quote) {
-			if (char === quote && condition[i - 1] !== "\\") quote = null;
-			continue;
-		}
-		if (char === "'" || char === '"') {
-			quote = char;
-			continue;
-		}
+	for (const char of unquoted) {
 		if (char === "(") depth += 1;
 		else if (char === ")") depth -= 1;
-		else if (depth === 0 && /\bOR\b/i.test(condition.slice(i, i + 2))) {
-			// Only count a standalone word, not the middle of an identifier
-			const before = condition[i - 1] ?? " ";
-			const after = condition[i + 2] ?? " ";
-			if (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after)) {
-				return true;
-			}
+		else {
+			out.push(depth > 0 ? " " : char);
+			continue;
 		}
+		out.push(" ");
 	}
 
-	return false;
+	return out.join("");
 }
 
 /** Render a `PERMISSIONS` clause from either form. */
