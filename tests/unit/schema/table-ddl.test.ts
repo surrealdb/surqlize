@@ -112,4 +112,53 @@ describe("Edge modifiers", () => {
 		expect(base.enforced().ddl.enforced).toBe(true);
 		expect(base.ddl.enforced).toBeUndefined();
 	});
+
+	test("cover the same ground as a table's, since both classes carry them", () => {
+		// The modifiers are declared twice, once per class, so testing only the
+		// table's leaves half of them unexercised.
+		const liked = edge("user", "liked", "post", { at: t.date() })
+			.schemaless()
+			.permissions("FOR select FULL")
+			.changefeed("3d", true)
+			.comment("Likes")
+			.index("by_pair", { fields: ["in", "out"], unique: true })
+			.event("on_like", { on: "CREATE", body: "RETURN 1" });
+
+		expect(liked.ddl.schemafull).toBe(false);
+		expect(liked.ddl.permissions).toBe("FOR select FULL");
+		expect(liked.ddl.changefeed).toEqual({
+			duration: "3d",
+			includeOriginal: true,
+		});
+		expect(liked.ddl.comment).toBe("Likes");
+		expect(liked.ddl.indexes?.by_pair).toEqual({
+			fields: ["in", "out"],
+			unique: true,
+		});
+		expect(liked.ddl.events?.on_like?.on).toBe("CREATE");
+	});
+
+	test("schemafull and schemaless are opposites on an edge too", () => {
+		const base = edge("user", "liked", "post", {});
+
+		expect(base.schemaless().schemafull().ddl.schemafull).toBe(true);
+		expect(base.schemafull().schemaless().ddl.schemafull).toBe(false);
+	});
+
+	test("a changefeed defaults to not including the original", () => {
+		expect(
+			edge("user", "liked", "post", {}).changefeed("1h").ddl.changefeed,
+		).toEqual({ duration: "1h", includeOriginal: false });
+	});
+
+	test("indexes and events accumulate rather than replacing", () => {
+		const liked = edge("user", "liked", "post", {})
+			.index("a", { fields: ["in"] })
+			.index("b", { fields: ["out"] })
+			.event("x", { body: "RETURN 1" })
+			.event("y", { body: "RETURN 2" });
+
+		expect(Object.keys(liked.ddl.indexes ?? {})).toEqual(["a", "b"]);
+		expect(Object.keys(liked.ddl.events ?? {})).toEqual(["x", "y"]);
+	});
 });
