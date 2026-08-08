@@ -40,6 +40,9 @@ const RULES: [RegExp, string][] = [
 	[/"([^"'\\]*)"/g, "'$1'"],
 	// Whitespace carries no meaning between tokens
 	[/\s+/g, " "],
+	// Nor does spacing around a separator: TOKENIZERS BLANK,CLASS is stored
+	// unspaced while FILTERS LOWERCASE, ASCII is spaced.
+	[/\s*,\s*/g, ", "],
 ];
 
 /**
@@ -57,12 +60,20 @@ export function canonicalise(statement: string): string {
 
 	// COMMENT and PERMISSIONS are written in either order but stored in one, so
 	// both are lifted out and re-appended in a fixed position.
-	const isField = /^DEFINE FIELD\b/i.test(result);
 	const { body, comment, permissions } = extractTrailingClauses(result);
 
 	const parts = [normaliseTypeClause(body).trim()];
 	if (comment) parts.push(`COMMENT ${comment}`);
-	parts.push(normalisePermissions(permissions, isField));
+
+	// Only fields and tables take a rule per operation. Everywhere else
+	// PERMISSIONS is a single value that SurrealDB fills in as FULL.
+	if (/^DEFINE (FIELD|TABLE)\b/i.test(result)) {
+		parts.push(
+			normalisePermissions(permissions, /^DEFINE FIELD\b/i.test(result)),
+		);
+	} else if (permissions && !/^(FULL|NONE)$/i.test(permissions)) {
+		parts.push(`PERMISSIONS ${permissions}`);
+	}
 
 	return unwrapThen(parts.join(" ").trim());
 }

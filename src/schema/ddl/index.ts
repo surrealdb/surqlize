@@ -2,6 +2,23 @@
 
 export type { DefinableSchema, DefineOptions } from "./define";
 export { defineField, defineSchema, defineTable } from "./define";
+export type {
+	AccessDuration,
+	AccessOptions,
+	AnalyzerOptions,
+	DatabaseEntity,
+	EntityKind,
+	FunctionOptions,
+	ParamOptions,
+	SequenceOptions,
+} from "./entities";
+export {
+	access,
+	analyzer,
+	param,
+	sequence,
+	storedFunction,
+} from "./entities";
 export type { EventDefinition, EventOptions, EventTrigger } from "./event-ddl";
 export { defineEvent } from "./event-ddl";
 export type { FlatField } from "./flatten";

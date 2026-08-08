@@ -1,4 +1,5 @@
 import type { SurrealSession } from "surrealdb";
+import type { EntityKind } from "../schema/ddl/entities";
 
 /** A table as the database currently has it, with its definitions verbatim. */
 export interface CurrentTable {
@@ -16,12 +17,28 @@ export interface CurrentTable {
 /** The database's current schema, as statements rather than parsed structures. */
 export interface CurrentSchema {
 	tables: Record<string, CurrentTable>;
+	/** Database-level definitions, keyed by kind and then by name. */
+	entities: Record<EntityKind, Record<string, string>>;
 }
 
 /** The shape `INFO FOR DB` returns. */
 interface DbInfo {
 	tables?: Record<string, string>;
+	analyzers?: Record<string, string>;
+	params?: Record<string, string>;
+	functions?: Record<string, string>;
+	sequences?: Record<string, string>;
+	accesses?: Record<string, string>;
 }
+
+/** Which `INFO FOR DB` key holds each kind of definition. */
+const ENTITY_KEYS: Record<EntityKind, keyof DbInfo> = {
+	analyzer: "analyzers",
+	param: "params",
+	function: "functions",
+	sequence: "sequences",
+	access: "accesses",
+};
 
 /** The shape `INFO FOR TABLE` returns. */
 interface TableInfo {
@@ -69,5 +86,11 @@ export async function introspect(
 		};
 	}
 
-	return { tables };
+	const entities = {} as CurrentSchema["entities"];
+	for (const [kind, key] of Object.entries(ENTITY_KEYS)) {
+		entities[kind as EntityKind] =
+			(dbInfo?.[key] as Record<string, string>) ?? {};
+	}
+
+	return { tables, entities };
 }

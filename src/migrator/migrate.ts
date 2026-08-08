@@ -1,5 +1,6 @@
 import type { SurrealSession } from "surrealdb";
 import type { DefinableSchema } from "../schema/ddl/define";
+import type { DatabaseEntity } from "../schema/ddl/entities";
 import { type Diff, type DiffOptions, diff } from "./diff";
 import { introspect, MIGRATIONS_TABLE } from "./introspect";
 
@@ -31,7 +32,7 @@ export interface MigrationPlan extends Diff {
  */
 export async function plan(
 	surreal: SurrealSession,
-	schemas: DefinableSchema[],
+	schemas: (DefinableSchema | DatabaseEntity)[],
 	options: DiffOptions = {},
 ): Promise<MigrationPlan> {
 	const current = await introspect(surreal);
@@ -54,7 +55,7 @@ export async function plan(
  */
 export async function migrate(
 	surreal: SurrealSession,
-	schemas: DefinableSchema[],
+	schemas: (DefinableSchema | DatabaseEntity)[],
 	options: DiffOptions = {},
 ): Promise<AppliedMigration | null> {
 	const pending = await plan(surreal, schemas, options);

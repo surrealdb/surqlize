@@ -3,6 +3,7 @@ import {
 	defineField,
 	defineTable,
 } from "../schema/ddl/define";
+import type { DatabaseEntity } from "../schema/ddl/entities";
 import { defineEvent } from "../schema/ddl/event-ddl";
 import type { FlatField } from "../schema/ddl/flatten";
 import { flattenFields } from "../schema/ddl/flatten";
@@ -26,7 +27,10 @@ export interface Change {
 		| "index.remove"
 		| "event.create"
 		| "event.modify"
-		| "event.remove";
+		| "event.remove"
+		| "entity.create"
+		| "entity.modify"
+		| "entity.remove";
 	/** What changed, e.g. `user` or `user.email`. */
 	target: string;
 	up: string[];
@@ -63,12 +67,16 @@ export interface DiffOptions {
  * @returns The changes needed to bring the database in line
  */
 export function diff(
-	schemas: DefinableSchema[],
+	definitions: (DefinableSchema | DatabaseEntity)[],
 	current: CurrentSchema,
 	options: DiffOptions = {},
 ): Diff {
 	const changes: Change[] = [];
+	const schemas = definitions.filter(isTableSchema);
+	const entities = definitions.filter(isDatabaseEntity);
 	const declared = new Set(schemas.map((s) => s.tb));
+
+	changes.push(...diffEntities(entities, current, options));
 
 	for (const schema of schemas) {
 		const table = current.tables[schema.tb];
@@ -355,6 +363,134 @@ function isArrayElement(name: string, declared: Set<string>): boolean {
 	const marker = name.indexOf(".*");
 	if (marker === -1) return false;
 	return declared.has(name.slice(0, marker));
+}
+
+/** Whether a definition is a table or edge rather than a database-level entity. */
+function isTableSchema(
+	definition: DefinableSchema | DatabaseEntity,
+): definition is DefinableSchema {
+	return "tb" in definition;
+}
+
+/** Whether a definition belongs to the database rather than a table. */
+function isDatabaseEntity(
+	definition: DefinableSchema | DatabaseEntity,
+): definition is DatabaseEntity {
+	return "kind" in definition && "define" in definition;
+}
+
+/**
+ * Compare database-level definitions — analyzers, params, functions, sequences
+ * and access methods.
+ */
+function diffEntities(
+	entities: DatabaseEntity[],
+	current: CurrentSchema,
+	options: DiffOptions,
+): Change[] {
+	const changes: Change[] = [];
+	const seen = new Map<string, Set<string>>();
+
+	for (const entity of entities) {
+		const stored = current.entities[entity.kind] ?? {};
+		const claimed = seen.get(entity.kind) ?? new Set<string>();
+		claimed.add(entity.key);
+		seen.set(entity.kind, claimed);
+
+		const change = diffEntity(entity, stored);
+		if (!change) continue;
+
+		if (change.renamedFrom) claimed.add(change.renamedFrom);
+		changes.push(change.change);
+	}
+
+	if (options.removeMissing) {
+		changes.push(...removeUndeclaredEntities(entities, current, seen));
+	}
+
+	return changes;
+}
+
+/** Compare one database-level definition against what the database has. */
+function diffEntity(
+	entity: DatabaseEntity,
+	stored: Record<string, string>,
+): { change: Change; renamedFrom?: string } | null {
+	const existing = stored[entity.key];
+
+	if (!existing) {
+		const oldName = entity.previousNames?.find((previous) => stored[previous]);
+
+		if (oldName) {
+			return {
+				renamedFrom: oldName,
+				change: {
+					kind: "entity.modify",
+					target: `${entity.kind} ${oldName} -> ${entity.name}`,
+					up: [entity.define(), removeNamed(entity, oldName)],
+					down: [`${stored[oldName]};`, entity.remove()],
+				},
+			};
+		}
+
+		return {
+			change: {
+				kind: "entity.create",
+				target: `${entity.kind} ${entity.name}`,
+				up: [entity.define()],
+				down: [entity.remove()],
+			},
+		};
+	}
+
+	// An access method's signing key is reported as '[REDACTED]', so its stored
+	// form can never match what was declared. Creating it when absent is safe;
+	// re-applying it on every run would rotate the key each time.
+	if (entity.kind === "access") return null;
+	if (same(entity.define(), existing)) return null;
+
+	return {
+		change: {
+			kind: "entity.modify",
+			target: `${entity.kind} ${entity.name}`,
+			up: [entity.define({ overwrite: true })],
+			down: [`${existing};`],
+		},
+	};
+}
+
+/** Drop database-level definitions the schema no longer declares. */
+function removeUndeclaredEntities(
+	entities: DatabaseEntity[],
+	current: CurrentSchema,
+	seen: Map<string, Set<string>>,
+): Change[] {
+	const changes: Change[] = [];
+
+	for (const [kind, stored] of Object.entries(current.entities)) {
+		// Only kinds the schema uses at all are managed; a database may hold
+		// definitions this schema knows nothing about.
+		const entity = entities.find((candidate) => candidate.kind === kind);
+		if (!entity) continue;
+
+		for (const [name, existing] of Object.entries(stored)) {
+			if (seen.get(kind)?.has(name)) continue;
+
+			changes.push({
+				kind: "entity.remove",
+				target: `${kind} ${name}`,
+				up: [removeNamed(entity, name)],
+				down: [`${existing};`],
+			});
+		}
+	}
+
+	return changes;
+}
+
+/** The `REMOVE` statement for a different name of the same kind. */
+function removeNamed(entity: DatabaseEntity, name: string): string {
+	return entity.remove().replace(entity.name, name);
 }
 
 /** Every statement that creates a table from scratch. */
