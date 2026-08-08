@@ -1,5 +1,6 @@
 import { Decimal, Duration, Geometry, Range, RecordId, Uuid } from "surrealdb";
 import { TypeParseError } from "../error";
+import type { FieldDdl, OnDeleteAction } from "./ddl";
 
 /** Matches strings usable as a bare SurrealQL identifier in an idiom path. */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -28,6 +29,12 @@ export abstract class AbstractType<T = unknown> {
 	abstract validate(value: unknown): value is T;
 
 	/**
+	 * Schema metadata used to generate `DEFINE FIELD`. Empty unless one of the
+	 * modifiers below has been used, and never affects the inferred type.
+	 */
+	readonly ddl: Readonly<FieldDdl> = {};
+
+	/**
 	 * Validate and return `value`, or throw if it does not match this type.
 	 *
 	 * @throws {TypeParseError} If `value` fails validation.
@@ -41,6 +48,131 @@ export abstract class AbstractType<T = unknown> {
 	get(prop: string | number): [AbstractType, string] {
 		return [new NoneType(), pathSegment(prop)];
 	}
+
+	// -------------------------------------------------------------------------
+	// Schema modifiers
+	//
+	// Each returns a shallow clone carrying the updated metadata, mirroring the
+	// immutability of the query builders (see `Query.derive`). Types are shared
+	// freely — the same `t.string()` can be assigned to two fields — so mutating
+	// in place would let one field's constraints leak into another.
+	//
+	// These are typed with a `this` *parameter* rather than a polymorphic `this`
+	// return type. Both preserve the concrete subclass through a chain, but a
+	// polymorphic `this` in the signature makes `AbstractType` non-assignable to
+	// a subtype-constrained generic, which breaks `Workable<C, R>` inference
+	// throughout the query builder.
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Add an `ASSERT` condition. Call more than once to require several — they
+	 * are joined with `AND`.
+	 */
+	assert<S extends AbstractType>(this: S, condition: string): S {
+		return patchDdl(this, (d) => {
+			d.assert = [...(d.assert ?? []), condition];
+		});
+	}
+
+	/** Set a `DEFAULT` value, applied when the field is absent on create. */
+	default<S extends AbstractType>(this: S, value: unknown): S {
+		return patchDdl(this, (d) => {
+			d.default = { value, always: false };
+		});
+	}
+
+	/** Set a `DEFAULT ALWAYS` value, re-applied on every update. */
+	defaultAlways<S extends AbstractType>(this: S, value: unknown): S {
+		return patchDdl(this, (d) => {
+			d.default = { value, always: true };
+		});
+	}
+
+	/**
+	 * Set a `VALUE` expression, evaluated on write.
+	 *
+	 * Named `valueExpr` rather than `value` because {@link LiteralType} already
+	 * exposes a `value` accessor.
+	 */
+	valueExpr<S extends AbstractType>(this: S, expression: string): S {
+		return patchDdl(this, (d) => {
+			d.value = expression;
+		});
+	}
+
+	/** Set a `VALUE { … }` expression, deferred until the field is read. */
+	computed<S extends AbstractType>(this: S, expression: string): S {
+		return patchDdl(this, (d) => {
+			d.computed = expression;
+		});
+	}
+
+	/** Mark the field `READONLY` — it cannot be changed after creation. */
+	readonly<S extends AbstractType>(this: S): S {
+		return patchDdl(this, (d) => {
+			d.readonly = true;
+		});
+	}
+
+	/** Mark the field `FLEXIBLE`, allowing values outside the declared type. */
+	flexible<S extends AbstractType>(this: S): S {
+		return patchDdl(this, (d) => {
+			d.flexible = true;
+		});
+	}
+
+	/** Set the field's `PERMISSIONS` clause. */
+	permissions<S extends AbstractType>(this: S, rule: string): S {
+		return patchDdl(this, (d) => {
+			d.permissions = rule;
+		});
+	}
+
+	/** Attach a `COMMENT` to the field. */
+	comment<S extends AbstractType>(this: S, text: string): S {
+		return patchDdl(this, (d) => {
+			d.comment = text;
+		});
+	}
+
+	/** Declare the field a `REFERENCE`, optionally naming the referenced table. */
+	references<S extends AbstractType>(this: S, table?: string): S {
+		return patchDdl(this, (d) => {
+			d.reference = { ...d.reference, table };
+		});
+	}
+
+	/** Set what happens to this field when the record it references is deleted. */
+	onDelete<S extends AbstractType>(this: S, action: OnDeleteAction): S {
+		return patchDdl(this, (d) => {
+			d.reference = { ...d.reference, onDelete: action };
+		});
+	}
+
+	/**
+	 * Record previous names for this field so a rename is migrated as a rename —
+	 * the value is carried across — rather than as a drop and a create.
+	 */
+	was<S extends AbstractType>(this: S, ...names: string[]): S {
+		return patchDdl(this, (d) => {
+			d.previousNames = [...(d.previousNames ?? []), ...names];
+		});
+	}
+}
+
+/** Clone `type`, applying `patch` to a copy of its DDL metadata. */
+function patchDdl<S extends AbstractType>(
+	type: S,
+	patch: (draft: FieldDdl) => void,
+): S {
+	const next = Object.assign(
+		Object.create(Object.getPrototypeOf(type)),
+		type,
+	) as S;
+	const draft: FieldDdl = { ...type.ddl };
+	patch(draft);
+	(next as { ddl: FieldDdl }).ddl = draft;
+	return next;
 }
 
 export class LiteralType<
