@@ -30,6 +30,11 @@ const RULES: [RegExp, string][] = [
 	[/`([A-Za-z_][A-Za-z0-9_]*)`/g, "$1"],
 	// Array element fields are reported with dots but defined with brackets
 	[/\[\*\]/g, ".*"],
+	// CONCURRENTLY says how to build an index, not what it is, and is not stored
+	[/\s+CONCURRENTLY\b/gi, ""],
+	// HNSW derives LM from M, as a long float. Comparing it adds nothing that
+	// comparing M does not, and matching the printed precision is fragile.
+	[/\s+LM\s+[\d.]+f?/gi, ""],
 	// SurrealDB stores string literals single-quoted. Only rewrite literals with
 	// no quote of either kind inside, so an apostrophe cannot change the meaning.
 	[/"([^"'\\]*)"/g, "'$1'"],
@@ -59,7 +64,44 @@ export function canonicalise(statement: string): string {
 	if (comment) parts.push(`COMMENT ${comment}`);
 	parts.push(normalisePermissions(permissions, isField));
 
-	return parts.join(" ").trim();
+	return unwrapThen(parts.join(" ").trim());
+}
+
+/**
+ * Remove the parentheses SurrealDB puts around an event's `THEN` body.
+ *
+ * `THEN UPDATE …` is stored as `THEN (UPDATE …)`. Stripping them from both
+ * sides is simpler than predicting when they are added, and a body that was
+ * written parenthesised means the same thing either way.
+ */
+function unwrapThen(statement: string): string {
+	const start = statement.search(/\bTHEN\s+\(/);
+	if (start === -1) return statement;
+
+	const open = statement.indexOf("(", start);
+	const close = matchParen(statement, open);
+	if (close === -1) return statement;
+
+	return (
+		statement.slice(0, open) +
+		statement.slice(open + 1, close) +
+		statement.slice(close + 1)
+	);
+}
+
+/** Index of the `)` matching the `(` at `openIndex`, or -1 if unbalanced. */
+function matchParen(input: string, openIndex: number): number {
+	let depth = 0;
+
+	for (let i = openIndex; i < input.length; i++) {
+		if (input[i] === "(") depth += 1;
+		else if (input[i] === ")") {
+			depth -= 1;
+			if (depth === 0) return i;
+		}
+	}
+
+	return -1;
 }
 
 /**

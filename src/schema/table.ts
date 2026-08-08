@@ -4,6 +4,8 @@ import {
 	type RecordType,
 	t,
 } from "../types";
+import type { EventOptions } from "./ddl/event-ddl";
+import type { IndexOptions } from "./ddl/index-ddl";
 import {
 	patchTableDdl,
 	type TableDdl,
@@ -126,6 +128,30 @@ export class TableSchema<
 	comment(text: string): this {
 		return patchTableDdl(this, (d) => {
 			d.comment = text;
+		});
+	}
+
+	/**
+	 * Add an index.
+	 *
+	 * @param name - The index name
+	 * @param options - What to index and how
+	 */
+	index(name: string, options: IndexOptions): this {
+		return patchTableDdl(this, (d) => {
+			d.indexes = { ...d.indexes, [name]: options };
+		});
+	}
+
+	/**
+	 * Add an event.
+	 *
+	 * @param name - The event name
+	 * @param options - What fires it and what it does
+	 */
+	event(name: string, options: EventOptions): this {
+		return patchTableDdl(this, (d) => {
+			d.events = { ...d.events, [name]: options };
 		});
 	}
 }

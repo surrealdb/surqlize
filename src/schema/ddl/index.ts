@@ -2,8 +2,19 @@
 
 export type { DefinableSchema, DefineOptions } from "./define";
 export { defineField, defineSchema, defineTable } from "./define";
+export type { EventDefinition, EventOptions, EventTrigger } from "./event-ddl";
+export { defineEvent } from "./event-ddl";
 export type { FlatField } from "./flatten";
 export { flattenFields } from "./flatten";
+export type {
+	DistanceMetric,
+	FulltextOptions,
+	HnswOptions,
+	IndexDefinition,
+	IndexOptions,
+	VectorType,
+} from "./index-ddl";
+export { defineIndex } from "./index-ddl";
 export { printSurqlType } from "./print-type";
 export type {
 	HasTableDdl,

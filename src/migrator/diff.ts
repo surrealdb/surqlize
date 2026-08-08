@@ -3,8 +3,10 @@ import {
 	defineField,
 	defineTable,
 } from "../schema/ddl/define";
+import { defineEvent } from "../schema/ddl/event-ddl";
 import type { FlatField } from "../schema/ddl/flatten";
 import { flattenFields } from "../schema/ddl/flatten";
+import { defineIndex } from "../schema/ddl/index-ddl";
 import { EdgeSchema } from "../schema/edge";
 import { canonicalise } from "./canonical";
 import type { CurrentSchema, CurrentTable } from "./introspect";
@@ -18,7 +20,13 @@ export interface Change {
 		| "field.create"
 		| "field.modify"
 		| "field.remove"
-		| "field.rename";
+		| "field.rename"
+		| "index.create"
+		| "index.modify"
+		| "index.remove"
+		| "event.create"
+		| "event.modify"
+		| "event.remove";
 	/** What changed, e.g. `user` or `user.email`. */
 	target: string;
 	up: string[];
@@ -94,10 +102,7 @@ export function diff(
 
 /** Every statement needed to create a table that does not exist yet. */
 function createTable(schema: DefinableSchema): Change {
-	const up = [defineTable(schema)];
-	for (const field of definableFields(schema)) {
-		up.push(defineField(schema.tb, field));
-	}
+	const up = defineSchemaStatements(schema);
 
 	return {
 		kind: "table.create",
@@ -126,6 +131,110 @@ function diffTable(
 	}
 
 	changes.push(...diffFields(schema, current, options));
+	changes.push(...diffAttachments(schema, current, options));
+	return changes;
+}
+
+/**
+ * Compare a table's indexes and events.
+ *
+ * Both are named definitions attached to a table, so they diff identically —
+ * only the statement they render to differs.
+ */
+function diffAttachments(
+	schema: DefinableSchema,
+	current: CurrentTable,
+	options: DiffOptions,
+): Change[] {
+	return [
+		...diffNamed(
+			schema.ddl.indexes ?? {},
+			current.indexes,
+			"index",
+			(name, spec, overwrite) =>
+				defineIndex(schema.tb, { name, ...spec }, { overwrite }),
+			(name) => `REMOVE INDEX ${name} ON TABLE ${schema.tb};`,
+			options,
+		),
+		...diffNamed(
+			schema.ddl.events ?? {},
+			current.events,
+			"event",
+			(name, spec, overwrite) =>
+				defineEvent(schema.tb, { name, ...spec }, { overwrite }),
+			(name) => `REMOVE EVENT ${name} ON TABLE ${schema.tb};`,
+			options,
+		),
+	].map((change) => ({
+		...change,
+		target: `${schema.tb}.${change.target}`,
+	}));
+}
+
+/** Diff a set of named definitions attached to a table. */
+function diffNamed<T extends { previousNames?: string[] }>(
+	declared: Record<string, T>,
+	stored: Record<string, string>,
+	kind: "index" | "event",
+	define: (name: string, spec: T, overwrite: boolean) => string,
+	remove: (name: string) => string,
+	options: DiffOptions,
+): Change[] {
+	const changes: Change[] = [];
+	const renamedFrom = new Set<string>();
+
+	for (const [name, spec] of Object.entries(declared)) {
+		const existing = stored[name];
+
+		// Renaming one of these is just redefining it under the new name: they
+		// hold no data of their own, so nothing has to be carried across.
+		const oldName = !existing
+			? spec.previousNames?.find((previous) => stored[previous])
+			: undefined;
+
+		if (oldName) {
+			renamedFrom.add(oldName);
+			changes.push({
+				kind: `${kind}.modify`,
+				target: `${oldName} -> ${name}`,
+				up: [define(name, spec, false), remove(oldName)],
+				down: [`${stored[oldName]};`, remove(name)],
+			});
+			continue;
+		}
+
+		if (!existing) {
+			changes.push({
+				kind: `${kind}.create`,
+				target: name,
+				up: [define(name, spec, false)],
+				down: [remove(name)],
+			});
+			continue;
+		}
+
+		if (!same(define(name, spec, false), existing)) {
+			changes.push({
+				kind: `${kind}.modify`,
+				target: name,
+				up: [define(name, spec, true)],
+				down: [`${existing};`],
+			});
+		}
+	}
+
+	if (!options.removeMissing) return changes;
+
+	for (const [name, existing] of Object.entries(stored)) {
+		if (name in declared || renamedFrom.has(name)) continue;
+		changes.push({
+			kind: `${kind}.remove`,
+			target: name,
+			up: [remove(name)],
+			down: [`${existing};`],
+		});
+	}
+
 	return changes;
 }
 
@@ -246,6 +355,23 @@ function isArrayElement(name: string, declared: Set<string>): boolean {
 	const marker = name.indexOf(".*");
 	if (marker === -1) return false;
 	return declared.has(name.slice(0, marker));
+}
+
+/** Every statement that creates a table from scratch. */
+function defineSchemaStatements(schema: DefinableSchema): string[] {
+	const statements = [defineTable(schema)];
+
+	for (const field of definableFields(schema)) {
+		statements.push(defineField(schema.tb, field));
+	}
+	for (const [name, index] of Object.entries(schema.ddl.indexes ?? {})) {
+		statements.push(defineIndex(schema.tb, { name, ...index }));
+	}
+	for (const [name, event] of Object.entries(schema.ddl.events ?? {})) {
+		statements.push(defineEvent(schema.tb, { name, ...event }));
+	}
+
+	return statements;
 }
 
 /** The fields of a schema that are ours to define. */

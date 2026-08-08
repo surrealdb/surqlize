@@ -1,6 +1,8 @@
 import { EdgeSchema } from "../edge";
 import type { TableSchema } from "../table";
+import { defineEvent } from "./event-ddl";
 import { type FlatField, flattenFields } from "./flatten";
+import { defineIndex } from "./index-ddl";
 import { printSurqlType } from "./print-type";
 import type { TableDdl, TablePermissions } from "./table-ddl";
 
@@ -132,6 +134,15 @@ export function defineSchema(
 	for (const field of flattenFields(schema.fields)) {
 		if (isManagedBySurrealDB(schema, field.name, declared)) continue;
 		statements.push(defineField(schema.tb, field, options));
+	}
+
+	// Indexes follow the fields they cover.
+	for (const [name, index] of Object.entries(schema.ddl.indexes ?? {})) {
+		statements.push(defineIndex(schema.tb, { name, ...index }, options));
+	}
+
+	for (const [name, event] of Object.entries(schema.ddl.events ?? {})) {
+		statements.push(defineEvent(schema.tb, { name, ...event }, options));
 	}
 
 	return statements;

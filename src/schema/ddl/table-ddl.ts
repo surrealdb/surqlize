@@ -1,3 +1,6 @@
+import type { EventOptions } from "./event-ddl";
+import type { IndexOptions } from "./index-ddl";
+
 /**
  * DDL metadata carried alongside a table or edge schema.
  *
@@ -46,6 +49,10 @@ export interface TableDdl {
 	comment?: string;
 	/** `ENFORCED` — SurrealDB rejects edges whose `in`/`out` records do not exist. */
 	enforced?: boolean;
+	/** Indexes on this table, keyed by name. */
+	indexes?: Record<string, IndexOptions>;
+	/** Events on this table, keyed by name. */
+	events?: Record<string, EventOptions>;
 }
 
 /** Anything carrying table-level DDL metadata. */
