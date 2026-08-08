@@ -23,6 +23,8 @@ export * from "./query/upsert";
 export * from "./schema";
 // Generating SurrealQL definitions from a schema
 export * from "./schema/ddl";
+// Mermaid ER diagrams — pure string generation, safe anywhere
+export * from "./schema/mermaid";
 // Type system: the `t.*` builders and the `*Type` classes
 export * from "./types";
 export type {

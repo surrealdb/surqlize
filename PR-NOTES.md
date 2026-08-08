@@ -226,6 +226,29 @@ from `validation/statement-define-table-field-index.md` ever gets built:
 
 ---
 
+## Mermaid diagrams
+
+`mermaid(definitions, { level })` renders an ER diagram of a schema, and
+`sur mermaid` writes one to a file or stdout. It is pure string generation with
+no dependencies and no Node builtins, so it is exported from the root entry and
+is safe in a browser bundle.
+
+Two decisions worth noting:
+
+- **Rendering works from a flattened model, not from the schema objects.**
+  `toDiagramModel()` reduces tables and edges to plain records, reusing
+  `flattenFields()` and `printSurqlType()`. Every rule is then a string rule, so
+  there is no second type-walking implementation to keep in step with the DDL
+  generator, and each rule is testable without constructing a `TableSchema`.
+- **The injected `id` is drawn but never linked.** It is `record<tb>`, so
+  inferring a link from it would put a self-reference on every table. `in` and
+  `out` are skipped for the same reason — the edge itself is already drawn.
+
+`--level` and `--stdout` are flags rather than an interactive prompt, so the
+command runs in CI. It defaults to `minimal`.
+
+---
+
 ## Type-system notes
 
 ### Do not use a polymorphic `this` return type on `AbstractType`
