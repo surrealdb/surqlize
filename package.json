@@ -57,5 +57,8 @@
 		"build": "tsup",
 		"prepublishOnly": "bun run build",
 		"qau": "biome check . --write --unsafe"
+	},
+	"bin": {
+		"sur": "./dist/cli.js"
 	}
 }
