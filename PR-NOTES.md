@@ -158,6 +158,60 @@ stored:    DEFAULT `rand`::uuid::v7()
 
 Another normalisation the diff layer has to absorb.
 
+### `DEFINE` errors rather than replacing
+
+`DEFINE FIELD a …` on an existing field fails with "The field 'a' already
+exists"; the same goes for tables. Changing anything means `DEFINE … OVERWRITE`.
+
+### MTREE indexes are gone
+
+`MTREE DIMENSION 3` is a parse error in every form tried. HNSW is the only
+vector index 3.2 offers, so only HNSW is exposed.
+
+### `COUNT` indexes take no columns
+
+`DEFINE INDEX i ON TABLE t FIELDS a COUNT` is rejected; `DEFINE INDEX i ON TABLE
+t COUNT` is correct. The index covers the table, not a column.
+
+### `CONCURRENTLY` is accepted but never stored
+
+An index defined with it reads back without it, so comparing it would never
+converge. It is stripped before comparison.
+
+### HNSW fills in every tuning parameter
+
+`HNSW DIMENSION 3 DIST COSINE` comes back as `… TYPE F32 EFC 150 M 12 M0 24 LM
+0.40242960438184466f`. DIST, TYPE, EFC, M and M0 are emitted explicitly so the
+two match. LM is derived from M as a long float and is dropped when comparing —
+matching its printed precision is fragile and it carries nothing M does not.
+
+### An access method's key is redacted
+
+`DEFINE ACCESS … TYPE RECORD` gains `WITH JWT ALGORITHM HS512 KEY '[REDACTED]'`
+when stored. The stored form can therefore never equal the declared one. An
+access method is created when missing and then left alone — re-applying it on
+every run would rotate the signing key each time and silently invalidate every
+issued token. This is the one definition a migration cannot keep in sync.
+
+### `PERMISSIONS` is expanded to a rule per operation
+
+`PERMISSIONS FOR select FULL` on a table is stored as `FOR select FULL, FOR
+create, update, delete NONE`. Both sides are written out in full for comparison,
+with the default that applies to the kind: `FULL` for a field, `NONE` for a
+table.
+
+### Smaller normalisations
+
+- `COMMENT` and `PERMISSIONS` can be written in either order but are stored in
+  one
+- an event's `THEN` body is stored parenthesised
+- redundant parentheses in `ASSERT` are dropped, but needed ones are kept, so
+  conditions are only parenthesised when they contain a top-level `OR`
+- `TOKENIZERS BLANK,CLASS` is stored unspaced while `FILTERS LOWERCASE, ASCII`
+  is spaced
+- a sequence reads back as `BATCH 1000 START 0` even when neither was given
+- functions are keyed in `INFO FOR DB` by their bare name, not `fn::name`
+
 ### Full-text index syntax moved in 3.x
 
 Not hit by this branch, but adjacent and worth knowing if `db.define.index(…)`
