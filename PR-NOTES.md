@@ -244,6 +244,36 @@ before indexes, so a declared index is repointed in the same migration; an index
 the schema does not declare is not, which is another reason not to leave indexes
 out of a schema.
 
+### Six more rewrites, found by sweeping the whole surface at once
+
+Each of these made a schema look permanently modified — the migration reapplied
+the same statement on every run. None showed up in a targeted test; all six came
+out of one integration test that applies every type, modifier, index kind and
+entity and then asks whether anything is left to do.
+
+| Declared | Stored |
+|---|---|
+| `TOKENIZERS blank, class` | `TOKENIZERS BLANK,CLASS` — uppercased, arguments included: `snowball(english)` reads back `SNOWBALL(ENGLISH)` |
+| `FULLTEXT` with no analyzer | `FULLTEXT ANALYZER like` — the built-in is filled in and reported |
+| `{ RETURN $n * 2; }` | `{ RETURN $n * 2 }` — the semicolon before a closing brace is dropped |
+| `WHEN $event = 'UPDATE' AND (a != b)` | `… AND a != b` — parentheses that are not needed are dropped |
+| `DEFAULT 1.5` on a `decimal` | `DEFAULT 1.5f` — any non-integer literal gains the suffix, whatever the field's type |
+| `DEFAULT {}` | `DEFAULT {  }` |
+
+Where the stored form is predictable it is now emitted directly (analyzer
+casing, the `like` analyzer, event parentheses); where it is not, it is
+canonicalised away.
+
+### String literals are quoted to avoid escaping, not consistently
+
+```
+declared:  DEFAULT 'it\'s'      stored:  DEFAULT "it's"
+declared:  DEFAULT 'say "hi"'   stored:  DEFAULT 'say "hi"'
+```
+
+SurrealDB picks whichever quote character the value does not contain rather than
+escaping. The generator now does the same.
+
 ### Smaller normalisations
 
 - `COMMENT` and `PERMISSIONS` can be written in either order but are stored in
@@ -290,6 +320,18 @@ Two decisions worth noting:
 
 `--level` and `--stdout` are flags rather than an interactive prompt, so the
 command runs in CI. It defaults to `minimal`.
+
+### A string default that looks like a call is treated as one
+
+Whether a string `DEFAULT` is SurrealQL or literal text is decided by looking at
+it: a value containing parentheses, or starting with `$`, `{` or `[`, is emitted
+unquoted. That is right almost always — `time::now()` should be called — but it
+means there is no way to store the literal text `time::now()` in a string field.
+
+Pinned in `tests/integration/convergence.test.ts` rather than hidden. If you
+would rather have an explicit escape hatch, the obvious shapes are a
+`.defaultLiteral(value)` modifier or a `raw()` wrapper for the expression case;
+happy to add either.
 
 ---
 

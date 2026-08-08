@@ -174,7 +174,7 @@ describe("Indexes and events", () => {
 		const up = await apply([post]);
 		const statement = up.find((s) => s.includes("DEFINE EVENT")) ?? "";
 		expect(statement).toContain('($event = "CREATE" OR $event = "UPDATE")');
-		expect(statement).toContain("AND ($after.n > 10)");
+		expect(statement).toContain("AND $after.n > 10");
 	});
 
 	test("events converge", async () => {

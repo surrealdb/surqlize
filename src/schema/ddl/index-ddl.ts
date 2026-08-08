@@ -138,7 +138,9 @@ function fulltextClause(fulltext: true | FulltextOptions): string[] {
 	const options = fulltext === true ? {} : fulltext;
 	const parts = ["FULLTEXT"];
 
-	if (options.analyzer) parts.push("ANALYZER", options.analyzer);
+	// Omitting ANALYZER is valid, but SurrealDB fills in the built-in `like` and
+	// reports it, so the declared index has to name it too or it never converges.
+	parts.push("ANALYZER", options.analyzer ?? "like");
 
 	// SurrealDB reports BM25 on every full-text index, tuned or not, so it is
 	// always emitted with the parameters it would fill in.

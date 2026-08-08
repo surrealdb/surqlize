@@ -22,9 +22,11 @@ describe("DEFINE ANALYZER", () => {
 			filters: ["lowercase", "ascii", "snowball(english)"],
 		}).define();
 
+		// SurrealDB uppercases both lists, arguments included, and reports them
+		// that way — declaring them in lower case would never converge
 		expect(sql).toContain("DEFINE ANALYZER english_search");
-		expect(sql).toContain("TOKENIZERS class, camel, blank");
-		expect(sql).toContain("FILTERS lowercase, ascii, snowball(english)");
+		expect(sql).toContain("TOKENIZERS CLASS, CAMEL, BLANK");
+		expect(sql).toContain("FILTERS LOWERCASE, ASCII, SNOWBALL(ENGLISH)");
 	});
 
 	test("omits FILTERS when there are none", () => {

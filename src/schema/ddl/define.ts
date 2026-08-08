@@ -272,5 +272,12 @@ function isExpression(value: string): boolean {
  * modified on the next diff.
  */
 function quote(value: string, mark = "'"): string {
+	// SurrealDB picks whichever quote avoids escaping: a string holding an
+	// apostrophe is stored double-quoted, and vice versa. Matching that keeps a
+	// declared default equal to the stored one.
+	if (mark === "'" && value.includes("'") && !value.includes('"')) {
+		return `"${value}"`;
+	}
+
 	return `${mark}${value.split(mark).join(`\\${mark}`)}${mark}`;
 }

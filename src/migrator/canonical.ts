@@ -38,8 +38,15 @@ const RULES: [RegExp, string][] = [
 	// SurrealDB stores string literals single-quoted. Only rewrite literals with
 	// no quote of either kind inside, so an apostrophe cannot change the meaning.
 	[/"([^"'\\]*)"/g, "'$1'"],
+	// A non-integer literal reads back with a float suffix, whatever the field's
+	// declared type: `DEFAULT 1.5` on a decimal is stored as `DEFAULT 1.5f`.
+	[/(\d+\.\d+)f\b/g, "$1"],
+	// A function body reads back without the semicolon before its closing brace
+	[/;\s*\}/g, " }"],
 	// Whitespace carries no meaning between tokens
 	[/\s+/g, " "],
+	// An empty block is stored spaced: `DEFAULT {}` reads back as `DEFAULT {  }`
+	[/\{\s*\}/g, "{}"],
 	// Nor does spacing around a separator: TOKENIZERS BLANK,CLASS is stored
 	// unspaced while FILTERS LOWERCASE, ASCII is spaced.
 	[/\s*,\s*/g, ", "],

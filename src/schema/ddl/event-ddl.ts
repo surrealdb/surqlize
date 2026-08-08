@@ -77,11 +77,31 @@ function buildWhen(event: EventOptions): string {
 
 	if (guard && event.when) {
 		const left = triggers.length > 1 ? `(${guard})` : guard;
-		return `${left} AND (${event.when})`;
+		// SurrealDB drops parentheses it does not need, so only add them when the
+		// condition could otherwise swallow the guard — `$event = "CREATE" AND
+		// (a OR b)` rather than `$event = "CREATE" AND a OR b`, which would fire
+		// on every update matching `b`.
+		const right = hasTopLevelOr(event.when) ? `(${event.when})` : event.when;
+		return `${left} AND ${right}`;
 	}
 
 	// With neither, fire on every change rather than never.
 	return guard ?? event.when ?? "true";
+}
+
+/** Whether `condition` contains an `OR` outside any parentheses or quotes. */
+function hasTopLevelOr(condition: string): boolean {
+	// Blank out nested content so a word boundary still means what it did.
+	let masked = condition;
+	let previous: string;
+	do {
+		previous = masked;
+		masked = masked.replace(/\([^()]*\)|'[^']*'|"[^"]*"/g, (m) =>
+			" ".repeat(m.length),
+		);
+	} while (masked !== previous);
+
+	return masked.search(/\bOR\b/i) !== -1;
 }
 
 /** Wrap a multi-statement body in a block, which SurrealDB requires. */

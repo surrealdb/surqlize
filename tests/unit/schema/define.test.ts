@@ -196,15 +196,16 @@ describe("DEFINE INDEX", () => {
 		expect(sql).toContain("HIGHLIGHTS");
 	});
 
-	test("full-text works without an analyzer", () => {
+	test("full-text names the built-in analyzer when given none", () => {
+		// SurrealDB fills in `like` and reports it, so an index that stayed silent
+		// would look modified on every run
 		const sql = defineIndex("post", {
 			name: "s",
 			fields: ["c"],
 			fulltext: true,
 		});
 
-		expect(sql).toContain("FULLTEXT");
-		expect(sql).not.toContain("ANALYZER");
+		expect(sql).toContain("FULLTEXT ANALYZER like");
 	});
 
 	test("BM25 is emitted tuned or at its defaults", () => {
@@ -294,7 +295,7 @@ describe("DEFINE EVENT", () => {
 		expect(sql).toContain("THEN");
 	});
 
-	test("ANDs an extra condition onto the guard, parenthesised", () => {
+	test("ANDs an extra condition onto the guard", () => {
 		const sql = defineEvent("order", {
 			name: "notify",
 			on: "CREATE",
@@ -302,7 +303,9 @@ describe("DEFINE EVENT", () => {
 			body: "CREATE notification SET message = 'High value order'",
 		});
 
-		expect(sql).toContain('WHEN $event = "CREATE" AND ($after.total > 1000)');
+		// SurrealDB drops parentheses it does not need, so adding them here would
+		// leave the event looking modified on every run
+		expect(sql).toContain('WHEN $event = "CREATE" AND $after.total > 1000');
 	});
 
 	test("several triggers are ORed, then bracketed before the AND", () => {
@@ -316,7 +319,7 @@ describe("DEFINE EVENT", () => {
 		});
 
 		expect(sql).toContain(
-			'WHEN ($event = "CREATE" OR $event = "UPDATE") AND ($after.flag)',
+			'WHEN ($event = "CREATE" OR $event = "UPDATE") AND $after.flag',
 		);
 	});
 

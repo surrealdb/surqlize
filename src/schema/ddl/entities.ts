@@ -67,15 +67,22 @@ export function analyzer(
 		define: ({ overwrite } = {}) => {
 			const parts = ["DEFINE ANALYZER"];
 			if (overwrite) parts.push("OVERWRITE");
-			parts.push(name, "TOKENIZERS", options.tokenizers.join(", "));
+			// SurrealDB uppercases both lists when it stores them, arguments
+			// included: `snowball(english)` reads back as `SNOWBALL(ENGLISH)`.
+			parts.push(name, "TOKENIZERS", upper(options.tokenizers));
 			if (options.filters?.length) {
-				parts.push("FILTERS", options.filters.join(", "));
+				parts.push("FILTERS", upper(options.filters));
 			}
 			if (options.comment) parts.push("COMMENT", quote(options.comment));
 			return `${parts.join(" ")};`;
 		},
 		remove: (key = name) => `REMOVE ANALYZER ${key};`,
 	};
+}
+
+/** Join a list the way SurrealDB stores it: uppercased, comma-separated. */
+function upper(values: string[]): string {
+	return values.map((value) => value.toUpperCase()).join(", ");
 }
 
 /** A value available to every query in the database. */

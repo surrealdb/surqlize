@@ -34,8 +34,13 @@ describe("Strings", () => {
 		expect(defaultClause("pending")).toBe("'pending'");
 	});
 
-	test("an embedded quote is escaped", () => {
-		expect(defaultClause("it's")).toBe("'it\\'s'");
+	test("a value holding an apostrophe switches to double quotes", () => {
+		// SurrealDB picks whichever quote avoids escaping, and stores it that way
+		expect(defaultClause("it's")).toBe('"it\'s"');
+	});
+
+	test("a value holding a double quote stays single-quoted", () => {
+		expect(defaultClause('say "hi"')).toBe(`'say "hi"'`);
 	});
 
 	test("a function call is left as an expression", () => {
