@@ -146,6 +146,22 @@ describe("Every entity", () => {
 		}
 	});
 
+	test("removes another name of the same kind, qualified as its own", () => {
+		// The old name during a rename comes from `INFO FOR DB`, which keys a
+		// function bare — but `REMOVE FUNCTION old_name;` is a parse error.
+		expect(storedFunction("f", { body: "RETURN 1;" }).remove("old")).toBe(
+			"REMOVE FUNCTION fn::old;",
+		);
+		expect(param("p", { value: "1" }).remove("old")).toBe("REMOVE PARAM $old;");
+		expect(analyzer("a", { tokenizers: ["blank"] }).remove("old")).toBe(
+			"REMOVE ANALYZER old;",
+		);
+		expect(sequence("s").remove("old")).toBe("REMOVE SEQUENCE old;");
+		expect(access("ac", { signin: "SELECT 1" }).remove("old")).toBe(
+			"REMOVE ACCESS old ON DATABASE;",
+		);
+	});
+
 	test("emits a single terminated statement", () => {
 		for (const entity of entities) {
 			expect(entity.define()).toEndWith(";");

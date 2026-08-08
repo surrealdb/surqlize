@@ -30,8 +30,15 @@ export interface DatabaseEntity {
 	previousNames?: string[];
 	/** Render the `DEFINE` statement. */
 	define(options?: { overwrite?: boolean }): string;
-	/** Render the statement that removes it. */
-	remove(): string;
+	/**
+	 * Render the statement that removes it.
+	 *
+	 * `key` names a different entity of the same kind to remove — the old name
+	 * during a rename. Each builder qualifies it the way its own statement needs,
+	 * which matters for a function: `INFO FOR DB` keys it bare but
+	 * `REMOVE FUNCTION` needs the `fn::` prefix.
+	 */
+	remove(key?: string): string;
 }
 
 /** How text is split into tokens and then filtered, for full-text search. */
@@ -67,7 +74,7 @@ export function analyzer(
 			if (options.comment) parts.push("COMMENT", quote(options.comment));
 			return `${parts.join(" ")};`;
 		},
-		remove: () => `REMOVE ANALYZER ${name};`,
+		remove: (key = name) => `REMOVE ANALYZER ${key};`,
 	};
 }
 
@@ -100,7 +107,7 @@ export function param(name: string, options: ParamOptions): DatabaseEntity {
 			if (options.comment) parts.push("COMMENT", quote(options.comment));
 			return `${parts.join(" ")};`;
 		},
-		remove: () => `REMOVE PARAM $${bare};`,
+		remove: (key = bare) => `REMOVE PARAM $${key.replace(/^\$/, "")};`,
 	};
 }
 
@@ -149,7 +156,8 @@ export function storedFunction(
 			if (options.comment) parts.push("COMMENT", quote(options.comment));
 			return `${parts.join(" ")};`;
 		},
-		remove: () => `REMOVE FUNCTION ${full};`,
+		remove: (key = full) =>
+			`REMOVE FUNCTION ${key.startsWith("fn::") ? key : `fn::${key}`};`,
 	};
 }
 
@@ -196,7 +204,7 @@ export function sequence(
 			);
 			return `${parts.join(" ")};`;
 		},
-		remove: () => `REMOVE SEQUENCE ${name};`,
+		remove: (key = name) => `REMOVE SEQUENCE ${key};`,
 	};
 }
 
@@ -258,7 +266,7 @@ export function access(name: string, options: AccessOptions): DatabaseEntity {
 			if (options.comment) parts.push("COMMENT", quote(options.comment));
 			return `${parts.join(" ")};`;
 		},
-		remove: () => `REMOVE ACCESS ${name} ON DATABASE;`,
+		remove: (key = name) => `REMOVE ACCESS ${key} ON DATABASE;`,
 	};
 }
 

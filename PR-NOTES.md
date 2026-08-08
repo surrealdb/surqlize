@@ -226,6 +226,24 @@ DEFINE FIELD f ON t TYPE array<string, 1, 10>;   -- Parse error
 by `validate`/`parse` as well as declared. A lower bound has to be an `ASSERT`.
 smig emitted two arguments, which SurrealDB rejects.
 
+### `REMOVE FUNCTION` needs the `fn::` prefix
+
+`INFO FOR DB` keys a function by its bare name, but `REMOVE FUNCTION probe;` is
+a parse error — the statement needs `fn::probe`. A rename reads the old name
+from the introspected keys, so it has to re-qualify it. `DatabaseEntity.remove`
+now takes an optional name and each builder qualifies it the way its own
+statement needs.
+
+### A dropped field leaves its index behind
+
+`REMOVE FIELD old ON t` succeeds even while an index covers `old`, and the index
+survives pointing at a field that no longer exists — silently indexing NONE for
+every row, so a `UNIQUE` index stops rejecting duplicates. A field rename
+therefore has to be followed by redefining any index over it. Fields are diffed
+before indexes, so a declared index is repointed in the same migration; an index
+the schema does not declare is not, which is another reason not to leave indexes
+out of a schema.
+
 ### Smaller normalisations
 
 - `COMMENT` and `PERMISSIONS` can be written in either order but are stored in

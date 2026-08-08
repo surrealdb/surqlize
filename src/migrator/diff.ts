@@ -490,7 +490,7 @@ function removeUndeclaredEntities(
 
 /** The `REMOVE` statement for a different name of the same kind. */
 function removeNamed(entity: DatabaseEntity, name: string): string {
-	return entity.remove().replace(entity.name, name);
+	return entity.remove(name);
 }
 
 /** Every statement that creates a table from scratch. */
