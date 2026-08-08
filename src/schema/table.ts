@@ -4,12 +4,29 @@ import {
 	type RecordType,
 	t,
 } from "../types";
+import {
+	patchTableDdl,
+	type TableDdl,
+	type TablePermissions,
+} from "./ddl/table-ddl";
 
-/** A record mapping field names (excluding `id`) to their type definitions. */
-export type TableFields = Record<Exclude<string, "id">, AbstractType>;
+/** A record mapping field names to their type definitions. */
+export type TableFields = Record<string, AbstractType>;
+
+/**
+ * The table's fields with `id` filled in.
+ *
+ * SurrealDB gives every record an `id`, so one is injected when the schema does
+ * not declare it. A schema that *does* declare `id` keeps its own — useful when
+ * the table generates ids itself, e.g.
+ * `id: t.uuid().default("rand::uuid::v7()").readonly()`.
+ */
+type WithId<Tb extends string, Fd extends TableFields> = "id" extends keyof Fd
+	? Fd
+	: Fd & { id: RecordType<Tb> };
 
 type GetSchemaType<Tb extends string, Fd extends TableFields> = ObjectType<
-	Fd & { id: RecordType<Tb> }
+	WithId<Tb, Fd>
 >;
 
 type GetInferType<Tb extends string, Fd extends TableFields> = GetSchemaType<
@@ -34,11 +51,15 @@ export class TableSchema<
 		public readonly _fields: Fd,
 	) {}
 
-	get fields(): Fd & { id: RecordType<Tb> } & {} {
+	/** Schema metadata used to generate `DEFINE TABLE`. */
+	readonly ddl: Readonly<TableDdl> = {};
+
+	get fields(): WithId<Tb, Fd> & {} {
+		// The injected `id` comes first so a schema that declares its own wins.
 		return {
-			...this._fields,
 			id: t.record(this.tb as string),
-		} as Fd & { id: RecordType<Tb> } & {};
+			...this._fields,
+		} as WithId<Tb, Fd> & {};
 	}
 
 	type = undefined as unknown as GetInferType<Tb, Fd>;
@@ -50,6 +71,62 @@ export class TableSchema<
 	/** Type-guard that checks whether a value matches this table's schema. */
 	validate(value: unknown): value is GetInferType<Tb, Fd> {
 		return this.schema.validate(value);
+	}
+
+	// -------------------------------------------------------------------------
+	// Schema modifiers
+	//
+	// As with the field modifiers, each returns a clone rather than mutating —
+	// a table definition is routinely shared between several `orm()` instances.
+	// -------------------------------------------------------------------------
+
+	/** Enforce the declared fields, rejecting anything else. This is the default. */
+	schemafull(): this {
+		return patchTableDdl(this, (d) => {
+			d.schemafull = true;
+		});
+	}
+
+	/** Allow fields beyond those declared. */
+	schemaless(): this {
+		return patchTableDdl(this, (d) => {
+			d.schemafull = false;
+		});
+	}
+
+	/** Discard every record written to this table (`DROP`). */
+	drop(): this {
+		return patchTableDdl(this, (d) => {
+			d.drop = true;
+		});
+	}
+
+	/** Set the table's `PERMISSIONS`, either one rule or one per operation. */
+	permissions(rules: TablePermissions): this {
+		return patchTableDdl(this, (d) => {
+			d.permissions = rules;
+		});
+	}
+
+	/** Retain a change feed for `duration` (e.g. `"3d"`). */
+	changefeed(duration: string, includeOriginal = false): this {
+		return patchTableDdl(this, (d) => {
+			d.changefeed = { duration, includeOriginal };
+		});
+	}
+
+	/** Make this a computed view over another table (`AS SELECT …`). */
+	view(selectStatement: string): this {
+		return patchTableDdl(this, (d) => {
+			d.view = selectStatement;
+		});
+	}
+
+	/** Attach a `COMMENT` to the table. */
+	comment(text: string): this {
+		return patchTableDdl(this, (d) => {
+			d.comment = text;
+		});
 	}
 }
 

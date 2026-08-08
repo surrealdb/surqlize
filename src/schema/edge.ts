@@ -4,6 +4,11 @@ import {
 	type RecordType,
 	t,
 } from "../types";
+import {
+	patchTableDdl,
+	type TableDdl,
+	type TablePermissions,
+} from "./ddl/table-ddl";
 /** A record mapping field names (excluding `id`, `in`, `out`) to their type definitions. */
 export type EdgeFields = Record<
 	Exclude<string, "id" | "in" | "out">,
@@ -53,14 +58,19 @@ export class EdgeSchema<
 		public readonly _fields: Fd,
 	) {}
 
+	/** Schema metadata used to generate `DEFINE TABLE … TYPE RELATION`. */
+	readonly ddl: Readonly<TableDdl> = {};
+
 	get fields(): Fd & {
 		id: RecordType<Tb>;
 		in: RecordType<From>;
 		out: RecordType<To>;
 	} & {} {
 		return {
-			...this._fields,
+			// `id` leads so a schema declaring its own wins; `in` and `out` follow
+			// the declared fields because they define the edge and cannot be changed.
 			id: t.record(this.tb),
+			...this._fields,
 			in: t.record(this.from),
 			out: t.record(this.to),
 		} as Fd & {
@@ -79,6 +89,56 @@ export class EdgeSchema<
 	/** Type-guard that checks whether a value matches this edge's schema. */
 	validate(value: unknown): value is GetEdgeInferType<From, Tb, To, Fd> {
 		return this.schema.validate(value);
+	}
+
+	// -------------------------------------------------------------------------
+	// Schema modifiers — see the note on TableSchema; each returns a clone.
+	// -------------------------------------------------------------------------
+
+	/** Enforce the declared fields, rejecting anything else. This is the default. */
+	schemafull(): this {
+		return patchTableDdl(this, (d) => {
+			d.schemafull = true;
+		});
+	}
+
+	/** Allow fields beyond those declared. */
+	schemaless(): this {
+		return patchTableDdl(this, (d) => {
+			d.schemafull = false;
+		});
+	}
+
+	/**
+	 * Reject edges whose `in` or `out` record does not exist (`ENFORCED`).
+	 *
+	 * Without this SurrealDB will happily create an edge pointing at nothing.
+	 */
+	enforced(): this {
+		return patchTableDdl(this, (d) => {
+			d.enforced = true;
+		});
+	}
+
+	/** Set the edge table's `PERMISSIONS`. */
+	permissions(rules: TablePermissions): this {
+		return patchTableDdl(this, (d) => {
+			d.permissions = rules;
+		});
+	}
+
+	/** Retain a change feed for `duration` (e.g. `"3d"`). */
+	changefeed(duration: string, includeOriginal = false): this {
+		return patchTableDdl(this, (d) => {
+			d.changefeed = { duration, includeOriginal };
+		});
+	}
+
+	/** Attach a `COMMENT` to the edge table. */
+	comment(text: string): this {
+		return patchTableDdl(this, (d) => {
+			d.comment = text;
+		});
 	}
 }
 
