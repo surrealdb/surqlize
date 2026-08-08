@@ -1,9 +1,17 @@
 import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
+	AnyType,
 	ArrayType,
 	BoolType,
+	BytesType,
 	DateType,
+	DecimalType,
+	DurationType,
+	FloatType,
+	type GeometryKind,
+	GeometryType,
+	IntType,
 	LiteralType,
 	NeverType,
 	NoneType,
@@ -11,7 +19,9 @@ import {
 	NumberType,
 	ObjectType,
 	OptionType,
+	RangeType,
 	RecordType,
+	SetType,
 	StringType,
 	UnionType,
 	UuidType,
@@ -22,9 +32,57 @@ export function string() {
 	return new StringType();
 }
 
-/** Create a number type. */
+/** Create a number type. Use {@link int}, {@link float} or {@link decimal} when the
+ * SurrealDB numeric width matters — a migration needs to know which to define. */
 export function number() {
 	return new NumberType();
+}
+
+/** Create an integer type. Rejects fractional values. */
+export function int() {
+	return new IntType();
+}
+
+/** Create a floating-point type. */
+export function float() {
+	return new FloatType();
+}
+
+/** Create an arbitrary-precision decimal type. */
+export function decimal() {
+	return new DecimalType();
+}
+
+/** Create a duration type. */
+export function duration() {
+	return new DurationType();
+}
+
+/** Create a binary data type. */
+export function bytes() {
+	return new BytesType();
+}
+
+/** Create an any type. Accepts every value. */
+export function any() {
+	return new AnyType();
+}
+
+/** Create a geometry type, optionally constrained to a single kind. */
+export function geometry<const K extends GeometryKind | undefined = undefined>(
+	kind?: K,
+): GeometryType<K> {
+	return new GeometryType<K>(kind);
+}
+
+/** Create a range type, optionally over a specific inner type. */
+export function range(inner?: AbstractType) {
+	return new RangeType(inner);
+}
+
+/** Create a set type: an array whose elements must be unique. */
+export function set<T extends AbstractType>(schema: T) {
+	return new SetType(schema);
 }
 
 /** Create a boolean type. */
