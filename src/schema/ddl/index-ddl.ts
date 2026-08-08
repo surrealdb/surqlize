@@ -90,6 +90,8 @@ export function defineIndex(
 	index: IndexDefinition,
 	options: { overwrite?: boolean } = {},
 ): string {
+	requireSingleColumn(index);
+
 	const parts = ["DEFINE INDEX"];
 	if (options.overwrite) parts.push("OVERWRITE");
 	parts.push(index.name, "ON TABLE", tableName);
@@ -109,6 +111,26 @@ export function defineIndex(
 		parts.push("COMMENT", `'${index.comment.replace(/'/g, "\\'")}'`);
 
 	return `${parts.join(" ")};`;
+}
+
+/**
+ * Reject a full-text or vector index over more than one column.
+ *
+ * SurrealDB fails these with `Expected one column, found 2`, but only once the
+ * statement reaches the server — by which point earlier statements in the
+ * migration have already been applied. Failing here says which index is wrong.
+ */
+function requireSingleColumn(index: IndexDefinition): void {
+	const kind = index.fulltext ? "full-text" : index.hnsw ? "HNSW" : null;
+	if (!kind) return;
+
+	const count = index.fields?.length ?? 0;
+	if (count <= 1) return;
+
+	throw new Error(
+		`Index '${index.name}' is ${kind} over ${count} columns. ` +
+			"SurrealDB accepts exactly one column for these; define one index per column.",
+	);
 }
 
 /** The `FULLTEXT …` portion of an index definition. */

@@ -242,6 +242,38 @@ describe("DEFINE INDEX", () => {
 		expect(sql).not.toContain("FIELDS");
 	});
 
+	test("a full-text index over several columns is refused", () => {
+		// SurrealDB fails this with "Expected one column, found 2", but only once
+		// the statement reaches the server — mid-migration.
+		expect(() =>
+			defineIndex("post", {
+				name: "s",
+				fields: ["title", "body"],
+				fulltext: true,
+			}),
+		).toThrow(/exactly one column/i);
+
+		expect(() =>
+			defineIndex("post", { name: "s", fields: ["body"], fulltext: true }),
+		).not.toThrow();
+	});
+
+	test("a vector index over several columns is refused", () => {
+		expect(() =>
+			defineIndex("post", {
+				name: "v",
+				fields: ["a", "b"],
+				hnsw: { dimension: 3 },
+			}),
+		).toThrow(/exactly one column/i);
+	});
+
+	test("an ordinary index over several columns is fine", () => {
+		expect(
+			defineIndex("post", { name: "i", fields: ["a", "b"], unique: true }),
+		).toContain("FIELDS a, b");
+	});
+
 	test("carries CONCURRENTLY", () => {
 		expect(
 			defineIndex("user", { name: "i", fields: ["name"], concurrently: true }),
