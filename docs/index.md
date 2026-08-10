@@ -11,6 +11,19 @@ head:
   - - meta
     - property: og:description
       content: A TypeScript-first ORM and auto-migrations library for SurrealDB. Define your models once and get fully typed queries plus the migrations to match.
+  # Makes a search result read "Surqlize" above the page title rather than
+  # surqlize.com. Google takes the site name from WebSite structured data on the
+  # home page only, so this belongs here rather than in the shared head.
+  - - script
+    - type: application/ld+json
+    - |
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Surqlize",
+        "alternateName": "Surqlize — TypeScript ORM for SurrealDB",
+        "url": "https://surqlize.com/"
+      }
 
 hero:
   name: Surqlize
@@ -59,12 +72,12 @@ features:
 
 <div class="sur-cta">
 
-## Ready in about a minute
+## Start building with Surqlize today
 
-Install it, point it at your database, and see exactly what it would change before anything runs.
+Define your SurrealDB models in TypeScript and let Surqlize handle migrations and type-safety — so you can ship faster.
 
 <div class="sur-actions">
-  <a class="sur-btn is-primary" href="/getting-started/">Get started</a>
+  <a class="sur-btn is-primary" href="/guide/">Get started</a>
   <a class="sur-btn is-ghost" href="https://github.com/surrealdb/surqlize">View on GitHub</a>
 </div>
 

@@ -1,11 +1,10 @@
 # Security Policy for Surqlize
 # https://surqlize.com
 
-Contact: mailto:chris@chwd.ca
+Contact: mailto:security@surrealdb.com
 Expires: 2026-12-31T23:59:59.000Z
 Preferred-Languages: en
 Canonical: https://surqlize.com/.well-known/security.txt
 
 # If you discover a security vulnerability, please report it via email.
 # We appreciate responsible disclosure and will acknowledge your contribution.
-

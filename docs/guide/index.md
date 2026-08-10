@@ -1,11 +1,11 @@
 ---
 title: Guide
-description: Installing Surqlize, defining a schema, and running your first migration.
+description: Installing Surqlize, defining your models, running your first migration and writing your first typed query.
 ---
 
 # Guide
 
-Installing Surqlize, defining a schema, and running your first migration.
+Installing Surqlize, defining your models, running your first migration and writing your first typed query.
 
 ::: info Being written
 This section is next. Until it lands, the

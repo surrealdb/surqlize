@@ -141,7 +141,9 @@
   margin: 0 auto 1rem;
   border-top: 0;
   padding-top: 0;
-  max-width: 20ch;
+  /* Wide enough to hold a heading of this length on one line at desktop width.
+     At 20ch the closing word was stranded on a line of its own. */
+  max-width: 36ch;
   font-size: clamp(1.6rem, 3.2vw, 2.25rem);
   font-weight: 600;
   line-height: 1.2;

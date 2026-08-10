@@ -20,8 +20,10 @@ export default defineConfig({
   // Clean URLs (no .html extension)
   cleanUrls: true,
 
-  // Last updated timestamps
-  lastUpdated: true,
+  // No "last updated" line. It is read from the git history, so a whitespace
+  // fix reads as the page having changed — which is worse than no date at all
+  // on reference pages people return to.
+  lastUpdated: false,
 
   markdown: {
     languages: [
