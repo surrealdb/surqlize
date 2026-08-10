@@ -407,7 +407,39 @@ and 26 of smig's 32 files used no Vitest-specific API at all.
 | `event-validation-examples.test.ts` | 10 | Error-message ergonomics for a builder that no longer exists. |
 | `integration/alter-statements.test.ts` | 5 | Asserts on `ALTER` output, which the engine no longer emits. |
 | parser tails of `new-features`, `surrealdb-32-grammar` | 12 | Same reason as `introspection`. |
-| `new-entities.test.ts`, in part | ~25 | Covers `user()`, `model()`, `config()` and JWT/BEARER access, none of which this branch exposes. Users are never introspected, a model's binary is not recoverable, and only RECORD access is supported. |
+| `new-entities.test.ts`, in part | ~25 | Covers `user()`, `model()`, `config()` and JWT/BEARER access, none of which this branch exposes. See "Definitions this branch does not cover" below — only `model()` has a technical reason. |
+
+### Definitions this branch does not cover
+
+smig can emit thirteen kinds of `DEFINE`; this branch emits ten. The gap is
+`CONFIG`, `MODEL` and `USER`, plus the JWT and BEARER forms of `ACCESS`.
+(smig's `SCOPE` is the 2.x spelling of `ACCESS` and is correctly gone.)
+
+An earlier draft of these notes gave reasons for each. Three of those reasons
+were wrong, and checking against a live 3.2 is what showed it — all of these
+**are** returned by `INFO FOR DB`:
+
+```
+users:   { probe: "DEFINE USER probe ON DATABASE PASSHASH '$argon2id$...' ROLES EDITOR ..." }
+configs: { GraphQL: 'GRAPHQL TABLES AUTO FUNCTIONS AUTO' }
+accesses:{ jwtprobe: "DEFINE ACCESS jwtprobe ON DATABASE TYPE JWT ALGORITHM HS512 KEY '[REDACTED]' ..." }
+```
+
+The accurate position:
+
+| Definition | Why it is missing |
+|---|---|
+| `CONFIG` | Nothing in the way. It reads back verbatim (`GRAPHQL TABLES AUTO FUNCTIONS AUTO`) and would converge as-is. Simply not ported. |
+| JWT / BEARER `ACCESS` | Nothing in the way. The key is redacted on read-back, exactly as it is for `RECORD` access — which *is* supported, by creating it when missing and then leaving it alone. The same treatment applies. |
+| `USER` | A password reads back as an argon2 `PASSHASH`, so a declared password can never equal the stored one. That is the `RECORD` access problem again and has the same answer. Worth a separate conversation about whether database credentials belong in a schema file in version control at all. |
+| `MODEL` | The only one with a real obstacle. `DEFINE MODEL` uploads an ML model's bytes; they are not recoverable from `INFO`, and defining one is a file upload rather than a statement. |
+
+So three of the four are omissions rather than decisions, and adding them is
+mostly mechanical — each is a builder in `src/schema/ddl/entities.ts` plus an
+`EntityKind` and an `INFO FOR DB` key in `src/migrator/introspect.ts`.
+
+Two small CLI commands are also absent: smig's `generate` (a `plan` written to
+a file, which shell redirection covers) and `test` (a connection check).
 
 ### Mocking was removed rather than translated
 
