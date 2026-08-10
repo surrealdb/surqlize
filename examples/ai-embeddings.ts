@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/ai-embeddings.ts
  *   bun sur migrate --schema examples/ai-embeddings.ts
  */
-import { analyzer, t, table } from "../src";
+import { analyzer, t, table } from "surqlize";
 
 /** Splits identifiers as well as prose, for technical writing. */
 export const tech = analyzer("tech", {

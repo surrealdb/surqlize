@@ -159,15 +159,21 @@ export async function importModule(
 	// A cache-busting query means a long-running process sees edits to the file.
 	const url = `${pathToFileURL(path).href}?t=${Date.now()}`;
 
+	if (!existsSync(path)) {
+		throw new Error(`No such file: ${path}`);
+	}
+
 	try {
 		return (await import(url)) as Record<string, unknown>;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 
-		if (
-			path.endsWith(".ts") &&
-			/Unknown file extension|Cannot find module/.test(message)
-		) {
+		// Only this one means the runtime cannot read TypeScript. A resolution
+		// failure looks similar and used to be swept in here, which reported a
+		// schema importing something that does not exist as "you need Bun" —
+		// while running under Bun. The underlying message already names what is
+		// missing, so it is better than anything this could say instead.
+		if (path.endsWith(".ts") && /Unknown file extension/.test(message)) {
 			throw new Error(
 				`Could not import ${path}.\n` +
 					"Importing TypeScript directly needs Bun, or Node 22.6+ with " +

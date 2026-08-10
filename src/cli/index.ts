@@ -486,7 +486,18 @@ async function confirm(count: number): Promise<boolean> {
 	return /^y(es)?$/i.test(answer);
 }
 
-const SCHEMA_TEMPLATE = `import { t, table } from "surqlize";
+// Both templates open with a comment on purpose. `.ts` is claimed by both
+// TypeScript and Qt Linguist, and shared-mime-info only recognises TypeScript by
+// magic at offset 0 — `/*`, `//`, `class` or `function`. Without one of those the
+// glob decides, and TypeScript's carries weight 40 against Linguist's 50, so a
+// file leading with `import` gets a Linguist icon in a file manager.
+const SCHEMA_TEMPLATE = `/**
+ * Your database schema.
+ *
+ * Every table and edge exported here is one Surqlize will manage. Run
+ * \`sur plan\` to see what it would change, then \`sur migrate\` to apply it.
+ */
+import { t, table } from "surqlize";
 
 export const user = table("user", {
   name: t.string().assert("string::len($value) > 0"),
@@ -496,7 +507,13 @@ export const user = table("user", {
   .index("email_idx", { fields: ["email"], unique: true });
 `;
 
-const CONFIG_TEMPLATE = `export default {
+const CONFIG_TEMPLATE = `/**
+ * Where Surqlize connects, and which file describes the schema.
+ *
+ * Add an \`environments\` block to describe more than one deployment, then
+ * select one with \`--env <name>\`.
+ */
+export default {
   schema: "./schema.ts",
 
   url: "ws://localhost:8000",

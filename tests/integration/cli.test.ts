@@ -248,6 +248,18 @@ describe("init", () => {
 
 		expect(existsSync(join(fresh, "schema.ts"))).toBe(true);
 
+		// Both templates have to open with a comment. `.ts` is claimed by
+		// TypeScript and by Qt Linguist, and TypeScript is only recognised by
+		// magic at offset 0 — `/*`, `//`, `class` or `function`. Lead with
+		// `import` instead and a file manager shows a Linguist icon.
+		for (const name of ["schema.ts", "surqlize.config.ts"]) {
+			const contents = await readFile(join(fresh, name), "utf-8");
+			expect(
+				contents.startsWith("/*"),
+				`${name} must open with a comment`,
+			).toBe(true);
+		}
+
 		await rm(fresh, { recursive: true, force: true });
 	});
 });

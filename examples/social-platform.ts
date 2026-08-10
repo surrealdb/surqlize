@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/social-platform.ts
  *   bun sur migrate --schema examples/social-platform.ts
  */
-import { t, table } from "../src";
+import { t, table } from "surqlize";
 
 export const user = table("user", {
 	email: t.string().assert("string::is_email($value)"),

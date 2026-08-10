@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/social-network.ts
  *   bun sur migrate --schema examples/social-network.ts
  */
-import { edge, t, table } from "../src";
+import { edge, t, table } from "surqlize";
 
 export const user = table("user", {
 	uuid: t.uuid().default("rand::uuid::v7()"),

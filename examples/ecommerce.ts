@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/ecommerce.ts
  *   bun sur migrate --schema examples/ecommerce.ts
  */
-import { analyzer, sequence, t, table } from "../src";
+import { analyzer, sequence, t, table } from "surqlize";
 
 export const english = analyzer("english", {
 	tokenizers: ["blank", "class"],

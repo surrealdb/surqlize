@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/blog.ts
  *   bun sur migrate --schema examples/blog.ts
  */
-import { analyzer, edge, t, table } from "../src";
+import { analyzer, edge, t, table } from "surqlize";
 
 /** The analyzer the post search index refers to. */
 export const english = analyzer("english", {

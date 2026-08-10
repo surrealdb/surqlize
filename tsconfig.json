@@ -22,7 +22,11 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noPropertyAccessFromIndexSignature": false,
-		"noUncheckedIndexedAccess": true
+		"noUncheckedIndexedAccess": true,
+
+		// So `import … from "surqlize"` in examples/ resolves to the source here,
+		// while resolving through node_modules for anyone who copies one out.
+		"paths": { "surqlize": ["./src/index.ts"] }
 	},
 	"exclude": ["dist", "examples", "tests/smoke"]
 }

@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/minimal.ts
  *   bun sur migrate --schema examples/minimal.ts
  */
-import { t, table } from "../src";
+import { t, table } from "surqlize";
 
 export const task = table("task", {
 	title: t

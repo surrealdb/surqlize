@@ -54,6 +54,24 @@ describe("The published examples", () => {
 		expect(await applyTwice(definitions)).toEqual([]);
 	});
 
+	test("none reaches outside its own directory to import", async () => {
+		// An example is meant to be copied out and run. `../src` resolved fine
+		// in the repo and broke the moment the file moved, which is the one
+		// thing the convergence tests above cannot see.
+		const { readdir, readFile } = await import("node:fs/promises");
+		const here = new URL("../../examples/", import.meta.url).pathname;
+
+		for (const name of (await readdir(here)).filter((f) => f.endsWith(".ts"))) {
+			const source = await readFile(here + name, "utf-8");
+			const offending = [...source.matchAll(/from\s+"(\.\.[^"]*)"/g)];
+
+			expect(
+				offending.map((m) => m[1]),
+				`${name} imports outside itself`,
+			).toEqual([]);
+		}
+	});
+
 	test("each one actually defines something", async () => {
 		// A schema that exported nothing would converge trivially, so the test
 		// above would pass while proving nothing.
