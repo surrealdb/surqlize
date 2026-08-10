@@ -1,45 +1,44 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useData, useRoute } from 'vitepress';
+import { useRoute } from "vitepress";
+import { computed } from "vue";
 
 const route = useRoute();
-const { site } = useData();
 
 const breadcrumbs = computed(() => {
-  const path = route.path;
-  if (path === '/' || path === '/index.html') {
-    return [];
-  }
-  
-  const parts = path.split('/').filter(Boolean);
-  const crumbs: Array<{ label: string; link: string }> = [];
-  
-  // Add home
-  crumbs.push({ label: 'Home', link: '/' });
-  
-  // Build path parts
-  let currentPath = '';
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (part === 'index.html' || part.endsWith('.html')) {
-      continue;
-    }
-    
-    currentPath += '/' + part;
-    
-    // Convert slug to title
-    const label = part
-      .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-    
-    crumbs.push({ 
-      label,
-      link: currentPath + '/'
-    });
-  }
-  
-  return crumbs;
+	const path = route.path;
+	if (path === "/" || path === "/index.html") {
+		return [];
+	}
+
+	const parts = path.split("/").filter(Boolean);
+	const crumbs: Array<{ label: string; link: string }> = [];
+
+	// Add home
+	crumbs.push({ label: "Home", link: "/" });
+
+	// Build path parts
+	let currentPath = "";
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i];
+		if (part === "index.html" || part.endsWith(".html")) {
+			continue;
+		}
+
+		currentPath += `/${part}`;
+
+		// Convert slug to title
+		const label = part
+			.split("-")
+			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+			.join(" ");
+
+		crumbs.push({
+			label,
+			link: `${currentPath}/`,
+		});
+	}
+
+	return crumbs;
 });
 </script>
 

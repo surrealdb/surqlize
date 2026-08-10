@@ -488,6 +488,16 @@ applies to every duration in a statement, not just an access grant — a table's
 `CHANGEFEED 7d` had the same problem and nobody had noticed, because the tests
 happened to use durations that were already in normal form.
 
+### `noUnusedVariables` is off for `.vue` files
+
+Biome lints a single-file component's `<script>` block but does not parse its
+`<template>`, so anything declared for the template alone — `playing`,
+`onKeydown`, `breadcrumbs` — reads as unused. The suggested fix renames the
+symbol with an underscore, which breaks the component, so the rule is disabled
+for `**/*.vue` in `biome.json` rather than worked around per symbol.
+
+`biome.json` rejects comments, hence this note here.
+
 ### Mocking was removed rather than translated
 
 Six of smig's files used `vi.mock`. None was translated:

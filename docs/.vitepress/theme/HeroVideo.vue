@@ -10,7 +10,7 @@
  * was the reader's doing or the browser's: nothing starts on its own, so
  * nothing has to be second-guessed.
  */
-import { ref } from 'vue';
+import { ref } from "vue";
 
 const video = ref<HTMLVideoElement | null>(null);
 
@@ -19,18 +19,18 @@ const playing = ref(false);
 
 /** Click, Enter or Space toggles playback. */
 function toggle(): void {
-  const element = video.value;
-  if (!element) return;
+	const element = video.value;
+	if (!element) return;
 
-  // A rejected play() leaves the poster showing, which is the right fallback.
-  if (element.paused) void element.play().catch(() => {});
-  else element.pause();
+	// A rejected play() leaves the poster showing, which is the right fallback.
+	if (element.paused) void element.play().catch(() => {});
+	else element.pause();
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  event.preventDefault();
-  toggle();
+	if (event.key !== "Enter" && event.key !== " ") return;
+	event.preventDefault();
+	toggle();
 }
 </script>
 
