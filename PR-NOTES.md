@@ -100,6 +100,18 @@ a type error or silently overridden.
 Found by generating type expressions and running every one against a live
 SurrealDB 3.2. Pinned in `tests/integration/print-type.test.ts`.
 
+> These notes are the working record. **`SURREALDB-FINDINGS.md` is the tidied,
+> reproducible version written for the SurrealDB team**, backed by
+> `scripts/surreal-probe.ts` — 57 probes, none of which round-trip. Two claims
+> below were found to be imprecise while writing it and are corrected there:
+> function namespaces are backticked only in *some* namespaces (`rand::` yes,
+> `time::` no), and an event's `THEN` body is parenthesised only for *some*
+> statements (`UPDATE` yes, `RETURN` no).
+>
+> smig's `docs/SURREALDB_NORMALIZATION.md` predates 3.2 and eight of its
+> checkable claims no longer hold. It was used only as a list of things to
+> re-test, and nothing was copied from it.
+
 ### There is no `range<T>`
 
 `range<datetime>` is a parse error. SurrealDB ranges carry no element type and
