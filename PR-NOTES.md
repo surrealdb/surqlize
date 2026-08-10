@@ -411,9 +411,12 @@ and 26 of smig's 32 files used no Vitest-specific API at all.
 
 ### Definitions this branch does not cover
 
-smig can emit thirteen kinds of `DEFINE`; this branch emits ten. The gap is
-`CONFIG`, `MODEL` and `USER`, plus the JWT and BEARER forms of `ACCESS`.
-(smig's `SCOPE` is the 2.x spelling of `ACCESS` and is correctly gone.)
+smig can emit thirteen kinds of `DEFINE`; this branch emits twelve. The gap is
+`MODEL` and `USER`. (smig's `SCOPE` is the 2.x spelling of `ACCESS` and is
+correctly gone.)
+
+`CONFIG` and the JWT and BEARER forms of `ACCESS` were missing and have since
+been added — see "Access types and configs" below.
 
 An earlier draft of these notes gave reasons for each. Three of those reasons
 were wrong, and checking against a live 3.2 is what showed it — all of these
@@ -429,17 +432,49 @@ The accurate position:
 
 | Definition | Why it is missing |
 |---|---|
-| `CONFIG` | Nothing in the way. It reads back verbatim (`GRAPHQL TABLES AUTO FUNCTIONS AUTO`) and would converge as-is. Simply not ported. |
-| JWT / BEARER `ACCESS` | Nothing in the way. The key is redacted on read-back, exactly as it is for `RECORD` access — which *is* supported, by creating it when missing and then leaving it alone. The same treatment applies. |
-| `USER` | A password reads back as an argon2 `PASSHASH`, so a declared password can never equal the stored one. That is the `RECORD` access problem again and has the same answer. Worth a separate conversation about whether database credentials belong in a schema file in version control at all. |
+| `USER` | A password reads back as an argon2 `PASSHASH`, so a declared password can never equal the stored one. Deliberately left out: credentials do not belong in a schema file in version control. |
 | `MODEL` | The only one with a real obstacle. `DEFINE MODEL` uploads an ML model's bytes; they are not recoverable from `INFO`, and defining one is a file upload rather than a statement. |
-
-So three of the four are omissions rather than decisions, and adding them is
-mostly mechanical — each is a builder in `src/schema/ddl/entities.ts` plus an
-`EntityKind` and an `INFO FOR DB` key in `src/migrator/introspect.ts`.
 
 Two small CLI commands are also absent: smig's `generate` (a `plan` written to
 a file, which shell redirection covers) and `test` (a connection check).
+
+### Access types and configs
+
+`access()` now covers all three types, and `config()` covers `GRAPHQL` and
+`API`. Adding them turned up two things worth recording.
+
+**Not every access method is opaque.** The differ used to skip anything of kind
+`access`, because a `RECORD` method's signing key reads back as `'[REDACTED]'`
+and so can never match what was declared. That turns out to be too broad:
+
+```
+BEARER   DURATION FOR GRANT 4w2d, FOR TOKEN 1h, FOR SESSION NONE   ← nothing hidden
+JWT URL  URL 'https://issuer/.well-known/jwks.json'                ← nothing hidden
+JWT KEY  ALGORITHM HS512 KEY '[REDACTED]'                          ← hidden
+RECORD   … WITH JWT ALGORITHM HS512 KEY '[REDACTED]'               ← hidden
+```
+
+A `BEARER` access holds no secret at all, and a `JWT` access backed by a
+published key set holds only a URL. Both can be kept in sync like anything else.
+So the flag moved from the kind to the definition — `DatabaseEntity.opaque` —
+and each builder decides for itself. An asymmetric `JWT` key is an interesting
+middle case: `RS256` reports its public `KEY` in the clear and redacts only the
+issuer key, so it could be compared in part; it is treated as opaque for now.
+
+**Durations are stored decomposed.** This was found by a convergence test
+failing on a `BEARER` grant of `30d`:
+
+```
+declared  30d      stored  4w2d
+declared  90m      stored  1h30m
+declared  3600s    stored  1h
+declared  400d     stored  1y5w
+```
+
+A year is 365 days and a week is seven. The rule is in `canonical.ts` and
+applies to every duration in a statement, not just an access grant — a table's
+`CHANGEFEED 7d` had the same problem and nobody had noticed, because the tests
+happened to use durations that were already in normal form.
 
 ### Mocking was removed rather than translated
 

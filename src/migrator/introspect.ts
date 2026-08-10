@@ -29,6 +29,7 @@ interface DbInfo {
 	functions?: Record<string, string>;
 	sequences?: Record<string, string>;
 	accesses?: Record<string, string>;
+	configs?: Record<string, string>;
 }
 
 /** Which `INFO FOR DB` key holds each kind of definition. */
@@ -38,6 +39,7 @@ const ENTITY_KEYS: Record<EntityKind, keyof DbInfo> = {
 	function: "functions",
 	sequence: "sequences",
 	access: "accesses",
+	config: "configs",
 };
 
 /** The shape `INFO FOR TABLE` returns. */

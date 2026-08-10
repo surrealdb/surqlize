@@ -37,6 +37,7 @@ function database(
 			function: {},
 			sequence: {},
 			access: {},
+			config: {},
 		},
 	};
 }

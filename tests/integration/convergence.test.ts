@@ -6,6 +6,7 @@ import { introspect } from "../../src/migrator/introspect";
 import {
 	access,
 	analyzer,
+	config,
 	param,
 	sequence,
 	storedFunction,
@@ -183,6 +184,44 @@ describe("Convergence", () => {
 			}),
 			sequence("order_no"),
 			sequence("invoice_no", { start: 1000, batch: 50 }),
+		];
+
+		expect(await applyTwice(definitions)).toEqual([]);
+	});
+
+	test("configs", async () => {
+		const definitions = [
+			config("GRAPHQL", { tables: "AUTO", functions: "AUTO" }),
+			config("API", { permissions: "FULL" }),
+		];
+
+		expect(await applyTwice(definitions)).toEqual([]);
+	});
+
+	test("a graphql config naming its tables", async () => {
+		const user = table("user", { name: t.string() });
+		const post = table("post", { title: t.string() });
+
+		expect(
+			await applyTwice([
+				user,
+				post,
+				config("GRAPHQL", { tables: ["user", "post"], functions: "NONE" }),
+			]),
+		).toEqual([]);
+	});
+
+	test("bearer access, which hides nothing and so must converge", async () => {
+		// Unlike a record access, every duration is reported back, so the
+		// declared definition has to carry the ones SurrealDB fills in.
+		const definitions = [
+			access("grants_user", { type: "BEARER", for: "USER" }),
+			access("grants_record", { type: "BEARER", for: "RECORD" }),
+			access("grants_tuned", {
+				type: "BEARER",
+				for: "USER",
+				duration: { grant: "30d", session: "1h" },
+			}),
 		];
 
 		expect(await applyTwice(definitions)).toEqual([]);

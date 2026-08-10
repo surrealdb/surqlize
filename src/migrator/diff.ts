@@ -443,10 +443,12 @@ function diffEntity(
 		};
 	}
 
-	// An access method's signing key is reported as '[REDACTED]', so its stored
-	// form can never match what was declared. Creating it when absent is safe;
-	// re-applying it on every run would rotate the key each time.
-	if (entity.kind === "access") return null;
+	// Some definitions hide a secret when read back, so their stored form can
+	// never match what was declared. Creating one when absent is safe;
+	// re-applying it on every run would rotate the secret each time. The
+	// definition says whether it is one of those — a BEARER access and a JWT
+	// access backed by a published key set both compare fine.
+	if (entity.opaque) return null;
 	if (same(entity.define(), existing)) return null;
 
 	return {

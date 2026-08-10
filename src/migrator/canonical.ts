@@ -13,6 +13,70 @@
  * failing test rather than a migration that never converges.
  */
 
+/**
+ * Duration units, largest first, in nanoseconds.
+ *
+ * A year is 365 days and a week is 7 — `400d` reads back as `1y5w`. The
+ * arithmetic is in `BigInt` because a year in nanoseconds is 3.15e16, past
+ * what a JavaScript number holds exactly.
+ */
+const DURATION_UNITS: [string, bigint][] = [
+	["y", 365n * 24n * 3600n * 1_000_000_000n],
+	["w", 7n * 24n * 3600n * 1_000_000_000n],
+	["d", 24n * 3600n * 1_000_000_000n],
+	["h", 3600n * 1_000_000_000n],
+	["m", 60n * 1_000_000_000n],
+	["s", 1_000_000_000n],
+	["ms", 1_000_000n],
+	["us", 1_000n],
+	["ns", 1n],
+];
+
+/** One `<number><unit>` pair. Longer units first, so `ms` beats `m`. */
+const DURATION_PART = /(\d+)(ns|µs|us|ms|[ywdhms])/g;
+
+/** A whole duration literal: one or more parts run together, e.g. `1h30m`. */
+const DURATION = /\b(?:\d+(?:ns|µs|us|ms|[ywdhms]))+\b/g;
+
+/**
+ * Re-express a duration the way SurrealDB stores it.
+ *
+ * It decomposes whatever it is given into years, weeks, days and so on, so
+ * `30d` comes back as `4w2d` and `90m` as `1h30m`. Comparing the two forms
+ * without this leaves anything carrying a duration — an access grant, a table's
+ * changefeed — looking modified on every run.
+ */
+function normaliseDuration(text: string): string {
+	let total = 0n;
+	let matched = false;
+
+	DURATION_PART.lastIndex = 0;
+	for (const part of text.matchAll(DURATION_PART)) {
+		const unit = part[2] === "µs" ? "us" : part[2];
+		const size = DURATION_UNITS.find(([name]) => name === unit)?.[1];
+		if (size === undefined) return text;
+
+		total += BigInt(part[1] as string) * size;
+		matched = true;
+	}
+
+	if (!matched) return text;
+	if (total === 0n) return "0ns";
+
+	let rest = total;
+	let out = "";
+
+	for (const [unit, size] of DURATION_UNITS) {
+		const count = rest / size;
+		if (count > 0n) {
+			out += `${count}${unit}`;
+			rest -= count * size;
+		}
+	}
+
+	return out;
+}
+
 /** Clauses that can follow a field's type, marking where the type ends. */
 const AFTER_TYPE =
 	/\s+(FLEXIBLE|DEFAULT|VALUE|READONLY|REFERENCE|ASSERT|PERMISSIONS|COMMENT)\b/i;
@@ -23,6 +87,9 @@ const RULES: [RegExp, string][] = [
 	[/\bON\s+TABLE\s+/gi, "ON "],
 	// OVERWRITE says how a statement is applied, not what it defines
 	[/\bDEFINE\s+(FIELD|TABLE)\s+OVERWRITE\s+/gi, "DEFINE $1 "],
+	// A config is reported without its keyword: `DEFINE CONFIG GRAPHQL TABLES
+	// AUTO` reads back as `GRAPHQL TABLES AUTO`. Stripped from both sides.
+	[/^DEFINE\s+CONFIG\s+(OVERWRITE\s+)?/i, ""],
 	// SurrealDB backticks identifiers when it stores them — function namespaces
 	// (`rand`::uuid::v7()) and any field whose name is a reserved word (`by`).
 	// Applied to both sides, so a genuine backtick inside a string literal would
@@ -64,6 +131,9 @@ export function canonicalise(statement: string): string {
 	for (const [pattern, replacement] of RULES) {
 		result = result.replace(pattern, replacement);
 	}
+
+	// Durations are stored decomposed, whatever form they were written in.
+	result = result.replace(DURATION, normaliseDuration);
 
 	// COMMENT and PERMISSIONS are written in either order but stored in one, so
 	// both are lifted out and re-appended in a fixed position.

@@ -108,6 +108,47 @@ describe("Spelling differences that mean nothing", () => {
 		).toBe(true);
 	});
 
+	test("a duration is stored decomposed, however it was written", () => {
+		// 30d reads back as 4w2d, 90m as 1h30m, 400d as 1y5w — a year being 365
+		// days and a week seven.
+		const pairs: [string, string][] = [
+			["30d", "4w2d"],
+			["7d", "1w"],
+			["90d", "12w6d"],
+			["90m", "1h30m"],
+			["3600s", "1h"],
+			["5000ms", "5s"],
+			["400d", "1y5w"],
+		];
+
+		for (const [written, stored] of pairs) {
+			expect(
+				equivalent(
+					`DEFINE ACCESS a ON DATABASE TYPE BEARER FOR USER DURATION FOR GRANT ${written}`,
+					`DEFINE ACCESS a ON DATABASE TYPE BEARER FOR USER DURATION FOR GRANT ${stored}`,
+				),
+			).toBe(true);
+		}
+	});
+
+	test("durations that differ are still different", () => {
+		expect(
+			equivalent(
+				"DEFINE TABLE t TYPE NORMAL SCHEMAFULL CHANGEFEED 1d",
+				"DEFINE TABLE t TYPE NORMAL SCHEMAFULL CHANGEFEED 2d",
+			),
+		).toBe(false);
+	});
+
+	test("a config is stored without its DEFINE CONFIG keyword", () => {
+		expect(
+			equivalent(
+				"DEFINE CONFIG GRAPHQL TABLES AUTO FUNCTIONS AUTO;",
+				"GRAPHQL TABLES AUTO FUNCTIONS AUTO",
+			),
+		).toBe(true);
+	});
+
 	test("a trailing semicolon is not part of the definition", () => {
 		expect(canonicalise("DEFINE TABLE t TYPE NORMAL SCHEMAFULL;")).toBe(
 			canonicalise("DEFINE TABLE t TYPE NORMAL SCHEMAFULL"),

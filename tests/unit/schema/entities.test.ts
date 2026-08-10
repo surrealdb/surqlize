@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	access,
 	analyzer,
+	config,
 	param,
 	sequence,
 	storedFunction,
@@ -132,6 +133,96 @@ describe("DEFINE ACCESS", () => {
 	});
 });
 
+describe("DEFINE ACCESS, other types", () => {
+	test("JWT verifies with an algorithm and a key", () => {
+		const sql = access("api", {
+			type: "JWT",
+			algorithm: "RS256",
+			key: "public",
+			issuerKey: "private",
+		}).define();
+
+		expect(sql).toContain("TYPE JWT ALGORITHM RS256");
+		expect(sql).toContain("KEY 'public'");
+		expect(sql).toContain("WITH ISSUER KEY 'private'");
+	});
+
+	test("JWT defaults to HS512 when no algorithm is named", () => {
+		expect(access("api", { type: "JWT", key: "s" }).define()).toContain(
+			"ALGORITHM HS512",
+		);
+	});
+
+	test("a key set replaces the algorithm rather than joining it", () => {
+		const sql = access("api", {
+			type: "JWT",
+			url: "https://issuer/.well-known/jwks.json",
+		}).define();
+
+		expect(sql).toContain("URL 'https://issuer/.well-known/jwks.json'");
+		expect(sql).not.toContain("ALGORITHM");
+	});
+
+	test("BEARER names what a grant authenticates", () => {
+		expect(access("g", { type: "BEARER", for: "USER" }).define()).toContain(
+			"TYPE BEARER FOR USER",
+		);
+		expect(access("g", { type: "BEARER", for: "RECORD" }).define()).toContain(
+			"TYPE BEARER FOR RECORD",
+		);
+	});
+
+	test("BEARER emits every duration SurrealDB would fill in", () => {
+		// It reports all three back, so a definition that stated none would look
+		// modified on every run.
+		expect(access("g", { type: "BEARER", for: "USER" }).define()).toContain(
+			"DURATION FOR GRANT 4w2d, FOR TOKEN 1h, FOR SESSION NONE",
+		);
+	});
+
+	test("only the types that hide a secret are opaque", () => {
+		// Opaque means "created when missing, then never compared".
+		expect(access("r", { signin: "SELECT 1" }).opaque).toBe(true);
+		expect(access("j", { type: "JWT", key: "s" }).opaque).toBe(true);
+		expect(access("u", { type: "JWT", url: "https://x" }).opaque).toBe(false);
+		expect(access("b", { type: "BEARER", for: "USER" }).opaque).toBe(false);
+	});
+});
+
+describe("DEFINE CONFIG", () => {
+	test("GraphQL exposes everything by default", () => {
+		expect(config("GRAPHQL").define()).toBe(
+			"DEFINE CONFIG GRAPHQL TABLES AUTO FUNCTIONS AUTO;",
+		);
+	});
+
+	test("a named list becomes INCLUDE", () => {
+		expect(
+			config("GRAPHQL", {
+				tables: ["user", "post"],
+				functions: "NONE",
+			}).define(),
+		).toBe("DEFINE CONFIG GRAPHQL TABLES INCLUDE user, post FUNCTIONS NONE;");
+	});
+
+	test("API carries its permissions", () => {
+		expect(config("API", { permissions: "FULL" }).define()).toBe(
+			"DEFINE CONFIG API PERMISSIONS FULL;",
+		);
+	});
+
+	test("is keyed the way INFO FOR DB reports it, not the way it is written", () => {
+		// The statement says GRAPHQL; the key is GraphQL.
+		expect(config("GRAPHQL").name).toBe("GRAPHQL");
+		expect(config("GRAPHQL").key).toBe("GraphQL");
+		expect(config("API").key).toBe("API");
+	});
+
+	test("removes with the keyword, not the key", () => {
+		expect(config("GRAPHQL").remove()).toBe("REMOVE CONFIG GRAPHQL;");
+	});
+});
+
 describe("Every entity", () => {
 	const entities = [
 		analyzer("a", { tokenizers: ["blank"] }),
@@ -139,6 +230,7 @@ describe("Every entity", () => {
 		storedFunction("f", { body: "RETURN 1;" }),
 		sequence("s"),
 		access("ac", { signin: "SELECT 1" }),
+		config("GRAPHQL"),
 	];
 
 	test("requests OVERWRITE rather than implying it", () => {
