@@ -1,0 +1,199 @@
+/**
+ * Surqlize theme.
+ *
+ * The site is dark only (`appearance: "force-dark"`), so there is one palette
+ * rather than two. Every colour pairing below was checked against WCAG on the
+ * dark background — the ratios are recorded so a later tweak can be judged
+ * rather than guessed at.
+ *
+ * No gradients anywhere: flat fills, hairline borders and space do the work.
+ */
+
+:root {
+  --vp-nav-logo-height: 35px;
+
+  /* Brand
+   *
+   * #2ee096  logo green — 9.99:1 on #1b1b1f. Text: the hero name and links.
+   * #d255fe  SurrealDB purple — solid fills, chiefly buttons.
+   * #4f72ea  logo blue — 4.03:1, which is AA for large text and UI only, so
+   *          borders and accents rather than body copy. Unused at the moment;
+   *          kept because it is part of the palette and the ratio above is the
+   *          thing that would otherwise have to be worked out again.
+   */
+  --sur-green: #2ee096;
+  --sur-green-light: #6cecbb;
+  --sur-purple: #d255fe;
+  --sur-purple-light: #de7dff;
+  --sur-purple-dark: #b93fe2;
+  --sur-blue: #4f72ea;
+  --sur-ink: #0b0b0d;
+
+  --vp-c-brand-1: var(--sur-green);
+  --vp-c-brand-2: var(--sur-green-light);
+  --vp-c-brand-3: var(--sur-purple);
+  --vp-c-brand-soft: rgba(46, 224, 150, 0.14);
+
+  /* Buttons are purple with a near-black label.
+   *
+   * White on #d255fe is 3.25:1. A VitePress button is 14px at weight 600, which
+   * is normal-size text under WCAG, so the bar is 4.5:1 — white misses it.
+   * #0b0b0d gives 6.06:1 and keeps the brand colour exactly as specified.
+   * (White would need the fill darkened to about #b52fdd, which is no longer
+   * the brand purple.) */
+  --vp-button-brand-bg: var(--sur-purple);
+  --vp-button-brand-text: var(--sur-ink);
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-bg: var(--sur-purple-light);
+  --vp-button-brand-hover-text: var(--sur-ink);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-active-bg: var(--sur-purple-dark);
+  --vp-button-brand-active-text: var(--sur-ink);
+  --vp-button-brand-active-border: transparent;
+
+  --vp-home-hero-name-color: var(--sur-green);
+
+  --vp-c-tip-1: var(--sur-green);
+  --vp-c-tip-soft: rgba(46, 224, 150, 0.14);
+}
+
+/* ---------------------------------------------------------------------------
+ * Hero video column
+ *
+ * The default hero image slot is built around a square badge: a fixed 320px
+ * box, a decorative disc behind it, and a translate that lifts it clear of
+ * that disc. None of it suits a 16:9 video.
+ *
+ * The vertical centring is kept, though — it comes from `.image-container`
+ * being full height with `align-items: center`, which is exactly what makes
+ * the video line up with the copy beside it.
+ * ------------------------------------------------------------------------- */
+
+/* Stacked, the column comes *first* — the default theme gives it `order: 1`
+ * so the picture leads on a narrow screen. The negative margins that tucked
+ * the square badge upwards would crop a video, but a top margin here would
+ * stack on the hero's own padding and leave nothing between the video and the
+ * heading below it. The space belongs underneath. */
+.VPHero .image {
+  margin: 0 0 2rem;
+}
+
+.VPHero .image-container {
+  width: 100%;
+  height: auto;
+  transform: none;
+}
+
+/* The decorative disc has no artwork behind it here. */
+.VPHero .image-bg {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  .VPHero .image {
+    margin: 0;
+  }
+
+  /* Full height is what gives `align-items: center` something to centre
+   * within, so the video sits level with the heading and buttons. */
+  .VPHero .image-container {
+    height: 100%;
+    transform: none;
+  }
+
+  /* A little more of the row than the square badge needed. */
+  .VPHero.has-image .main {
+    max-width: 544px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Closing call to action
+ *
+ * The features run long on a narrow screen, and the page used to stop dead at
+ * the end of them — leaving a reader who had just read the whole argument with
+ * nowhere to go but back up.
+ *
+ * Several rules are scoped through `.vp-doc` on purpose: it styles every link
+ * and heading inside the content column, and a bare class loses to it. Without
+ * that, the buttons come out underlined and the heading keeps a rule above it.
+ * ------------------------------------------------------------------------- */
+
+.sur-cta {
+  /* Clear of the feature grid, whose rows sit 24px apart — at that distance
+   * the banner reads as one more row rather than a change of gear. */
+  margin: 3rem 0 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+  background: var(--vp-c-bg-soft);
+}
+
+@media (min-width: 640px) {
+  .sur-cta {
+    margin-top: 4rem;
+    padding: 4.5rem 2rem;
+  }
+}
+
+.VPHome .vp-doc .sur-cta h2 {
+  margin: 0 auto 1rem;
+  border-top: 0;
+  padding-top: 0;
+  max-width: 20ch;
+  font-size: clamp(1.6rem, 3.2vw, 2.25rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.VPHome .vp-doc .sur-cta p {
+  margin: 0 auto 2.25rem;
+  max-width: 34rem;
+  color: var(--vp-c-text-2);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+.sur-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.VPHome .vp-doc .sur-btn {
+  display: inline-block;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  padding: 0 22px;
+  line-height: 38px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background-color 0.25s,
+    border-color 0.25s;
+}
+
+/* Near-black on the brand purple: 6.06:1. White would be 3.25:1 and fail. */
+.VPHome .vp-doc .sur-btn.is-primary {
+  background: var(--sur-purple);
+  color: var(--sur-ink);
+}
+
+.VPHome .vp-doc .sur-btn.is-primary:hover {
+  background: var(--sur-purple-light);
+}
+
+.VPHome .vp-doc .sur-btn.is-ghost {
+  border-color: var(--vp-c-divider);
+  color: var(--vp-c-text-1);
+}
+
+.VPHome .vp-doc .sur-btn.is-ghost:hover {
+  border-color: var(--sur-green);
+  color: var(--vp-c-text-1);
+}
+

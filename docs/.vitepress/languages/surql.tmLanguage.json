@@ -1,0 +1,200 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SurrealQL",
+  "scopeName": "source.surql",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#variables" },
+    { "include": "#record-ids" },
+    { "include": "#functions" },
+    { "include": "#operators" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#constants" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.surql",
+          "match": "--.*$"
+        },
+        {
+          "name": "comment.line.double-slash.surql",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.surql",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.surql",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.surql",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.surql",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.surql",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.backtick.surql",
+          "begin": "`",
+          "end": "`"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.surql",
+          "match": "\\b\\d+\\.\\d+([eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.surql",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.surql",
+          "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    },
+    "record-ids": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.record-id.surql",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z0-9_⟨⟩]+\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.surql",
+          "match": "\\b(array|count|crypto|duration|encoding|geo|http|math|meta|object|parse|rand|search|session|sleep|string|time|type|vector)::([a-zA-Z_][a-zA-Z0-9_]*)\\b"
+        },
+        {
+          "name": "entity.name.function.surql",
+          "match": "\\bfn::[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.surql",
+          "match": "(==|!=|<=|>=|<|>|\\?=|\\*=|~|!~|\\?~|\\*~|@@)"
+        },
+        {
+          "name": "keyword.operator.logical.surql",
+          "match": "\\b(AND|OR|NOT|IS|IN|CONTAINS|CONTAINSALL|CONTAINSANY|CONTAINSNONE|INSIDE|OUTSIDE|INTERSECTS|ALLINSIDE|ANYINSIDE|NONEINSIDE)\\b"
+        },
+        {
+          "name": "keyword.operator.assignment.surql",
+          "match": "(\\+=|-=|=)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.surql",
+          "match": "(\\+|-|\\*|/|%|\\^)"
+        },
+        {
+          "name": "keyword.operator.arrow.surql",
+          "match": "(->|<-|<->)"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.surql",
+          "match": "\\b(SELECT|FROM|WHERE|ORDER|BY|LIMIT|START|AT|GROUP|SPLIT|FETCH|TIMEOUT|PARALLEL|EXPLAIN)\\b"
+        },
+        {
+          "name": "keyword.control.surql",
+          "match": "\\b(CREATE|INSERT|UPDATE|UPSERT|DELETE|RELATE|MERGE|PATCH|CONTENT|SET|UNSET|RETURN)\\b"
+        },
+        {
+          "name": "keyword.other.define.surql",
+          "match": "\\b(DEFINE|REMOVE|ALTER|INFO|USE|LET|BEGIN|COMMIT|CANCEL|BREAK|CONTINUE|THROW|IF|ELSE|THEN|END|FOR|WHILE|LOOP)\\b"
+        },
+        {
+          "name": "keyword.other.entity.surql",
+          "match": "\\b(NAMESPACE|DATABASE|TABLE|FIELD|INDEX|EVENT|FUNCTION|ANALYZER|ACCESS|USER|PARAM|SEQUENCE|MODEL|CONFIG)\\b"
+        },
+        {
+          "name": "keyword.other.modifier.surql",
+          "match": "\\b(ON|TYPE|VALUE|DEFAULT|ASSERT|READONLY|FLEXIBLE|PERMISSIONS|COMMENT|OVERWRITE|COLUMNS|FIELDS|UNIQUE|FULLTEXT|SEARCH|MTREE|HNSW|DIMENSION|DIST|CAPACITY|EFC|WHEN|RENAME|TO|AS|ONLY|OMIT)\\b"
+        },
+        {
+          "name": "keyword.other.access.surql",
+          "match": "\\b(RECORD|JWT|BEARER|SIGNUP|SIGNIN|AUTHENTICATE|DURATION|SESSION|TOKEN|ALGORITHM|KEY|URL|ISSUER|WITH)\\b"
+        },
+        {
+          "name": "keyword.other.table.surql",
+          "match": "\\b(SCHEMAFULL|SCHEMALESS|DROP|CHANGEFEED|INCLUDE|ORIGINAL|ENFORCED|RELATION|NORMAL|ANY|VIEW)\\b"
+        },
+        {
+          "name": "keyword.other.index.surql",
+          "match": "\\b(ANALYZER|BM25|HIGHLIGHTS|COSINE|EUCLIDEAN|MANHATTAN|MINKOWSKI|CHEBYSHEV|HAMMING|JACCARD|PEARSON|TOKENIZERS|FILTERS|CONCURRENTLY)\\b"
+        },
+        {
+          "name": "keyword.other.misc.surql",
+          "match": "\\b(AFTER|BEFORE|DIFF|LIVE|SHOW|CHANGES|SINCE|REBUILD|SLEEP|FULL|NONE|NULL)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.surql",
+          "match": "\\b(string|int|float|decimal|number|bool|datetime|duration|uuid|ulid|bytes|object|array|set|record|option|geometry|any|null)\\b"
+        },
+        {
+          "name": "storage.type.geometry.surql",
+          "match": "\\b(point|line|polygon|multipoint|multiline|multipolygon|collection)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.surql",
+          "match": "\\b(true|false|TRUE|FALSE)\\b"
+        },
+        {
+          "name": "constant.language.null.surql",
+          "match": "\\b(NONE|NULL|none|null)\\b"
+        },
+        {
+          "name": "variable.language.surql",
+          "match": "\\b(\\$this|\\$parent|\\$after|\\$before|\\$value|\\$input|\\$auth|\\$session|\\$scope|\\$token)\\b"
+        }
+      ]
+    }
+  }
+}
+

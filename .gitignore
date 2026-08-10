@@ -4,6 +4,12 @@ node_modules/
 # Build output
 dist/
 
+# VitePress. `dist/` above already matches the first of these at any depth, but
+# both are named so narrowing that rule later cannot quietly start committing
+# a build.
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Logs
 *.log
 

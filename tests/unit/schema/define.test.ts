@@ -83,6 +83,37 @@ describe("DEFINE TABLE", () => {
 		expect(sql).toContain("COMMENT 'Rollup'");
 	});
 
+	test("a per-operation permission rule is introduced with WHERE", () => {
+		// SurrealDB rejects a bare condition with "expected 'NONE', 'FULL', or
+		// 'WHERE'". The examples caught this; nothing else was passing an
+		// expression rather than FULL or NONE.
+		const sql = defineTable(
+			table("order", {}).permissions({
+				select: "$auth.id = customer",
+				create: "$auth.id != NONE",
+				update: "FULL",
+				delete: "NONE",
+			}),
+		);
+
+		expect(sql).toContain("FOR select WHERE $auth.id = customer");
+		expect(sql).toContain("FOR create WHERE $auth.id != NONE");
+		expect(sql).toContain("FOR update FULL");
+		expect(sql).toContain("FOR delete NONE");
+	});
+
+	test("a rule that already says WHERE is not given a second one", () => {
+		expect(
+			defineTable(table("t", {}).permissions({ select: "WHERE $auth" })),
+		).toContain("FOR select WHERE $auth");
+	});
+
+	test("a single rule for everything is passed through as written", () => {
+		expect(defineTable(table("t", {}).permissions("NONE"))).toContain(
+			"PERMISSIONS NONE",
+		);
+	});
+
 	test("OVERWRITE is requested, not implied", () => {
 		expect(defineTable(table("user", {}))).not.toContain("OVERWRITE");
 		expect(defineTable(table("user", {}), { overwrite: true })).toContain(

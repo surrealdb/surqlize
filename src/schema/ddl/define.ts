@@ -225,9 +225,25 @@ function permissions(rules: TablePermissions): string {
 
 	const clauses = Object.entries(rules)
 		.filter(([, rule]) => rule !== undefined)
-		.map(([operation, rule]) => `FOR ${operation} ${rule}`);
+		.map(([operation, rule]) => `FOR ${operation} ${guard(rule as string)}`);
 
 	return clauses.length ? `PERMISSIONS ${clauses.join(", ")}` : "";
+}
+
+/**
+ * A permission rule, introduced the way SurrealQL needs it.
+ *
+ * `FULL` and `NONE` stand alone; anything else is a condition and must follow
+ * `WHERE`. Without it the statement is rejected with "expected 'NONE', 'FULL',
+ * or 'WHERE'" — a mistake worth not leaving to the caller, since a rule reads
+ * as a condition and so should be allowed to be written as one.
+ */
+function guard(rule: string): string {
+	const trimmed = rule.trim();
+	if (/^(FULL|NONE)$/i.test(trimmed)) return trimmed.toUpperCase();
+	if (/^WHERE\b/i.test(trimmed)) return trimmed;
+
+	return `WHERE ${trimmed}`;
 }
 
 /** Render a table name, or a union of them, for an edge's `IN`/`OUT`. */
