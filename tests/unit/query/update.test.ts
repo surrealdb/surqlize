@@ -11,6 +11,26 @@ describe("UPDATE queries", () => {
 
 	const db = orm(new Surreal(), user);
 
+	test("folds unset() into the SET clause instead of emitting both", () => {
+		// `SET a = 1 UNSET b` is a parse error in SurrealQL — an UPDATE takes one
+		// data clause or the other. Clearing a field from inside a SET is `= NONE`.
+		const query = db.update("user").set({ age: 30 }).unset(["email"]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).not.toContain("UNSET");
+		expect(result).toContain("email = NONE");
+		expect(result).toMatch(/SET age = \$_v\d+, email = NONE/);
+	});
+
+	test("unset() on its own still emits an UNSET clause", () => {
+		const query = db.update("user").unset(["email", "name"]);
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toBe("(UPDATE $_v0 UNSET email, name)");
+	});
+
 	test("generates bulk UPDATE with SET", () => {
 		const query = db.update("user").set({
 			age: 30,

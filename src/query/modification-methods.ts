@@ -130,24 +130,38 @@ export function applyReplace(state: ModificationState, data: unknown): void {
 	state._replace = data;
 }
 
+/**
+ * Render the SET / UNSET data clause.
+ *
+ * An UPDATE takes *either* a SET clause or an UNSET clause — `SET a = 1 UNSET b`
+ * is a parse error ("Unexpected token `UNSET`"). So when a query uses both, the
+ * unsets are folded into the SET clause as `field = NONE`, which is how you
+ * clear a field from inside a SET and is what SurrealDB stores for an absent
+ * `option<T>` anyway.
+ *
+ * `.unset()` on its own still emits a real UNSET clause.
+ */
 function displaySetUnsetClause(
 	state: ModificationState,
 	ctx: DisplayContext,
 ): string {
-	const parts: string[] = [];
+	const unset = state._unset ?? [];
+	const assignments = state._set ? generateSetAssignments(state._set, ctx) : [];
 
-	if (state._set) {
-		const assignments = generateSetAssignments(state._set, ctx);
-		if (assignments.length > 0) {
-			parts.push(`SET ${assignments.join(", ")}`);
+	if (assignments.length > 0) {
+		// NONE is a literal, not a bound value: a parameter bound to `undefined`
+		// is omitted from the payload entirely, which is a different thing.
+		for (const path of unset) {
+			assignments.push(`${escapeIdiomPath(path)} = NONE`);
 		}
+		return ` SET ${assignments.join(", ")}`;
 	}
 
-	if (state._unset && state._unset.length > 0) {
-		parts.push(`UNSET ${state._unset.map(escapeIdiomPath).join(", ")}`);
+	if (unset.length > 0) {
+		return ` UNSET ${unset.map(escapeIdiomPath).join(", ")}`;
 	}
 
-	return parts.length > 0 ? ` ${parts.join(" ")}` : "";
+	return "";
 }
 
 // Helper function to generate modification clause SQL
