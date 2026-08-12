@@ -279,36 +279,78 @@ export function equivalent(a: string, b: string): boolean {
 }
 
 /**
- * Rewrite `option<T>` as `none | T` wherever it appears in a type expression.
+ * Rewrite a type expression the way SurrealDB stores it.
  *
- * This is how SurrealDB stores optionality, at every level of nesting:
+ * Two rewrites, both applied at every level of nesting:
+ *
+ * `option<T>` becomes `none | T`, which is how optionality is stored:
  * `option<array<option<record<user>>>>` comes back as
  * `none | array<none | record<user>>`.
+ *
+ * `array<any>` becomes `array`, and `set<any>` becomes `set`. `any` is the
+ * default element type, so naming it is redundant and SurrealDB drops it — the
+ * same treatment it gives any other stated default. A length parameter is not
+ * redundant, so `array<any, 5>` is left alone.
+ *
+ * Without the second rewrite a `t.array(t.any())` field never converges: the
+ * schema says `array<any>`, the database says `array`, and every plan redefines
+ * it forever.
  */
 export function normaliseTypeExpression(expression: string): string {
 	let out = "";
 	let i = 0;
 
 	while (i < expression.length) {
-		if (!expression.startsWith("option<", i)) {
-			out += expression[i];
-			i += 1;
+		if (expression.startsWith("option<", i)) {
+			const open = i + "option".length;
+			const close = matchAngleBracket(expression, open);
+			if (close === -1) {
+				// Unbalanced; leave the rest alone rather than corrupt it
+				out += expression.slice(i);
+				break;
+			}
+			out += `none | ${normaliseTypeExpression(expression.slice(open + 1, close))}`;
+			i = close + 1;
 			continue;
 		}
 
-		const open = i + "option".length;
-		const close = matchAngleBracket(expression, open);
-		if (close === -1) {
-			// Unbalanced; leave the rest alone rather than corrupt it
-			out += expression.slice(i);
-			break;
+		const collection = collectionAt(expression, i);
+
+		if (collection) {
+			const open = i + collection.length;
+			const close = matchAngleBracket(expression, open);
+			if (close === -1) {
+				out += expression.slice(i);
+				break;
+			}
+			out += collapseElement(
+				collection,
+				normaliseTypeExpression(expression.slice(open + 1, close)),
+			);
+			i = close + 1;
+			continue;
 		}
 
-		out += `none | ${normaliseTypeExpression(expression.slice(open + 1, close))}`;
-		i = close + 1;
+		out += expression[i];
+		i += 1;
 	}
 
 	return out;
+}
+
+/** `array` or `set` if one opens at `index`, otherwise null. */
+function collectionAt(expression: string, index: number): string | null {
+	if (expression.startsWith("array<", index)) return "array";
+	if (expression.startsWith("set<", index)) return "set";
+	return null;
+}
+
+/**
+ * `array<any>` → `array`, because `any` is the element type SurrealDB assumes
+ * and so drops. A length parameter still carries meaning and is left alone.
+ */
+function collapseElement(collection: string, inner: string): string {
+	return inner.trim() === "any" ? collection : `${collection}<${inner}>`;
 }
 
 /** Index of the `>` matching the `<` at `openIndex`, or -1 if unbalanced. */

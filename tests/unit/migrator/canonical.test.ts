@@ -350,4 +350,43 @@ describe("Genuine differences survive", () => {
 			),
 		).toBe(false);
 	});
+
+	describe("redundant `any` element types", () => {
+		test("collapses array<any> the way SurrealDB stores it", () => {
+			// `any` is the default element type, so naming it is redundant and
+			// the server drops it. Without this the field never converges.
+			expect(normaliseTypeExpression("array<any>")).toBe("array");
+			expect(normaliseTypeExpression("set<any>")).toBe("set");
+		});
+
+		test("keeps a length parameter, which is not redundant", () => {
+			expect(normaliseTypeExpression("array<any, 5>")).toBe("array<any, 5>");
+		});
+
+		test("keeps a real element type", () => {
+			expect(normaliseTypeExpression("array<string>")).toBe("array<string>");
+			expect(normaliseTypeExpression("array<record<user>>")).toBe(
+				"array<record<user>>",
+			);
+		});
+
+		test("collapses inside option, which nests both rewrites", () => {
+			expect(normaliseTypeExpression("option<array<any>>")).toBe(
+				"none | array",
+			);
+		});
+
+		test("collapses when nested in another collection", () => {
+			expect(normaliseTypeExpression("array<array<any>>")).toBe("array<array>");
+		});
+
+		test("a declared array<any> equals a stored array", () => {
+			expect(
+				equivalent(
+					"DEFINE FIELD taxes ON quote TYPE array<any> DEFAULT []",
+					"DEFINE FIELD taxes ON quote TYPE array DEFAULT []",
+				),
+			).toBe(true);
+		});
+	});
 });
