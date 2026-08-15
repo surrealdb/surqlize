@@ -289,14 +289,36 @@ function diffFields(
 		}
 	}
 
-	const declaredNames = new Set(fields.map((f) => storedName(f.name)));
-
 	if (!options.removeMissing) return changes;
+
+	const declaredNames = new Set(fields.map((f) => storedName(f.name)));
+	changes.push(
+		...removeUndeclaredFields(schema, current, declaredNames, renamedFrom),
+	);
+
+	return changes;
+}
+
+/**
+ * The fields the database has and the schema does not claim.
+ *
+ * Not everything unclaimed is drift: SurrealDB creates an element field for
+ * every array, and defines `in`/`out` on a relation and `id` everywhere. All of
+ * those are absent from the declared set by design, and removing them is either
+ * pointless or destructive.
+ */
+function removeUndeclaredFields(
+	schema: DefinableSchema,
+	current: CurrentTable,
+	declaredNames: Set<string>,
+	renamedFrom: Set<string>,
+): Change[] {
+	const changes: Change[] = [];
 
 	for (const [name, stored] of Object.entries(current.fields)) {
 		if (declaredNames.has(name) || renamedFrom.has(name)) continue;
-		// SurrealDB creates an element field for every array; it is not drift.
 		if (isArrayElement(name, declaredNames)) continue;
+		if (isDatabaseOwned(name, schema)) continue;
 
 		changes.push({
 			kind: "field.remove",
@@ -359,6 +381,20 @@ function renameSource(field: FlatField, current: CurrentTable): string | null {
 }
 
 /** Whether `name` is the element field SurrealDB adds for a declared array. */
+/**
+ * Whether SurrealDB owns this field rather than the schema.
+ *
+ * `definableFields` excludes `in`/`out` on a relation and the injected `id`,
+ * because emitting a `DEFINE` for them is either rejected or redundant. That
+ * leaves them out of the declared set too, so without this they read as drift —
+ * and `--remove-missing` offers to strip the endpoints off every edge in the
+ * database, which no re-run of the migration puts back.
+ */
+function isDatabaseOwned(name: string, schema: DefinableSchema): boolean {
+	if (name === "id") return true;
+	return schema instanceof EdgeSchema && (name === "in" || name === "out");
+}
+
 function isArrayElement(name: string, declared: Set<string>): boolean {
 	const marker = name.indexOf(".*");
 	if (marker === -1) return false;

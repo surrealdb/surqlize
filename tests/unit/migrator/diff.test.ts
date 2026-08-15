@@ -377,6 +377,54 @@ describe("Edges", () => {
 		expect(result.up.join("\n")).not.toContain("DEFINE FIELD in");
 		expect(result.up.join("\n")).not.toContain("DEFINE FIELD out");
 	});
+
+	test("never offer to remove in and out", () => {
+		// SurrealDB defines the endpoints itself, so they are reported by
+		// `INFO FOR TABLE` while the schema does not declare them. Reading that
+		// as drift makes `--remove-missing` strip the endpoints off every edge
+		// in the database, which is not recoverable by re-running the migration.
+		const withEndpoints = database({
+			name: "liked",
+			definition:
+				"DEFINE TABLE liked TYPE RELATION IN user OUT post SCHEMAFULL PERMISSIONS NONE",
+			fields: {
+				in: "DEFINE FIELD in ON liked TYPE record<user> PERMISSIONS FULL",
+				out: "DEFINE FIELD out ON liked TYPE record<post> PERMISSIONS FULL",
+				at: "DEFINE FIELD at ON liked TYPE datetime PERMISSIONS FULL",
+			},
+		});
+
+		const result = diff(
+			[edge("user", "liked", "post", { at: t.date() })],
+			withEndpoints,
+			{ removeMissing: true },
+		);
+
+		expect(result.up.join("\n")).not.toContain("REMOVE FIELD in");
+		expect(result.up.join("\n")).not.toContain("REMOVE FIELD out");
+		expect(result.changes).toEqual([]);
+	});
+
+	test("still remove a field the schema really has dropped", () => {
+		// The guard above is about the two SurrealDB owns, not about edges being
+		// exempt from removal.
+		const withStale = database({
+			name: "liked",
+			definition:
+				"DEFINE TABLE liked TYPE RELATION IN user OUT post SCHEMAFULL PERMISSIONS NONE",
+			fields: {
+				in: "DEFINE FIELD in ON liked TYPE record<user> PERMISSIONS FULL",
+				out: "DEFINE FIELD out ON liked TYPE record<post> PERMISSIONS FULL",
+				note: "DEFINE FIELD note ON liked TYPE string PERMISSIONS FULL",
+			},
+		});
+
+		const result = diff([edge("user", "liked", "post", {})], withStale, {
+			removeMissing: true,
+		});
+
+		expect(result.up.join("\n")).toContain("REMOVE FIELD note ON TABLE liked;");
+	});
 });
 
 describe("The shape of a diff", () => {
