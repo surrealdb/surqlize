@@ -1,9 +1,17 @@
 import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
+	AnyType,
 	ArrayType,
 	BoolType,
+	BytesType,
 	DateType,
+	DecimalType,
+	DurationType,
+	FloatType,
+	type GeometryKind,
+	GeometryType,
+	IntType,
 	LiteralType,
 	NeverType,
 	NoneType,
@@ -11,7 +19,9 @@ import {
 	NumberType,
 	ObjectType,
 	OptionType,
+	RangeType,
 	RecordType,
+	SetType,
 	StringType,
 	UnionType,
 	UuidType,
@@ -22,9 +32,62 @@ export function string() {
 	return new StringType();
 }
 
-/** Create a number type. */
+/** Create a number type. Use {@link int}, {@link float} or {@link decimal} when the
+ * SurrealDB numeric width matters — a migration needs to know which to define. */
 export function number() {
 	return new NumberType();
+}
+
+/** Create an integer type. Rejects fractional values. */
+export function int() {
+	return new IntType();
+}
+
+/** Create a floating-point type. */
+export function float() {
+	return new FloatType();
+}
+
+/** Create an arbitrary-precision decimal type. */
+export function decimal() {
+	return new DecimalType();
+}
+
+/** Create a duration type. */
+export function duration() {
+	return new DurationType();
+}
+
+/** Create a binary data type. */
+export function bytes() {
+	return new BytesType();
+}
+
+/** Create an any type. Accepts every value. */
+export function any() {
+	return new AnyType();
+}
+
+/** Create a geometry type, optionally constrained to a single kind. */
+export function geometry<const K extends GeometryKind | undefined = undefined>(
+	kind?: K,
+): GeometryType<K> {
+	return new GeometryType<K>(kind);
+}
+
+/** Create a range type. SurrealDB ranges are untyped — there is no `range<T>`. */
+export function range() {
+	return new RangeType();
+}
+
+/**
+ * Create a set type: an array whose elements must be unique.
+ *
+ * @param schema - The element type
+ * @param max - The most elements the set may hold, as `set<T, max>`
+ */
+export function set<T extends AbstractType>(schema: T, max?: number) {
+	return new SetType(schema, max);
 }
 
 /** Create a boolean type. */
@@ -68,11 +131,27 @@ export function object<T extends Record<string, AbstractType>>(schema: T) {
 	return new ObjectType(schema);
 }
 
-/** Create an array type. Pass a single type for a homogeneous array, or a tuple of types. */
-export function array<T extends AbstractType>(schema: T): ArrayType<T>;
-export function array<T extends AbstractType[]>(schema: [...T]): ArrayType<T>;
-export function array<T extends AbstractType[] | AbstractType>(schema: T) {
-	return new ArrayType(schema);
+/**
+ * Create an array type. Pass a single type for a homogeneous array, or a tuple
+ * of types.
+ *
+ * @param schema - The element type, or a tuple of types
+ * @param max - The most elements the array may hold, as `array<T, max>`.
+ *   SurrealQL takes a maximum only; a minimum has to be an `ASSERT`.
+ */
+export function array<T extends AbstractType>(
+	schema: T,
+	max?: number,
+): ArrayType<T>;
+export function array<T extends AbstractType[]>(
+	schema: [...T],
+	max?: number,
+): ArrayType<T>;
+export function array<T extends AbstractType[] | AbstractType>(
+	schema: T,
+	max?: number,
+) {
+	return new ArrayType(schema, max);
 }
 
 /** Create a union type that matches any of the given types. */

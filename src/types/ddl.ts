@@ -1,0 +1,71 @@
+/**
+ * DDL metadata carried alongside a field's type.
+ *
+ * Surqlize's type objects describe what a value *is*, which is everything the
+ * query builder needs. Generating `DEFINE FIELD` needs more: constraints,
+ * defaults, permissions and so on. That extra information lives here, attached
+ * to the type but deliberately separate from it — nothing in this file affects
+ * the inferred TypeScript type of a field.
+ */
+
+/**
+ * What SurrealDB should do to a record when the row it references is deleted.
+ *
+ * These are the only forms SurrealDB 3.2 parses. `SET NULL`, `SET DEFAULT` and
+ * `RESTRICT` — the SQL spellings, and the ones smig offered — are all parse
+ * errors; `UNSET` is what removes the link, and `REJECT` is what blocks the
+ * delete.
+ *
+ * `THEN <expression>` runs arbitrary SurrealQL against the referencing record,
+ * e.g. `` `THEN $this.status = 'orphaned'` ``.
+ */
+export type OnDeleteAction =
+	| "CASCADE"
+	| "IGNORE"
+	| "REJECT"
+	| "UNSET"
+	| `THEN ${string}`;
+
+/** A `DEFAULT` clause, and whether it re-applies on update (`DEFAULT ALWAYS`). */
+export interface FieldDefault {
+	value: unknown;
+	always: boolean;
+	/**
+	 * Emit a string value as data, never as SurrealQL.
+	 *
+	 * Without this a string default is read as an expression when it looks like
+	 * one, which is right almost always — `time::now()` should be called — but
+	 * leaves no way to store those characters as text.
+	 */
+	literal?: boolean;
+}
+
+/** A `REFERENCE` clause and its deletion behaviour. */
+export interface FieldReference {
+	/** The referenced table. Omitted for a bare `REFERENCE`. */
+	table?: string;
+	onDelete?: OnDeleteAction;
+}
+
+/**
+ * Everything a field can carry beyond its type.
+ *
+ * Every property is optional; a field that has never been given a schema
+ * modifier has an empty object here, and generates a bare `DEFINE FIELD`.
+ */
+export interface FieldDdl {
+	/** `ASSERT` conditions, joined with `AND` when more than one is given. */
+	assert?: string[];
+	default?: FieldDefault;
+	/** A `VALUE` expression, evaluated on write. */
+	value?: string;
+	/** A `VALUE { … }` expression, deferred until read. */
+	computed?: string;
+	readonly?: boolean;
+	flexible?: boolean;
+	permissions?: string;
+	comment?: string;
+	reference?: FieldReference;
+	/** Previous names, used to migrate a rename instead of dropping the field. */
+	previousNames?: string[];
+}

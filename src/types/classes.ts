@@ -1,5 +1,6 @@
-import { RecordId, Uuid } from "surrealdb";
+import { Decimal, Duration, Geometry, Range, RecordId, Uuid } from "surrealdb";
 import { TypeParseError } from "../error";
+import type { FieldDdl, OnDeleteAction } from "./ddl";
 
 /** Matches strings usable as a bare SurrealQL identifier in an idiom path. */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -28,6 +29,12 @@ export abstract class AbstractType<T = unknown> {
 	abstract validate(value: unknown): value is T;
 
 	/**
+	 * Schema metadata used to generate `DEFINE FIELD`. Empty unless one of the
+	 * modifiers below has been used, and never affects the inferred type.
+	 */
+	readonly ddl: Readonly<FieldDdl> = {};
+
+	/**
 	 * Validate and return `value`, or throw if it does not match this type.
 	 *
 	 * @throws {TypeParseError} If `value` fails validation.
@@ -41,6 +48,143 @@ export abstract class AbstractType<T = unknown> {
 	get(prop: string | number): [AbstractType, string] {
 		return [new NoneType(), pathSegment(prop)];
 	}
+
+	// -------------------------------------------------------------------------
+	// Schema modifiers
+	//
+	// Each returns a shallow clone carrying the updated metadata, mirroring the
+	// immutability of the query builders (see `Query.derive`). Types are shared
+	// freely — the same `t.string()` can be assigned to two fields — so mutating
+	// in place would let one field's constraints leak into another.
+	//
+	// These are typed with a `this` *parameter* rather than a polymorphic `this`
+	// return type. Both preserve the concrete subclass through a chain, but a
+	// polymorphic `this` in the signature makes `AbstractType` non-assignable to
+	// a subtype-constrained generic, which breaks `Workable<C, R>` inference
+	// throughout the query builder.
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Add an `ASSERT` condition. Call more than once to require several — they
+	 * are joined with `AND`.
+	 */
+	assert<S extends AbstractType>(this: S, condition: string): S {
+		return patchDdl(this, (d) => {
+			d.assert = [...(d.assert ?? []), condition];
+		});
+	}
+
+	/** Set a `DEFAULT` value, applied when the field is absent on create. */
+	default<S extends AbstractType>(this: S, value: unknown): S {
+		return patchDdl(this, (d) => {
+			d.default = { value, always: false };
+		});
+	}
+
+	/**
+	 * Set a `DEFAULT` that is always data, even if it looks like SurrealQL.
+	 *
+	 * `default("time::now()")` calls the function, because a string carrying
+	 * parentheses is read as an expression. This stores the characters instead.
+	 */
+	defaultLiteral<S extends AbstractType>(this: S, value: string): S {
+		return patchDdl(this, (d) => {
+			d.default = { value, always: false, literal: true };
+		});
+	}
+
+	/** Set a `DEFAULT ALWAYS` value, re-applied on every update. */
+	defaultAlways<S extends AbstractType>(this: S, value: unknown): S {
+		return patchDdl(this, (d) => {
+			d.default = { value, always: true };
+		});
+	}
+
+	/**
+	 * Set a `VALUE` expression, evaluated on write.
+	 *
+	 * Named `valueExpr` rather than `value` because {@link LiteralType} already
+	 * exposes a `value` accessor.
+	 */
+	valueExpr<S extends AbstractType>(this: S, expression: string): S {
+		return patchDdl(this, (d) => {
+			d.value = expression;
+		});
+	}
+
+	/** Set a `VALUE { … }` expression, deferred until the field is read. */
+	computed<S extends AbstractType>(this: S, expression: string): S {
+		return patchDdl(this, (d) => {
+			d.computed = expression;
+		});
+	}
+
+	/** Mark the field `READONLY` — it cannot be changed after creation. */
+	readonly<S extends AbstractType>(this: S): S {
+		return patchDdl(this, (d) => {
+			d.readonly = true;
+		});
+	}
+
+	/** Mark the field `FLEXIBLE`, allowing values outside the declared type. */
+	flexible<S extends AbstractType>(this: S): S {
+		return patchDdl(this, (d) => {
+			d.flexible = true;
+		});
+	}
+
+	/** Set the field's `PERMISSIONS` clause. */
+	permissions<S extends AbstractType>(this: S, rule: string): S {
+		return patchDdl(this, (d) => {
+			d.permissions = rule;
+		});
+	}
+
+	/** Attach a `COMMENT` to the field. */
+	comment<S extends AbstractType>(this: S, text: string): S {
+		return patchDdl(this, (d) => {
+			d.comment = text;
+		});
+	}
+
+	/** Declare the field a `REFERENCE`, optionally naming the referenced table. */
+	references<S extends AbstractType>(this: S, table?: string): S {
+		return patchDdl(this, (d) => {
+			d.reference = { ...d.reference, table };
+		});
+	}
+
+	/** Set what happens to this field when the record it references is deleted. */
+	onDelete<S extends AbstractType>(this: S, action: OnDeleteAction): S {
+		return patchDdl(this, (d) => {
+			d.reference = { ...d.reference, onDelete: action };
+		});
+	}
+
+	/**
+	 * Record previous names for this field so a rename is migrated as a rename —
+	 * the value is carried across — rather than as a drop and a create.
+	 */
+	was<S extends AbstractType>(this: S, ...names: string[]): S {
+		return patchDdl(this, (d) => {
+			d.previousNames = [...(d.previousNames ?? []), ...names];
+		});
+	}
+}
+
+/** Clone `type`, applying `patch` to a copy of its DDL metadata. */
+function patchDdl<S extends AbstractType>(
+	type: S,
+	patch: (draft: FieldDdl) => void,
+): S {
+	const next = Object.assign(
+		Object.create(Object.getPrototypeOf(type)),
+		type,
+	) as S;
+	const draft: FieldDdl = { ...type.ddl };
+	patch(draft);
+	(next as { ddl: FieldDdl }).ddl = draft;
+	return next;
 }
 
 export class LiteralType<
@@ -343,7 +487,16 @@ export class ArrayType<
 		return `${str} ]`;
 	}
 
-	constructor(private _schema: T) {
+	/**
+	 * @param _schema - The element type, or a tuple of types
+	 * @param _max - The most elements the array may hold, as SurrealDB's
+	 *   `array<T, max>`. SurrealQL takes a maximum only — a lower bound is a
+	 *   parse error — so a minimum has to be an `ASSERT`.
+	 */
+	constructor(
+		private _schema: T,
+		private _max?: number,
+	) {
 		super();
 	}
 
@@ -351,19 +504,29 @@ export class ArrayType<
 		return this._schema;
 	}
 
+	/** The declared maximum length, if any. */
+	get max() {
+		return this._max;
+	}
+
+	/** Whether `length` is within the declared maximum, if there is one. */
+	protected withinBound(length: number): boolean {
+		return this._max === undefined || length <= this._max;
+	}
+
 	validate(value: unknown): value is this["infer"] {
 		if (!Array.isArray(value)) return false;
-		if (Array.isArray(this.schema)) {
-			if (this.schema.length !== value.length) return false;
-			for (let i = 0; i < this.schema.length; i++) {
-				if (!this.schema[i]!.validate(value[i])) return false;
-			}
-		} else {
-			for (const item of value) {
-				if (!this.schema.validate(item)) return false;
-			}
+		if (!this.withinBound(value.length)) return false;
+
+		const schema = this.schema;
+		if (Array.isArray(schema)) {
+			return (
+				schema.length === value.length &&
+				schema.every((item, i) => item.validate(value[i]))
+			);
 		}
-		return true;
+
+		return value.every((item) => schema.validate(item));
 	}
 
 	/**
@@ -371,10 +534,12 @@ export class ArrayType<
 	 * returning a new array of the parsed (and possibly converted) elements.
 	 *
 	 * @throws {TypeParseError} If `value` is not an array, has the wrong length
-	 *   (tuple), or an element fails validation.
+	 *   (tuple), exceeds the declared maximum, or an element fails validation.
 	 */
 	parse(value: unknown): this["infer"] {
 		if (!Array.isArray(value))
+			throw new TypeParseError(this.name, this.expected, value);
+		if (!this.withinBound(value.length))
 			throw new TypeParseError(this.name, this.expected, value);
 		const schema = this.schema;
 		if (Array.isArray(schema)) {
@@ -447,5 +612,144 @@ export class UnionType<T extends AbstractType[]> extends AbstractType<
 			if (schema.validate(value)) return schema.parse(value) as this["infer"];
 		}
 		throw new TypeParseError(this.name, this.expected, value);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Numeric widths
+//
+// SurrealDB distinguishes `int`, `float` and `decimal`, and a schema must be
+// able to say which it means or a migration cannot emit the right `DEFINE
+// FIELD`. All three keep `name = "number"` so they inherit the number function
+// family — dispatch in `getFunctions()` is keyed on `name`, so renaming them
+// would silently strip `.add()`, `.gte()` and friends from those fields.
+// ---------------------------------------------------------------------------
+
+/** A whole number. Narrower than {@link NumberType}: rejects fractional values. */
+export class IntType extends NumberType {
+	validate(value: unknown): value is this["infer"] {
+		return typeof value === "number" && Number.isInteger(value);
+	}
+}
+
+/** A floating-point number. Identical to {@link NumberType} at runtime. */
+export class FloatType extends NumberType {}
+
+/**
+ * An arbitrary-precision decimal.
+ *
+ * SurrealDB returns these as `Decimal` instances to preserve precision, so the
+ * inferred type admits both that and a plain `number` (which is what you get
+ * back from a server that widened the value). Nothing is converted on parse —
+ * narrowing a `Decimal` to a JS `number` would defeat the point of the type.
+ */
+export class DecimalType extends AbstractType<Decimal | number> {
+	// Keep the number function family; see the note above.
+	name = "number" as const;
+	expected = "Decimal | number";
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof Decimal || typeof value === "number";
+	}
+}
+
+/** A span of time. */
+export class DurationType extends AbstractType<Duration> {
+	name = "duration" as const;
+	expected = "Duration";
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof Duration;
+	}
+}
+
+/** Raw binary data. */
+export class BytesType extends AbstractType<Uint8Array> {
+	name = "bytes" as const;
+	expected = "Uint8Array";
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof Uint8Array;
+	}
+}
+
+/** The geometry kinds SurrealDB can constrain a `geometry<…>` field to. */
+export type GeometryKind =
+	| "point"
+	| "line"
+	| "polygon"
+	| "multipoint"
+	| "multiline"
+	| "multipolygon"
+	| "collection"
+	| "feature";
+
+/** A geometry value, optionally constrained to one kind. */
+export class GeometryType<
+	K extends GeometryKind | undefined = undefined,
+> extends AbstractType<Geometry> {
+	name = "geometry" as const;
+	get expected() {
+		return this._kind ? `Geometry<${this._kind}>` : "Geometry";
+	}
+
+	constructor(private _kind?: K) {
+		super();
+	}
+
+	get kind(): K | undefined {
+		return this._kind;
+	}
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof Geometry;
+	}
+}
+
+/**
+ * A bounded range of values.
+ *
+ * SurrealDB has no element type for ranges — `range<int>` is a parse error, and
+ * `INFO FOR TABLE` reports a bare `range` — so this carries no inner type.
+ */
+export class RangeType extends AbstractType<Range<unknown, unknown>> {
+	name = "range" as const;
+	expected = "Range";
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof Range;
+	}
+}
+
+/** Any value at all. Accepts everything, including `undefined`. */
+export class AnyType extends AbstractType<unknown> {
+	name = "any" as const;
+	expected = "any";
+
+	validate(_value: unknown): _value is this["infer"] {
+		return true;
+	}
+}
+
+/**
+ * An array whose elements are unique.
+ *
+ * Extends {@link ArrayType} — and keeps `name = "array"` — so sets behave like
+ * arrays everywhere in the query builder. The distinction exists so a migration
+ * can emit `TYPE set<string>` rather than `TYPE array<string>`.
+ */
+export class SetType<
+	T extends AbstractType = AbstractType,
+> extends ArrayType<T> {
+	get expected() {
+		return `Set<${this.schema.expected}>`;
+	}
+
+	// `name` stays "array" so the array function family still resolves; the
+	// distinction is carried by the class and read by the type printer.
+
+	validate(value: unknown): value is this["infer"] {
+		if (!super.validate(value)) return false;
+		return new Set(value as unknown[]).size === (value as unknown[]).length;
 	}
 }

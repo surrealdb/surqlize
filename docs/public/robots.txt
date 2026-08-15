@@ -1,0 +1,11 @@
+# Surqlize documentation — https://surqlize.com
+# Allow all crawlers to index all content
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://surqlize.com/sitemap.xml
+
+# Disallow API/internal paths if any
+Disallow: /.vitepress/

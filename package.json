@@ -25,6 +25,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
+		},
+		"./migrate": {
+			"types": "./dist/migrate.d.ts",
+			"import": "./dist/migrate.js",
+			"require": "./dist/migrate.cjs"
 		}
 	},
 	"files": [
@@ -35,7 +40,8 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.15",
 		"@types/bun": "latest",
-		"tsup": "^8.5.1"
+		"tsup": "^8.5.1",
+		"vitepress": "^1.6.4"
 	},
 	"peerDependencies": {
 		"surrealdb": ">=2.0.0",
@@ -51,6 +57,12 @@
 		"qa": "biome check . --write",
 		"build": "tsup",
 		"prepublishOnly": "bun run build",
-		"qau": "biome check . --write --unsafe"
+		"qau": "biome check . --write --unsafe",
+		"docs:dev": "vitepress dev docs",
+		"docs:build": "vitepress build docs",
+		"docs:preview": "vitepress preview docs"
+	},
+	"bin": {
+		"sur": "./dist/cli.js"
 	}
 }
