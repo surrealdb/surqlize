@@ -2,22 +2,30 @@
 
 Notes for the SurrealDB team, gathered while building schema migrations into Surqlize.
 
-Everything here is reproducible. `scripts/surreal-probe.ts` runs each case against a
-server, reads the definition back, and prints the two side by side:
+Everything here is reproducible, by two scripts. `scripts/surreal-probe.ts` covers what the
+database *stores* when you declare something — it runs each case, reads the definition back,
+and prints the two side by side. `scripts/surreal-behaviour-probe.ts` covers what the
+database *does* when you read and write, which has no stored form to compare and so needs
+its own harness:
 
 ```
-bun scripts/surreal-probe.ts --endpoint http://localhost:8000
+bun scripts/surreal-probe.ts           --endpoint http://localhost:8000
+bun scripts/surreal-behaviour-probe.ts --endpoint http://localhost:8000
 ```
 
-It has no dependencies — not on Surqlize, not on a test runner, not on the driver — so it
-can be dropped into any checkout. It exits non-zero if any result differs from what this
-document records, which makes it a regression check for the behaviour below.
+Neither has dependencies — not on Surqlize, not on a test runner, not on the driver — so
+either can be dropped into any checkout. Both exit non-zero if a result differs from what
+this document records, which makes them regression checks for the behaviour below.
 
-Measured against **SurrealDB 3.2.0**, 57 probes:
+Measured against **SurrealDB 3.2.0** — 57 definition probes and 11 behavioural cases:
 
 > **0 round-trip.** 45 come back changed, 12 are refused. Of the 45, **29 still differ
 > after allowing for the two rewrites that apply to everything** — each of those needs its
 > own rule in any tool that compares a schema against a database.
+>
+> Of the 11 behavioural cases, **none errors.** Each returns something well-formed and
+> wrong. Those are in section 1b, and they affect anyone using SurrealDB rather than only a
+> tool that compares schemas.
 
 ---
 
@@ -79,20 +87,32 @@ would drop most of `canonical.ts` — that is how much difference this one thing
 These produce wrong behaviour with no error. They are first because they are the ones that
 reach production.
 
-### A dropped field leaves its index behind `[hazard]`
+### A renamed field leaves its index behind, constraining nothing `[hazard]`
 
-`REMOVE FIELD` succeeds while an index still covers the field. The index survives, pointing
-at something that no longer exists.
+`REMOVE FIELD` succeeds while an index still covers the field. The index survives, naming
+something that no longer exists.
 
 ```surql
 DEFINE FIELD email ON TABLE user TYPE string;
 DEFINE INDEX email_uq ON TABLE user FIELDS email UNIQUE;
+
 REMOVE FIELD email ON TABLE user;
--- email_uq is still there, still UNIQUE, now indexing NONE for every row
+DEFINE FIELD email_address ON TABLE user TYPE string;   -- a rename, since there is no RENAME
+
+INFO FOR TABLE user;
+-- email_uq: 'DEFINE INDEX email_uq ON user FIELDS email UNIQUE'   ← still there
+
+CREATE user SET email_address = 'a@b.c';
+CREATE user SET email_address = 'a@b.c';                -- both accepted
 ```
 
-A `UNIQUE` index silently stops rejecting duplicates. Nothing warns. Every rename is
-built out of `REMOVE FIELD`, so this is reachable by anyone renaming a column.
+The new column is constrained by nothing, silently. Every rename is built out of
+`REMOVE FIELD`, so this is reachable by anyone renaming a column.
+
+Worth stating precisely, because the narrower case is **not** silent: with the field
+removed and *not* replaced, a schemafull table refuses the write outright —
+`Found field 'email', but no such field exists for table 'user'`. It is the rename that
+loses the constraint quietly, because the table still accepts writes afterwards.
 
 **Expected:** either refuse the removal while an index depends on the field, or drop the
 dependent indexes with it. Either is fine; silence is not.
@@ -135,6 +155,154 @@ does it and tests it, but it should not be the one deciding what happens if the 
 half-completes.
 
 **Expected:** a `RENAME` that the database performs.
+
+---
+
+## 1b. Reads and writes that mislead
+
+Section 1 is about definitions. These are about using them. None of them errors; each
+returns something well-formed and wrong, which is why they are grouped rather than listed
+among the grammar papercuts.
+
+All eleven are checked by `bun scripts/surreal-behaviour-probe.ts`.
+
+### A relation row written by anything but `RELATE` is not an edge `[hazard]`
+
+The most serious item in this document.
+
+```surql
+CREATE user:a; CREATE user:b; CREATE workspace:w;
+
+RELATE user:a->member_of->workspace:w SET role = 'owner';
+UPSERT member_of SET in = user:b, out = workspace:w, role = 'owner' WHERE in = user:b;
+
+SELECT * FROM member_of WHERE in = user:b;
+-- [{ id: member_of:4w9…, in: user:b, out: workspace:w, role: 'owner' }]   looks perfect
+
+SELECT ->member_of->workspace AS w FROM user:a;   -- { w: [workspace:w] }
+SELECT ->member_of->workspace AS w FROM user:b;   -- { w: [] }
+```
+
+The row is written. `SELECT *` returns it with real record links in both endpoints. Graph
+traversal cannot see it. `CREATE` behaves the same way, and targeting an explicit edge id
+does not help.
+
+Graph traversal reads a vertex-side index that only `RELATE` maintains, so the row exists
+as data and not as an edge — and nothing distinguishes the two on inspection.
+
+In a permissions model this is the worst available shape. A membership written this way
+exists, reads back correctly in any admin UI and any direct `SELECT`, and is invisible to
+every check that traverses: the user is silently denied, and the row you would inspect to
+find out why looks entirely fine.
+
+**Expected:** maintain the index on any write that sets `in`/`out` on a relation table, or
+refuse the write. Either is fine; silence is not.
+
+### `RELATE` is not idempotent unless the edge id is pinned `[ergonomics]`
+
+```surql
+RELATE user:a->member_of->workspace:w SET role = 'owner';          -- twice → two edges
+RELATE user:a->member_of:pinned->workspace:w SET role = 'owner';   -- twice → one, updated
+```
+
+Reasonable once known, and not discoverable from the documentation. It matters because the
+pinned form is the only way to write an idempotent relation, and the obvious alternative —
+`UPSERT` — is the hazard above.
+
+`type::record()` cannot supply that id: `RELATE $u->type::record("member_of", $k)->$w` is a
+parse error (*"Unexpected token `::`, expected ->"*), so the whole `RecordId` has to be
+bound as a parameter.
+
+### A one-hop traversal yields `null` rather than erroring `[hazard]`
+
+```surql
+SELECT ->has_contact.email        AS e FROM customer:c;   -- { e: [null] }
+SELECT ->has_contact->contact.email AS e FROM customer:c; -- { e: ['p@example.test'] }
+```
+
+One hop lands on the *edge record*. Projecting a field the edge does not have yields
+`null` — the intuitive spelling is the wrong one, and `null` in a projection reads as
+"no data" rather than "you wrote the wrong query".
+
+For a schemafull relation table the mistake is knowable statically.
+
+### `.id` on a record link resolves the link instead of taking the key `[hazard]`
+
+```surql
+SELECT VALUE { id: $this.id.id }        FROM person;  -- [{ id: person:slsayh4… }]
+SELECT VALUE { id: meta::id($this.id) } FROM person;  -- [{ id: 'slsayh4…' }]
+```
+
+`.id` means "take the key" on a `RecordId` in every client SDK and "resolve the link" in
+SurrealQL, and both produce something that looks like an identifier. A URL built from the
+first is `/customers/customer:abc` rather than `/customers/abc`: wrong, and wrong in a way
+that still looks like an id, so it survives review.
+
+### An all-digit key is a different record depending on how it is written `[hazard]`
+
+```surql
+CREATE type::record('digits', '123567891235');   -- STRING key
+CREATE digits:123567891235;                      -- NUMBER key
+SELECT * FROM digits;                            -- two rows
+```
+
+Consistent with the type inference, and defensible. It is listed because any system
+generating ids from an alphabet containing digits will eventually emit an all-digit one,
+and on that single id a record created through a parameterised helper stops being findable
+by a literal lookup. A documentation warning would be enough.
+
+### `IN (SELECT id …)` matches nothing, and the statement succeeds `[hazard]`
+
+```surql
+SELECT id       FROM acct WHERE email = 'a@b.c';   -- [{ id: acct:u1 }]   objects
+SELECT VALUE id FROM acct WHERE email = 'a@b.c';   -- [acct:u1]           record ids
+
+DELETE token WHERE owner IN (SELECT id       FROM acct WHERE email = 'a@b.c');  -- 0 deleted
+DELETE token WHERE owner IN (SELECT VALUE id FROM acct WHERE email = 'a@b.c');  -- 1 deleted
+```
+
+The two differ by one keyword and only one does anything. A comparison between a record
+link and an object is never satisfiable, so warning on it would remove the class.
+
+It is worth calling out for test helpers in particular: a `revokeSessions()` written the
+first way revokes nothing, does not error, and the test built on it then asserts that a
+revoked session is gone — against a session that was never revoked. The suite passes while
+the application is broken.
+
+### A multi-statement query continues past a failing statement `[hazard]`
+
+```surql
+DEFINE TABLE batch SCHEMAFULL;
+DEFINE FIELD tag ON batch TYPE string;
+DEFINE INDEX batch_tag ON batch FIELDS tag UNIQUE;
+
+-- one call, three statements; the second violates the index
+CREATE batch SET tag = 'first';
+CREATE batch SET tag = 'first';
+CREATE batch SET tag = 'third';
+
+SELECT VALUE tag FROM batch;   -- ['first', 'third']
+```
+
+Statements before the failure stay applied, and statements *after* it run too.
+
+This is the execution model migrations run on, which is why it appears here rather than as
+a footnote: a migration that fails halfway leaves a schema that is neither the old one nor
+the new one, and the final state depends on which statements happened to be independent of
+the failed one. Wrapping in `BEGIN`/`COMMIT` is the workaround, but transactions cannot
+nest — *"Tried to start a transaction while another transaction was open"* — so a caller
+cannot defensively wrap something that may already be wrapped.
+
+### A misspelled payload key on `RELATE` is stored silently `[ergonomics]`
+
+```surql
+RELATE p:a->follows->p:b SET rle = 'owner';
+SELECT * FROM follows;
+-- [{ id: follows:tp6…, in: p:a, out: p:b, rle: 'owner' }]
+```
+
+Consistent with schemaless behaviour. Listed for its consequence on a relation table: the
+reader asks for `role`, gets `NONE`, and denies.
 
 ---
 
@@ -271,8 +439,142 @@ Said plainly, because a list of complaints with nothing good in it is easy to di
 
 ## Appendix: one issue per finding
 
-Each block is self-contained and ready to file. Version is 3.2.0 throughout; reproduce any
-of them with `bun scripts/surreal-probe.ts --group <group>`.
+Each block is self-contained and ready to file. Version is 3.2.0 throughout. Reproduce a
+definition finding with `bun scripts/surreal-probe.ts --group <group>`, and a behavioural
+one with `bun scripts/surreal-behaviour-probe.ts`.
+
+The behavioural findings come first, because they are the ones that affect anyone using
+SurrealDB rather than only a tool that compares schemas.
+
+---
+
+**A relation row written by anything but `RELATE` is not an edge**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+CREATE user:a; CREATE user:b; CREATE workspace:w;
+RELATE user:a->member_of->workspace:w SET role = 'owner';
+UPSERT member_of SET in = user:b, out = workspace:w, role = 'owner' WHERE in = user:b;
+
+SELECT * FROM member_of WHERE in = user:b;
+-- [{ id: member_of:4w9…, in: user:b, out: workspace:w, role: 'owner' }]
+SELECT ->member_of->workspace AS w FROM user:a;   -- { w: [workspace:w] }
+SELECT ->member_of->workspace AS w FROM user:b;   -- { w: [] }
+```
+Expected: an edge, or a refusal.
+Actual: a row that reads back perfectly and is invisible to traversal. `CREATE` behaves the
+same way; an explicit edge id does not help. In a permissions model the user is silently
+denied while the row you would inspect looks correct.
+
+---
+
+**A one-hop traversal onto a relation yields `null` instead of erroring**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+SELECT ->has_contact.email          AS e FROM customer:c;   -- { e: [null] }
+SELECT ->has_contact->contact.email AS e FROM customer:c;   -- { e: ['p@example.test'] }
+```
+Expected: an error, since the edge has no such field.
+Actual: `null`, which reads as "no data" rather than "wrong query". Knowable statically for
+a schemafull relation table.
+
+---
+
+**`.id` on a record link resolves the link rather than taking the key**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+SELECT VALUE { id: $this.id.id }        FROM person;  -- [{ id: person:slsayh4… }]
+SELECT VALUE { id: meta::id($this.id) } FROM person;  -- [{ id: 'slsayh4…' }]
+```
+Expected: the bare key, as `.id` gives on a `RecordId` in the client SDKs.
+Actual: the whole record. A URL built from it is `/customers/customer:abc` — wrong, and
+still shaped like an id.
+
+---
+
+**`IN (SELECT id …)` matches nothing, and the statement succeeds**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+SELECT id       FROM acct WHERE email = 'a@b.c';   -- [{ id: acct:u1 }]
+SELECT VALUE id FROM acct WHERE email = 'a@b.c';   -- [acct:u1]
+DELETE token WHERE owner IN (SELECT id FROM acct WHERE email = 'a@b.c');   -- deletes nothing
+```
+Expected: a match, or an error.
+Actual: zero rows affected and no diagnostic. A comparison between a record link and an
+object is never satisfiable, so it could be rejected outright.
+
+---
+
+**A multi-statement query continues past a failing statement**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+DEFINE TABLE batch SCHEMAFULL;
+DEFINE FIELD tag ON batch TYPE string;
+DEFINE INDEX batch_tag ON batch FIELDS tag UNIQUE;
+CREATE batch SET tag = 'first'; CREATE batch SET tag = 'first'; CREATE batch SET tag = 'third';
+SELECT VALUE tag FROM batch;   -- ['first', 'third']
+```
+Expected: stop at the failure, or roll back.
+Actual: the first statement stays applied and the third runs. This is the execution model
+migrations use, and transactions cannot nest, so a caller cannot defensively wrap.
+
+---
+
+**An all-digit record key is a different record depending on how it is written**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+CREATE type::record('digits', '123567891235');   -- STRING key
+CREATE digits:123567891235;                      -- NUMBER key
+SELECT * FROM digits;                            -- two rows
+```
+Expected: one record.
+Actual: two. Defensible given the type inference, but any id alphabet containing digits
+eventually produces one, and on that id a parameterised write stops being findable by a
+literal lookup.
+
+---
+
+**`type::record()` is rejected in the middle of a `RELATE`**
+`behaviour-probe` · missing feature
+
+Repro:
+```surql
+RELATE $user->type::record("member_of", $key)->$workspace SET role = $role;
+--< Parse error: Unexpected token `::`, expected ->
+```
+Expected: the documented way to build a record id works where an edge id goes.
+Actual: a parse error; the whole `RecordId` has to be bound as a parameter instead. Relevant
+because a pinned edge id is the only idempotent form of `RELATE`.
+
+---
+
+**A renamed field leaves its `UNIQUE` index constraining nothing**
+`behaviour-probe` · hazard
+
+Repro:
+```surql
+DEFINE FIELD email ON TABLE user TYPE string;
+DEFINE INDEX email_uq ON TABLE user FIELDS email UNIQUE;
+REMOVE FIELD email ON TABLE user;
+DEFINE FIELD email_address ON TABLE user TYPE string;
+CREATE user SET email_address = 'a@b.c';
+CREATE user SET email_address = 'a@b.c';   -- both accepted
+```
+Expected: the index follows the rename, or the rename is refused.
+Actual: the index survives naming `email`, and the new column is unconstrained. Note the
+narrower case is *not* silent: with the field removed and not replaced, a schemafull table
+refuses the write with `Found field 'email', but no such field exists`.
 
 ---
 
