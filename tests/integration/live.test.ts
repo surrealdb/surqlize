@@ -2,6 +2,22 @@ import { describe, expect, test } from "bun:test";
 import type { LiveMessage, LiveSubscription } from "../../src";
 import { withTestDb } from "./setup";
 
+/**
+ * Narrow a notification to a record change.
+ *
+ * `LiveMessage` is a union: a KILLED notification carries neither a record nor
+ * a value. Tests that are about record changes say so once, here, rather than
+ * sprinkling non-null assertions over every field access.
+ */
+function change<T>(message: LiveMessage<T> | undefined) {
+	expect(message).toBeDefined();
+	expect(message?.action).not.toBe("KILLED");
+	return message as Extract<
+		LiveMessage<T>,
+		{ action: "CREATE" | "UPDATE" | "DELETE" }
+	>;
+}
+
 /** Reject if `promise` does not settle within `ms`, so a missing live
  * notification fails the test instead of hanging. */
 function withTimeout<T>(
@@ -77,10 +93,10 @@ describe("Live query integration tests", () => {
 			"DELETE",
 		]);
 		// Value is parsed against the schema (nested object survives).
-		expect(messages[0]!.value.name.first).toBe("John");
-		expect(messages[0]!.value.age).toBe(30);
-		expect(messages[1]!.value.age).toBe(31);
-		expect(messages[0]!.recordId.id).toBe("live_user");
+		expect(change(messages[0]).value.name.first).toBe("John");
+		expect(change(messages[0]).value.age).toBe(30);
+		expect(change(messages[1]).value.age).toBe(31);
+		expect(change(messages[0]).recordId.id).toBe("live_user");
 
 		await sub.kill();
 	}, 15_000);
@@ -115,8 +131,8 @@ describe("Live query integration tests", () => {
 
 		const [message] = await withTimeout(received, 10_000);
 
-		expect(message!.value.age).toBe(30);
-		expect(message!.recordId.id).toBe("adult");
+		expect(change(message).value.age).toBe(30);
+		expect(change(message).recordId.id).toBe("adult");
 
 		await sub.kill();
 	}, 15_000);

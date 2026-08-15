@@ -42,11 +42,27 @@ type SdkLiveSubscription = Awaited<ReturnType<SurrealSession["liveOf"]>>;
  *
  * For `KILLED` notifications the `value` carries no record payload.
  */
-export type LiveMessage<T> = {
-	action: LiveAction;
-	recordId: RecordId;
-	value: T;
-};
+/**
+ * A live notification.
+ *
+ * A record change carries the affected record and its value; `KILLED` signals
+ * that the subscription was terminated server-side (for example when its table
+ * is removed) and carries neither. Modelling that as a union rather than an
+ * optional field means a handler cannot read `recordId` on a KILLED message
+ * without the compiler noticing — and it mirrors the SDK, which tightened the
+ * same type in surrealdb 2.0.8.
+ */
+export type LiveMessage<T> =
+	| {
+			action: Exclude<LiveAction, "KILLED">;
+			recordId: RecordId;
+			value: T;
+	  }
+	| {
+			action: "KILLED";
+			recordId?: undefined;
+			value?: undefined;
+	  };
 
 /**
  * A typed wrapper around a SurrealDB live subscription. Obtain one by awaiting a
@@ -72,22 +88,28 @@ export class LiveSubscription<T> {
 	 */
 	subscribe(handler: (message: LiveMessage<T>) => void): () => void {
 		return this.inner.subscribe((message) =>
-			handler({
-				action: message.action,
-				recordId: message.recordId,
-				value: this.mapValue(message.value, message.action),
-			}),
+			handler(
+				message.action === "KILLED"
+					? { action: "KILLED" }
+					: {
+							action: message.action,
+							recordId: message.recordId,
+							value: this.mapValue(message.value, message.action),
+						},
+			),
 		);
 	}
 
 	/** Async-iterate notifications: `for await (const msg of sub) { … }`. */
 	async *[Symbol.asyncIterator](): AsyncIterator<LiveMessage<T>> {
 		for await (const message of this.inner) {
-			yield {
-				action: message.action,
-				recordId: message.recordId,
-				value: this.mapValue(message.value, message.action),
-			};
+			yield message.action === "KILLED"
+				? { action: "KILLED" }
+				: {
+						action: message.action,
+						recordId: message.recordId,
+						value: this.mapValue(message.value, message.action),
+					};
 		}
 	}
 
