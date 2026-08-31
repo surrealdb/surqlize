@@ -24,6 +24,9 @@ export const type_ = {
 	int<C extends WorkableContext>(value: Workable<C>) {
 		return standaloneFn(value, t.number(), "type::int", value);
 	},
+	point<C extends WorkableContext>(value: Workable<C>) {
+		return standaloneFn(value, t.point(), "type::point", value);
+	},
 	number<C extends WorkableContext>(value: Workable<C>) {
 		return standaloneFn(value, t.number(), "type::number", value);
 	},
