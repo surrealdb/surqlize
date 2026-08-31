@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RecordId } from "surrealdb";
+import { GeometryPoint, RecordId } from "surrealdb";
 import { t } from "../../../src";
 import { TypeParseError } from "../../../src/error";
 import { NoneType, UnionType } from "../../../src/types/classes";
@@ -98,6 +98,21 @@ describe("Type builders", () => {
 		});
 	});
 
+	describe("point()", () => {
+		test("creates PointType", () => {
+			const type = t.point();
+			expect(type).toBeDefined();
+			expect(type.name).toBe("point");
+			expect(type.expected).toBe("GeometryPoint");
+		});
+
+		test("validates GeometryPoint values", () => {
+			const type = t.point();
+			expect(type.validate(new GeometryPoint([10, 20]))).toBe(true);
+			expect(type.validate([10, 20])).toBe(false);
+			expect(type.validate({ point: [10, 20] })).toBe(false);
+		});
+	});
 	describe("object()", () => {
 		test("creates ObjectType with schema", () => {
 			const type = t.object({
@@ -500,6 +515,14 @@ describe("Type builders", () => {
 			expect(arrayType).toBeDefined();
 			expect(unionType).toBeDefined();
 			expect(optionType).toBeDefined();
+		});
+
+		test("infers GeometryPoint from point()", () => {
+			const pointType = t.point();
+			type Point = t.infer<typeof pointType>;
+			const point: Point = new GeometryPoint([10, 20]);
+
+			expect(point).toBeInstanceOf(GeometryPoint);
 		});
 	});
 });

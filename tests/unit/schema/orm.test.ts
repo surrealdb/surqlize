@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { Surreal } from "surrealdb";
-import { edge, orm, t, table } from "../../../src";
+import { GeometryPoint, Surreal } from "surrealdb";
+import {
+	__display,
+	__type,
+	displayContext,
+	edge,
+	orm,
+	PointType,
+	t,
+	table,
+} from "../../../src";
 
 // Compile-time equality assertion helper.
 type Equal<A, B> =
@@ -101,5 +110,21 @@ describe("orm() object form keeps full type support", () => {
 		const sample: Result = [{ name: "Alice", email: "alice@example.com" }];
 
 		expect(sample[0]?.name).toBe("Alice");
+	});
+});
+describe("orm() value inference", () => {
+	test("infers and binds GeometryPoint values as points", () => {
+		const db = orm(new Surreal(), user);
+		const point = new GeometryPoint([10, 20]);
+		const value = db.value(point);
+		const ctx = displayContext();
+
+		type Value = t.infer<typeof value>;
+		const typed: Value = point;
+
+		expect(value[__type]).toBeInstanceOf(PointType);
+		expect(value[__display](ctx)).toBe("$_v0");
+		expect(ctx.variables._v0).toBe(point);
+		expect(typed).toBe(point);
 	});
 });

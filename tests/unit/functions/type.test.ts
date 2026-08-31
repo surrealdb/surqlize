@@ -14,6 +14,7 @@ describe("Type functions", () => {
 		age: t.number(),
 		email: t.string(),
 		created: t.date(),
+		coordinates: t.array([t.number(), t.number()]),
 	});
 
 	const db = orm(new Surreal(), user);
@@ -36,5 +37,15 @@ describe("Type functions", () => {
 		const result = query[__display](ctx);
 
 		expect(result).toContain("type::of");
+	});
+
+	test("type_.point() generates type::point", () => {
+		const query = db.select("user").return((user) => ({
+			point: typeFn.point(user.coordinates),
+		}));
+		const ctx = displayContext();
+		const result = query[__display](ctx);
+
+		expect(result).toContain("type::point($this.coordinates)");
 	});
 });
