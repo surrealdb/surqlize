@@ -1,5 +1,10 @@
 import type { SurrealSession } from "surrealdb";
-import { RecordId, type RecordIdValue, Uuid } from "surrealdb";
+import {
+	GeometryPoint,
+	RecordId,
+	type RecordIdValue,
+	Uuid,
+} from "surrealdb";
 import { OrmError } from "../error";
 import type { Query } from "../query/abstract";
 import { ApiClient } from "../query/api";
@@ -24,6 +29,7 @@ import {
 	type NullType,
 	type NumberType,
 	type ObjectType,
+	type PointType,
 	type RecordType,
 	type StringType,
 	t,
@@ -117,21 +123,24 @@ export type ValueType<V> =
 							? DateType
 							: V extends Uuid
 								? UuidType
-								: V extends null
-									? NullType
-									: V extends undefined
-										? NoneType
-										: V extends readonly unknown[]
-											? ValueArrayType<V>
-											: V extends Record<string, unknown>
-												? ObjectType<ValueObjectFields<V>>
-												: AbstractType;
+								: V extends GeometryPoint
+									? PointType
+									: V extends null
+										? NullType
+										: V extends undefined
+											? NoneType
+											: V extends readonly unknown[]
+												? ValueArrayType<V>
+												: V extends Record<string, unknown>
+													? ObjectType<ValueObjectFields<V>>
+													: AbstractType;
 
 function typeFromValue(value: unknown): AbstractType {
 	if (isWorkable(value)) return value[__type];
 	if (value instanceof RecordId) return t.record(String(value.table));
 	if (value instanceof Date) return t.date();
 	if (value instanceof Uuid) return t.uuid();
+	if (value instanceof GeometryPoint) return t.point();
 	if (value === null) return t.null();
 	if (value === undefined) return t.none();
 
