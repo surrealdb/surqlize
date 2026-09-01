@@ -95,10 +95,16 @@ describe("Geo functions", () => {
 
 	test("rejects non-coordinate distance arguments at compile time", () => {
 		// Coordinates are always [longitude, latitude], never arbitrary arrays.
-		// @ts-expect-error A three-number array is not a point tuple.
-		geo.distance(db.select("location").wrap(), [1, 2, 3]);
-		// @ts-expect-error A one-number array is not a point tuple.
-		geo.distance(db.select("location").wrap(), [1]);
+		db.select("location").where((loc) => {
+			// @ts-expect-error A three-number array is not a point tuple.
+			geo.distance(loc.point, [1, 2, 3]);
+			return loc.name.eq("test");
+		});
+		db.select("location").where((loc) => {
+			// @ts-expect-error A one-number array is not a point tuple.
+			geo.distance(loc.point, [1]);
+			return loc.name.eq("test");
+		});
 		// @ts-expect-error A complete row is not a point expression.
 		db.select("location").where((loc) => geo.distance(loc, [1, 2]));
 		// @ts-expect-error Raw values need a workable argument to provide context.
