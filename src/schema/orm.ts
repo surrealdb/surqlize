@@ -1,10 +1,5 @@
 import type { SurrealSession } from "surrealdb";
-import {
-	GeometryPoint,
-	RecordId,
-	type RecordIdValue,
-	Uuid,
-} from "surrealdb";
+import { GeometryPoint, RecordId, type RecordIdValue, Uuid } from "surrealdb";
 import { OrmError } from "../error";
 import type { Query } from "../query/abstract";
 import { ApiClient } from "../query/api";
