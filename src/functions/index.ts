@@ -15,6 +15,7 @@ const functions = {
 	graph: typeFunctions.graph.functions,
 	number: typeFunctions.number.functions,
 	option: typeFunctions.option.functions,
+	point: {},
 	record: typeFunctions.record.functions,
 	string: typeFunctions.string.functions,
 } satisfies BaseFunctions;
@@ -26,6 +27,7 @@ interface BaseFunctions {
 	graph: typeFunctions.graph.Functions;
 	number: typeFunctions.number.Functions;
 	option: typeFunctions.option.Functions;
+	point: object;
 	record: typeFunctions.record.Functions;
 	string: typeFunctions.string.Functions;
 }

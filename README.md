@@ -1062,6 +1062,34 @@ type Result = t.infer<typeof query>;
 // }>
 ```
 
+## Geospatial points
+
+```typescript
+import { GeometryPoint, Surreal } from "surrealdb";
+import { geo, orm, table, t, type_ } from "surqlize";
+
+const place = table("place", {
+  location: t.point(),
+  coordinates: t.array([t.number(), t.number()]),
+});
+const db = orm(new Surreal(), place);
+
+const center = new GeometryPoint([12.5, 41.9]);
+const nearby = db.select("place").where((place) =>
+  geo.distance(place.location, center).lt(5000),
+);
+const nearbyByCoordinates = db.select("place").where((place) =>
+  geo.distance(place.coordinates, [12.5, 41.9]).lt(5000),
+);
+```
+
+`t.point()` describes a native SurrealDB point value. For raw coordinate data,
+use `t.array([t.number(), t.number()])`. `type_.point(value)` explicitly emits
+`type::point(value)`, while `geo.distance()` automatically accepts a
+`GeometryPoint` or `[longitude, latitude]` and performs required coordinate
+casts in SurrealDB. Distances are returned by SurrealDB in metres. Coordinates
+are always ordered longitude first, latitude second.
+
 ## Standalone functions
 
 Standalone functions are not called on a field but used independently within query callbacks. Functions with value parameters extract the query context automatically from the first value. Zero-arg functions and constants require an explicit context source (any `Workable` from the callback).
