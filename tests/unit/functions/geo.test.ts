@@ -111,6 +111,18 @@ describe("Geo functions", () => {
 		geo.distance(new GeometryPoint([1, 2]), [3, 4]);
 	});
 
+	test("rejects unsupported point methods at compile time", () => {
+		// Never invoked; present only so `tsc` checks the @ts-expect-error case.
+		const _typeErrors = () => {
+			db.select("location").return((loc) => {
+				// @ts-expect-error Point expressions expose only generic functions.
+				loc.point.thisMethodDoesNotExist();
+				return loc.point;
+			});
+		};
+		expect(typeof _typeErrors).toBe("function");
+	});
+
 	test("geo.hashDecode() generates geo::hash::decode", () => {
 		const query = db.select("location").return((loc) => ({
 			decoded: geo.hashDecode(loc.coords),
