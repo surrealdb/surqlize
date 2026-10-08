@@ -1,4 +1,4 @@
-import { BoundQuery } from "surrealdb";
+import { BoundQuery, type RetryValue } from "surrealdb";
 import type { AbstractType } from "../types";
 import {
 	__ctx,
@@ -10,6 +10,7 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+import { addSignal, applyRequestOptions, type RequestOptions } from "./request";
 
 /**
  * Abstract base class for all query types. Implements `Workable` so queries can
@@ -31,6 +32,8 @@ export abstract class Query<
 	type = undefined as unknown as T["infer"];
 	/** When true, result parsing is skipped (used by RETURN DIFF). */
 	protected _skipParse = false;
+	/** Client-side options applied when the query is sent. */
+	protected _request: RequestOptions = {};
 	/** Type-guard that checks whether a value matches this query's result type. */
 	validate(value: unknown): value is T["infer"] {
 		return this[__type].validate(value);
@@ -73,6 +76,62 @@ export abstract class Query<
 		const next = this.clone();
 		mutate(next);
 		return next;
+	}
+
+	/**
+	 * Abandon the query when `signal` aborts: the returned promise rejects with
+	 * the signal's reason instead of waiting for the server. Calling this more
+	 * than once combines the signals.
+	 *
+	 * Aborting means "stop waiting", and nothing more. The server may carry on,
+	 * so **a write that was already sent may or may not have been applied**.
+	 * To tie every query of a request handler to the request's signal, use
+	 * `orm.withSignal()` instead.
+	 *
+	 * ```ts
+	 * await db.select("report").signal(AbortSignal.timeout(2000));
+	 * ```
+	 */
+	signal(signal: AbortSignal | undefined): this {
+		return this.derive((next) => {
+			next._request = addSignal(next._request, signal);
+		});
+	}
+
+	/**
+	 * Give up on the query with a `TimeoutError` if the server has not answered
+	 * within `milliseconds`, overriding the connection's `requestTimeout`. Pass
+	 * `0` to wait without limit.
+	 *
+	 * This is a limit on the *client*. It is not the `TIMEOUT` clause that
+	 * `.timeout()` adds to the statement and the server enforces. The server is
+	 * not told the client has given up, so a write that timed out may or may not
+	 * have been applied.
+	 */
+	requestTimeout(milliseconds: number): this {
+		return this.derive((next) => {
+			next._request = { ...next._request, requestTimeout: milliseconds };
+		});
+	}
+
+	/**
+	 * Re-send the query, with exponential backoff, when it fails because of a
+	 * transaction conflict with a concurrent write. Defaults to the connection's
+	 * retry behaviour; pass options to override it, or `false` to turn it off.
+	 *
+	 * The whole query is re-sent, which is safe for a single statement. Do not use
+	 * it inside an interactive transaction, where a conflict has already failed
+	 * the transaction. To retry several statements together, use `orm.batch()`,
+	 * which is atomic and can be retried as a unit.
+	 *
+	 * Conflicts are recognised from the structured `TransactionConflict` error
+	 * that SurrealDB 3.1.0 and later report. For earlier servers, pass a
+	 * `retryable` predicate.
+	 */
+	retry(options: RetryValue = true): this {
+		return this.derive((next) => {
+			next._request = { ...next._request, retry: options };
+		});
 	}
 
 	/** Render the query as a SurrealQL string. */
@@ -162,9 +221,9 @@ export abstract class Query<
 	async execute() {
 		const ctx = displayContext();
 		const query = this[__display](ctx);
-		const [result] = await this[__ctx].orm.surreal.query<[this["type"]]>(
-			query,
-			ctx.variables,
+		const [result] = await applyRequestOptions(
+			this[__ctx].orm.surreal.query<[this["type"]]>(query, ctx.variables),
+			this._request,
 		);
 		return this.parseResult(result);
 	}
@@ -188,6 +247,11 @@ export abstract class Query<
 	 * types the response from the ORM's inferred schema. Unlike {@link execute},
 	 * the SDK's raw result is **not** run through this query's {@link parseResult}
 	 * — the caller owns decoding.
+	 *
+	 * Options set with `.signal()`, `.requestTimeout()` and `.retry()` are not
+	 * carried over: they configure how this query is sent, and a prepared query
+	 * is sent by the caller. Configure the SDK query instead, for example
+	 * `surreal.query(prepared).retry()`.
 	 */
 	prepare(): BoundQuery<[this["type"]]> {
 		const ctx = displayContext();

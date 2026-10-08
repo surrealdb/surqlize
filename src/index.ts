@@ -15,6 +15,7 @@ export * from "./query/delete";
 export * from "./query/insert";
 export * from "./query/live";
 export * from "./query/relate";
+export type { SurrealConnection } from "./query/request";
 export * from "./query/select";
 export * from "./query/transaction";
 export * from "./query/update";

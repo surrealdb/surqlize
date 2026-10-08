@@ -1,4 +1,3 @@
-import type { SurrealSession } from "surrealdb";
 import type {
 	ApiEndpointSchema,
 	ApiMethodDef,
@@ -6,6 +5,7 @@ import type {
 	HttpMethod,
 } from "../schema/api";
 import type { AbstractType } from "../types";
+import type { SurrealConnection } from "./request.ts";
 
 // ---------------------------------------------------------------------------
 // Type-level helpers
@@ -83,7 +83,7 @@ export class ApiClient<E extends ApiEndpointSchema[] = ApiEndpointSchema[]> {
 	private schemas: Map<string, ApiMethods>;
 
 	constructor(
-		private readonly surreal: SurrealSession,
+		private readonly surreal: SurrealConnection,
 		endpoints: E,
 	) {
 		this.schemas = new Map();

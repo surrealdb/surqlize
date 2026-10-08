@@ -1,8 +1,14 @@
-import type { SurrealSession } from "surrealdb";
+import { BoundQuery, type RetryValue } from "surrealdb";
 import type { DisplayContext } from "../utils/display.ts";
 import { displayContext } from "../utils/display.ts";
 import { __display } from "../utils/workable.ts";
 import type { Query } from "./abstract.ts";
+import {
+	addSignal,
+	bindSignals,
+	type RequestOptions,
+	type SurrealConnection,
+} from "./request.ts";
 
 /**
  * Maps a tuple of Query types to a tuple of their inferred result types.
@@ -13,24 +19,33 @@ export type BatchResult<Q extends Query<any, any>[]> = {
 };
 
 /**
- * A batch query that wraps multiple queries in
- * `BEGIN TRANSACTION; ...; COMMIT TRANSACTION;` and executes
- * them as a single atomic operation.
+ * A batch of queries that is sent to the server in a single request and applied
+ * atomically: either every statement takes effect or none does. It is executed
+ * with the SDK's stateless `transaction()`, so it also works over HTTP.
+ *
+ * Because it is a single request, a batch is safe to replay. Use
+ * {@link BatchQuery.retry} to re-send it when it fails because of a conflict with
+ * a concurrent transaction.
  */
 // biome-ignore lint/suspicious/noExplicitAny: required for generic constraint flexibility
 export class BatchQuery<Q extends Query<any, any>[]> {
 	constructor(
-		private readonly surreal: SurrealSession,
+		private readonly surreal: SurrealConnection,
 		private readonly queries: Q,
+		private readonly options: RequestOptions = {},
 	) {}
 
-	[__display](inp: DisplayContext): string {
-		const statements = this.queries.map((q) => {
+	/** Render each query as a single statement sharing one variable store. */
+	private statements(inp: DisplayContext): string[] {
+		return this.queries.map((q) => {
 			const sql = q[__display](inp);
 			// Strip outer parentheses that queries add for subquery usage
 			return sql.startsWith("(") && sql.endsWith(")") ? sql.slice(1, -1) : sql;
 		});
-		return `BEGIN TRANSACTION; ${statements.join("; ")}; COMMIT TRANSACTION;`;
+	}
+
+	[__display](inp: DisplayContext): string {
+		return `BEGIN TRANSACTION; ${this.statements(inp).join("; ")}; COMMIT TRANSACTION;`;
 	}
 
 	toString(): string {
@@ -40,13 +55,62 @@ export class BatchQuery<Q extends Query<any, any>[]> {
 
 	[Symbol.toStringTag] = "BatchQuery";
 
+	/** A copy of this batch with different request options. */
+	private withOptions(options: RequestOptions): BatchQuery<Q> {
+		return new BatchQuery(this.surreal, this.queries, options);
+	}
+
+	/**
+	 * Abandon the batch when `signal` aborts. Calling this more than once
+	 * combines the signals.
+	 *
+	 * Aborting means "stop waiting", and nothing more: the batch is a single
+	 * request that the server may carry on to run, so **it may or may not have
+	 * been committed**.
+	 */
+	signal(signal: AbortSignal | undefined): BatchQuery<Q> {
+		return this.withOptions(addSignal(this.options, signal));
+	}
+
+	/**
+	 * Give up on the batch with a `TimeoutError` if the server has not answered
+	 * within `milliseconds` (per attempt, when retrying), overriding the
+	 * connection's `requestTimeout`. Pass `0` to wait without limit. As for
+	 * {@link BatchQuery.signal}, the batch may or may not have been committed.
+	 */
+	requestTimeout(milliseconds: number): BatchQuery<Q> {
+		return this.withOptions({ ...this.options, requestTimeout: milliseconds });
+	}
+
+	/**
+	 * Re-send the whole batch when it fails because of a conflict with a
+	 * concurrent transaction. Defaults to the connection's retry behaviour; pass
+	 * options to override it, or `false` to turn it off.
+	 *
+	 * Conflicts are recognised from the structured `TransactionConflict` error
+	 * that SurrealDB 3.1.0 and later report. For earlier servers, pass a
+	 * `retryable` predicate.
+	 */
+	retry(options: RetryValue = true): BatchQuery<Q> {
+		return this.withOptions({ ...this.options, retry: options });
+	}
+
 	async execute(): Promise<BatchResult<Q>> {
 		const ctx = displayContext();
-		const query = this[__display](ctx);
-		const results = await this.surreal.query<unknown[]>(query, ctx.variables);
-		// Skip BEGIN (first) and COMMIT (last) results
-		const queryResults = results.slice(1, results.length - 1);
-		return queryResults.map((result, i) => {
+		const statements = this.statements(ctx);
+		const connection = bindSignals(this.surreal, this.options);
+		// The SDK wraps the statements in BEGIN/COMMIT itself and resolves to one
+		// result per statement — and each query here is exactly one statement. It
+		// resolves an empty list to `[]`, but rejects an empty statement.
+		const queries =
+			statements.length === 0
+				? []
+				: [new BoundQuery(statements.join("; "), ctx.variables)];
+		const results = await connection.transaction<unknown[]>(queries, {
+			retry: this.options.retry,
+			requestTimeout: this.options.requestTimeout,
+		});
+		return results.map((result, i) => {
 			return this.queries[i]!.parseResult(result);
 		}) as BatchResult<Q>;
 	}

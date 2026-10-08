@@ -42,7 +42,8 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Automatic type inference** - Get full TypeScript types without code generation
 - **Fluent query builder** - Chain `.select()`, `.where()`, `.return()` with full type safety
 - **Complete CRUD operations** - SELECT, CREATE, UPDATE, DELETE, and UPSERT queries
-- **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
+- **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications that survive reconnects
+- **Cancellation, timeouts and retries** - Abort queries with an `AbortSignal`, bound them with a request timeout, and retry them on transaction conflicts
 - **Graph relationships** - First-class support for edges and graph traversal
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
@@ -61,10 +62,10 @@ npm install surqlize
   features degrade or are unavailable on older servers; for example, filtering
   or projecting a live query relies on query parameters that require **server ≥
   3.0** (`FETCH` requires ≥ 2.2.0).
-- **`surrealdb` JavaScript SDK ≥ 2.0.0** — declared as a peer
+- **`surrealdb` JavaScript SDK ≥ 2.1.0 (2.x)** — declared as a peer
   dependency, so install it alongside surqlize. (The SDK and the server are
   versioned independently: the 2.x SDK is what connects to a 3.x server.)
-- **TypeScript ≥ 5.0** for full type inference.
+- **TypeScript 5 or 6** for full type inference.
 
 ## Quick start
 
@@ -661,6 +662,17 @@ const [user, updated, allUsers] = await db.batch(
 // Results are fully typed as a tuple
 ```
 
+A batch is sent as one request using the SDK's stateless `transaction()`, so it works over HTTP as well as WebSockets. If it fails, the promise rejects with the error that made it fail, and none of its statements take effect.
+
+Because it is a single request, a batch is safe to replay. Use `.retry()` to re-send it when it fails because of a conflict with a concurrent transaction (see [Retrying conflicts](#retrying-conflicts)). A batch also takes `.signal()` and `.requestTimeout()`, as described in [Cancellation, timeouts and retries](#cancellation-timeouts-and-retries):
+
+```typescript
+const [created] = await db
+  .batch(db.create("user").set({ name: "Alice", age: 30 }))
+  .retry()
+  .requestTimeout(5_000);
+```
+
 You can also inspect the generated SurrealQL before executing:
 
 ```typescript
@@ -675,6 +687,8 @@ console.log(b.toString());
 // Execute when ready
 const [created, updated] = await b;
 ```
+
+> A batch cannot be used inside an interactive [transaction](#transactions) — it is already atomic, and transactions cannot be nested. `tx.batch()` throws; run the queries on `tx` instead.
 
 ## Transactions
 
@@ -717,7 +731,9 @@ try {
 }
 ```
 
-The transaction object (`tx`) has all the same query-builder methods as the main `db` instance — `select`, `create`, `insert`, `update`, `upsert`, `delete`, and `relate`.
+The transaction object (`tx`) has all the same query-builder methods as the main `db` instance — `select`, `create`, `insert`, `update`, `upsert`, `delete`, and `relate` — except `batch`, which is itself atomic and cannot be nested.
+
+To abandon the queries of a transaction when a request is aborted, use `tx.withSignal(signal)`. It returns a handle on the same transaction, so `commit()` and `cancel()` work on either. They are deliberately not bound to the signal: a request that is being abandoned cannot leave the outcome of a commit in doubt.
 
 ## Live queries
 
@@ -732,6 +748,7 @@ const off = sub.subscribe((msg) => {
   // msg.action:   "CREATE" | "UPDATE" | "DELETE" | "KILLED"
   // msg.recordId: the affected RecordId
   // msg.value:    the affected record, parsed against the schema
+  if (msg.action === "KILLED") return; // see "Handling KILLED" below
   console.log(msg.action, msg.value);
 });
 
@@ -741,15 +758,33 @@ off();
 await sub.kill();
 ```
 
-The notification `value` is parsed against the table schema, so it is fully typed:
+The notification `value` is parsed against the table schema, so it is fully typed once you have narrowed to a record change:
 
 ```typescript
 const sub = await db.live("user");
 sub.subscribe((msg) => {
+  if (msg.action === "KILLED") return;
   msg.value.name.first; // string
   msg.value.age; // number
 });
 ```
+
+### Handling `KILLED`
+
+`KILLED` means the server ended the subscription — for example because its table was removed. It is the last message a subscription emits, and it carries no record, so `recordId` and `value` only exist once you have ruled it out. `LiveMessage` is a union, so the compiler enforces this:
+
+```typescript
+sub.subscribe((msg) => {
+  if (msg.action === "KILLED") {
+    // msg.recordId and msg.value are undefined here
+    return;
+  }
+  msg.recordId; // RecordId
+  msg.value; // the record
+});
+```
+
+`sub.isAlive` turns `false` when a subscription is killed, by `kill()`, by the server, or because the request scope it was made through was aborted.
 
 A subscription is also async-iterable:
 
@@ -804,7 +839,21 @@ const stop = await db
 stop();
 ```
 
-> Live subscriptions are **unmanaged** — they are not automatically restarted if the connection drops and reconnects. The table must also exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
+### Reconnecting
+
+A subscription to a table — with any of `.where()`, `.fetch()` and `.diff()` — is **managed** by the SDK. If the connection drops and comes back, the SDK registers the live query again, so notifications keep flowing. The subscription's `id` changes when that happens, and anything that changed while the connection was down is not replayed.
+
+A subscription with a `.return()` projection cannot be expressed that way and is **unmanaged**: it goes silent after a reconnect, and `isAlive` stays `true`. Check `sub.isManaged` if that matters to you, or subscribe to the whole record and project on the client.
+
+```typescript
+const sub = await db.live("user").where((user) => user.age.gte(18));
+sub.isManaged; // true
+
+const names = await db.live("user").return((user) => ({ name: user.name }));
+names.isManaged; // false
+```
+
+> The table must exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
 
 ## Accessing Single Records
 
@@ -1131,6 +1180,8 @@ const projection = await db.update("user", "alice")
 
 ### Query Timeouts
 
+`.timeout()` adds the SurrealQL `TIMEOUT` clause, which the **server** enforces:
+
 ```typescript
 const users = await db.select("user")
   .where((u) => u.age.gt(18))
@@ -1139,6 +1190,72 @@ const users = await db.select("user")
 await db.update("user", "alice")
   .set({ age: 31 })
   .timeout("10s");
+```
+
+To bound how long the **client** waits instead, see `.requestTimeout()` below.
+
+### Cancellation, timeouts and retries
+
+Every query, and every [batch](#batch), can be configured with how long and how hard the client waits for the answer. These options are applied by the SDK when the request is sent; they do not change the SurrealQL that is rendered.
+
+```typescript
+// Stop waiting when the signal aborts: the promise rejects with its reason
+await db.select("report").signal(AbortSignal.timeout(2_000));
+
+// Give up with a TimeoutError after 5s (0 waits without limit)
+await db.select("report").requestTimeout(5_000);
+
+// Re-send the query if it fails because of a transaction conflict
+await db.update("counter", "visits").set({ n: { "+=": 1 } }).retry();
+```
+
+Like the other builder methods, they return a new query and leave the original untouched, and signals combine: calling `.signal()` twice abandons the query when either aborts.
+
+> **Aborting means "stop waiting", and nothing more.** The server is not told, and may carry on. A write that was already sent may or may not have been applied. This holds for `.signal()` and for `.requestTimeout()`, which is not the same thing as the `TIMEOUT` clause above.
+
+#### Retrying conflicts
+
+When two transactions write to the same data, one of them fails with a conflict. `.retry()` re-sends the whole query, with exponential backoff, until it succeeds or the attempts run out. It defaults to the connection's retry settings; pass options to override them, or `false` to turn it off.
+
+```typescript
+await db.batch(
+  db.update("account", "a").set({ balance: { "-=": 10 } }),
+  db.update("account", "b").set({ balance: { "+=": 10 } }),
+).retry({ attempts: 5 });
+```
+
+Only re-send what is safe to replay: a single statement, or a [batch](#batch), which is applied atomically. Do not use it inside an interactive transaction, where a conflict has already failed the transaction.
+
+SurrealDB 3.1.0 and later report a conflict as a structured error, which is what `.retry()` recognises. For earlier servers, give it a predicate:
+
+```typescript
+.retry({
+  retryable: (error) =>
+    error instanceof Error && /conflict|can be retried/i.test(error.message),
+})
+```
+
+#### Tying a request to its signal
+
+In a request handler, `db.withSignal(signal)` returns a view of the ORM in which **every** query is abandoned when the signal aborts, so you don't pass it to each call. It shares the connection and session, so it is cheap to make one per request:
+
+```typescript
+export default {
+  async fetch(request: Request) {
+    const scoped = db.withSignal(request.signal);
+
+    const users = await scoped.select("user");
+    await scoped.batch(
+      scoped.create("audit").set({ action: "list" }),
+    );
+
+    // A live subscription made through the scope is killed when the
+    // request is aborted, so it cannot outlive its client.
+    const changes = await scoped.live("user");
+
+    return Response.json(users);
+  },
+};
 ```
 
 ### Operators
@@ -1401,7 +1518,7 @@ const posts = await db
 
 ## Multi-session support
 
-Surqlize accepts any `SurrealSession` (or `Surreal`, which extends it), enabling multiple ORM instances scoped to different sessions over a single connection. Each session maintains its own namespace, database, authentication state, and variables.
+Surqlize accepts any `SurrealSession` (or `Surreal`, which extends it) — or the request scope that `withSignal()` returns — enabling multiple ORM instances scoped to different sessions over a single connection. Each session maintains its own namespace, database, authentication state, and variables.
 
 ### Multiple databases over one connection
 

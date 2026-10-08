@@ -1,7 +1,10 @@
 import {
+	type Expr,
 	type LiveAction,
+	LiveSubscriptionError,
 	type RecordId,
-	type SurrealSession,
+	type LiveMessage as SdkLiveMessage,
+	type LiveSubscription as SdkLiveSubscription,
 	Table,
 	type Uuid,
 } from "surrealdb";
@@ -32,21 +35,30 @@ import {
 import { resolveSubjectSchema } from "./subject.ts";
 import { escapeIdiomPath } from "./utils.ts";
 
-/** The underlying SDK subscription returned by `surreal.liveOf()`. */
-type SdkLiveSubscription = Awaited<ReturnType<SurrealSession["liveOf"]>>;
-
 /**
- * A single live-query notification: the change `action`, the affected
- * `recordId`, and the `value` (the affected record, parsed against the query's
- * schema — or a JSON Patch array when the query was created with `.diff()`).
+ * A single live-query notification.
  *
- * For `KILLED` notifications the `value` carries no record payload.
+ * A record change (`CREATE` / `UPDATE` / `DELETE`) carries the affected
+ * `recordId` and its `value` (the record, parsed against the query's schema — or
+ * a JSON Patch array when the query was created with `.diff()`).
+ *
+ * `KILLED` signals that the subscription was terminated server-side (for
+ * example when its table is removed) and carries neither: there is no record.
+ * It is the final message a subscription emits. Modelling this as a union means
+ * a handler cannot read `recordId` or `value` on a `KILLED` message without
+ * narrowing on `action` first, mirroring the `surrealdb` SDK.
  */
-export type LiveMessage<T> = {
-	action: LiveAction;
-	recordId: RecordId;
-	value: T;
-};
+export type LiveMessage<T> =
+	| {
+			action: Exclude<LiveAction, "KILLED">;
+			recordId: RecordId;
+			value: T;
+	  }
+	| {
+			action: "KILLED";
+			recordId?: undefined;
+			value?: undefined;
+	  };
 
 /**
  * A typed wrapper around a SurrealDB live subscription. Obtain one by awaiting a
@@ -57,13 +69,33 @@ export type LiveMessage<T> = {
  */
 export class LiveSubscription<T> {
 	constructor(
-		private readonly inner: SdkLiveSubscription,
-		private readonly mapValue: (raw: unknown, action: LiveAction) => T,
+		private readonly inner: SdkLiveSubscription<unknown>,
+		private readonly mapValue: (raw: unknown) => T,
 	) {}
 
-	/** The id of the underlying live subscription. */
+	/**
+	 * The id of the underlying live subscription. A managed subscription is
+	 * re-registered when the connection is re-established, which changes its id.
+	 */
 	get id(): Uuid {
 		return this.inner.id;
+	}
+
+	/**
+	 * Whether the subscription is still delivering notifications. It turns
+	 * `false` once the subscription is killed (by {@link kill}, by the server, or
+	 * by an aborted request scope) or its session goes away.
+	 */
+	get isAlive(): boolean {
+		return this.inner.isAlive;
+	}
+
+	/**
+	 * Whether the SDK re-registers this subscription after the connection drops
+	 * and reconnects. An unmanaged subscription ends silently instead.
+	 */
+	get isManaged(): boolean {
+		return this.inner.isManaged;
 	}
 
 	/**
@@ -71,24 +103,25 @@ export class LiveSubscription<T> {
 	 * handler (it does not kill the subscription — use {@link kill} for that).
 	 */
 	subscribe(handler: (message: LiveMessage<T>) => void): () => void {
-		return this.inner.subscribe((message) =>
-			handler({
-				action: message.action,
-				recordId: message.recordId,
-				value: this.mapValue(message.value, message.action),
-			}),
-		);
+		return this.inner.subscribe((message) => handler(this.toMessage(message)));
 	}
 
 	/** Async-iterate notifications: `for await (const msg of sub) { … }`. */
 	async *[Symbol.asyncIterator](): AsyncIterator<LiveMessage<T>> {
 		for await (const message of this.inner) {
-			yield {
-				action: message.action,
-				recordId: message.recordId,
-				value: this.mapValue(message.value, message.action),
-			};
+			yield this.toMessage(message);
 		}
+	}
+
+	/** Map an SDK notification onto a {@link LiveMessage}, parsing its value. */
+	private toMessage(message: SdkLiveMessage<unknown>): LiveMessage<T> {
+		// KILLED carries no record, so there is nothing to parse.
+		if (message.action === "KILLED") return { action: "KILLED" };
+		return {
+			action: message.action,
+			recordId: message.recordId,
+			value: this.mapValue(message.value),
+		};
 	}
 
 	/** Kill the live subscription and stop receiving updates. */
@@ -110,7 +143,13 @@ export class LiveSubscription<T> {
  * `SPLIT`. Filtering or projecting (`.where()`, `.return()`, `.fetch()`) relies
  * on query parameters, which require **SurrealDB ≥ 3.0**; on older servers a
  * parameterized live query is accepted but never delivers notifications.
- * Subscriptions are unmanaged and are not automatically restarted on reconnect.
+ *
+ * A subscription to a table, with any of `.where()`, `.fetch()` and `.diff()`,
+ * is **managed** by the SDK: it is registered again when the connection drops
+ * and reconnects (its `id` changes), so notifications keep flowing. A
+ * `.return()` projection cannot be expressed that way and is **unmanaged**: it
+ * goes silent after a reconnect, and `isAlive` stays `true`. Check
+ * {@link LiveSubscription.isManaged}.
  *
  * @typeParam E - The per-record entry type.
  * @typeParam V - The notification value type (defaults to `E["infer"]`; becomes
@@ -297,21 +336,79 @@ export class LiveQuery<
 		return this[__display](ctx);
 	}
 
-	/** Start the live query and resolve to a typed {@link LiveSubscription}. */
-	async execute(): Promise<LiveSubscription<V>> {
+	/**
+	 * The table the SDK can subscribe to on our behalf, or `undefined` when this
+	 * query needs the unmanaged path.
+	 *
+	 * The SDK composes a managed `LIVE SELECT` itself, from a table, an optional
+	 * `WHERE`, `FETCH` and `DIFF`. It cannot carry a `.return()` projection (an
+	 * arbitrary expression), and its resource is a table: a record id or a
+	 * subquery as the subject stays on the unmanaged path.
+	 */
+	private get managedResource(): Table | undefined {
+		if (this._entry || typeof this.subject !== "string") return undefined;
+		return new Table(this.subject);
+	}
+
+	/** The filter as an SDK expression, which defines its own variables. */
+	private get managedFilter(): Expr | undefined {
+		const filter = this._filter;
+		if (!filter) return undefined;
+		const contextId = this[__ctx].id;
+		return {
+			// Rendering only ever defines variables through `var`.
+			toSQL: (ctx) =>
+				filter[__display]({ var: ctx.def, variables: {}, contextId }),
+		};
+	}
+
+	/** Register a live query that the SDK keeps alive across reconnects. */
+	private async registerManaged(
+		resource: Table,
+	): Promise<SdkLiveSubscription<unknown>> {
+		let live = this[__ctx].orm.surreal.live<unknown>(resource);
+		const filter = this.managedFilter;
+		if (filter) live = live.where(filter);
+		if (this._fetch && this._fetch.length > 0) {
+			live = live.fetch(...this._fetch.map(escapeIdiomPath));
+		}
+		if (this._diff) live = live.diff();
+
+		try {
+			return await live;
+		} catch (error) {
+			// The SDK wraps a failed registration in a `LiveSubscriptionError` whose
+			// message ("failed to listen") hides what the server said, such as "the
+			// table does not exist". Surface the cause, as the unmanaged path does.
+			if (error instanceof LiveSubscriptionError && error.cause !== undefined) {
+				throw error.cause;
+			}
+			throw error;
+		}
+	}
+
+	/** Register the live query by hand and attach to it, without a restart. */
+	private async registerUnmanaged(): Promise<SdkLiveSubscription<unknown>> {
 		const ctx = displayContext();
 		const query = this[__display](ctx);
 		const { surreal } = this[__ctx].orm;
 
 		const [uuid] = await surreal.query<[Uuid]>(query, ctx.variables);
-		const inner = await surreal.liveOf(uuid);
+		return surreal.liveOf(uuid);
+	}
+
+	/** Start the live query and resolve to a typed {@link LiveSubscription}. */
+	async execute(): Promise<LiveSubscription<V>> {
+		const resource = this.managedResource;
+		const inner = resource
+			? await this.registerManaged(resource)
+			: await this.registerUnmanaged();
 
 		const type = this.entry;
 		const diff = this._diff;
-		const mapValue = (raw: unknown, action: LiveAction): V => {
-			// DIFF yields JSON Patch arrays, and KILLED carries no record payload —
-			// pass those through unparsed.
-			if (diff || action === "KILLED") return raw as V;
+		const mapValue = (raw: unknown): V => {
+			// DIFF yields JSON Patch arrays — pass them through unparsed.
+			if (diff) return raw as V;
 			return type.parse(raw) as V;
 		};
 
@@ -327,7 +424,10 @@ export class LiveQuery<
 			const off = sub.subscribe(handler);
 			return () => {
 				off();
-				void sub.kill();
+				// The subscription is being discarded, so a failure to kill it (for
+				// example, the connection is already gone) is not worth an unhandled
+				// rejection: the server ends the live query with the connection.
+				sub.kill().catch(() => {});
 			};
 		});
 	}

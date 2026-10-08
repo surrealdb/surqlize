@@ -3,6 +3,32 @@ import { edge, orm, t, table } from "../../src";
 
 export type TestDb = Awaited<ReturnType<typeof setupTestDb>>;
 
+/**
+ * The version of the SurrealDB server the integration tests run against, as
+ * `[major, minor, patch]`. Lets a test whose behaviour depends on the server
+ * (for example, structured transaction-conflict errors from 3.1.0) say so.
+ */
+export async function serverVersion(): Promise<[number, number, number]> {
+	const surreal = new Surreal();
+	try {
+		await surreal.connect(process.env.SURREAL_URL || "ws://localhost:8000");
+		const { version } = await surreal.version();
+		const [, major, minor, patch] = /(\d+)\.(\d+)\.(\d+)/.exec(version) ?? [];
+		return [Number(major), Number(minor), Number(patch)];
+	} finally {
+		await surreal.close();
+	}
+}
+
+/** Whether `version` is at least `major.minor`. */
+export function atLeast(
+	version: readonly [number, number, number],
+	major: number,
+	minor: number,
+): boolean {
+	return version[0] > major || (version[0] === major && version[1] >= minor);
+}
+
 export async function setupTestDb() {
 	const surreal = new Surreal();
 	const url = process.env.SURREAL_URL || "ws://localhost:8000";
