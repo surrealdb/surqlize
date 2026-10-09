@@ -48,7 +48,10 @@ async function createResults() {
 	>();
 
 	// CREATE .replace(): REPLACE does not apply defaults.
-	const viaReplace = await db.create("member").replace({ name: "Ada" }).execute();
+	const viaReplace = await db
+		.create("member")
+		.replace({ name: "Ada" })
+		.execute();
 	type ViaReplace = (typeof viaReplace)[number];
 	assertType<Equal<keyof ViaReplace, "id" | "name" | "nickname">>();
 
@@ -219,7 +222,10 @@ async function relateResults() {
 	const to = new RecordId("member", "b");
 
 	// RELATE .set(): in and out always exist, and nothing else is guaranteed.
-	const viaSet = await db.relate("knows", from, to).set({ since: new Date() }).execute();
+	const viaSet = await db
+		.relate("knows", from, to)
+		.set({ since: new Date() })
+		.execute();
 	type ViaSet = (typeof viaSet)[number];
 	assertType<Equal<keyof ViaSet, "id" | "in" | "out" | "since">>();
 	// @ts-expect-error weight is required by the edge but was not written

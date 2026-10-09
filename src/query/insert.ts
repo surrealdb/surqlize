@@ -38,11 +38,7 @@ import {
 	type SetValue,
 } from "./utils.ts";
 import { computedFieldsOf, implicitFieldsOf } from "./validate-input.ts";
-import {
-	type FullWrite,
-	type WriteRow,
-	type WriteShape,
-} from "./write-result.ts";
+import type { FullWrite, WriteRow, WriteShape } from "./write-result.ts";
 
 type SetData<T extends ObjectType> = {
 	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
@@ -173,7 +169,13 @@ export class InsertQuery<
 		updates: E extends ObjectType
 			? Partial<SetData<E>>
 			: Record<string, unknown>,
-	): InsertQuery<O, C, T, E, { keys: never; maybe: never; gone: never; mode: "patch" }> {
+	): InsertQuery<
+		O,
+		C,
+		T,
+		E,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
 		if (this._ignore) {
 			throw new OrmError("Cannot use both ignore() and onDuplicate()");
 		}

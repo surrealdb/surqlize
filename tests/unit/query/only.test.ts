@@ -100,11 +100,19 @@ describe("ONLY queries", () => {
 		const createdCheck: Equal<Created, { id: RecordId<"user"> }> = true;
 		const updatedCheck: Equal<
 			Updated,
-			{ id: RecordId<"user">; name: string | undefined; age: number | undefined }
+			{
+				id: RecordId<"user">;
+				name: string | undefined;
+				age: number | undefined;
+			}
 		> = true;
 		const upsertedCheck: Equal<
 			Upserted,
-			{ id: RecordId<"user">; name: string | undefined; age: number | undefined }
+			{
+				id: RecordId<"user">;
+				name: string | undefined;
+				age: number | undefined;
+			}
 		> = true;
 		const deletedCheck: Equal<Deleted, User> = true;
 

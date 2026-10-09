@@ -39,12 +39,12 @@ import {
 	type WriteData,
 } from "./modification-methods.ts";
 import { validateWrite } from "./validate-input.ts";
-import {
-	type FullWrite,
-	type NoWrite,
-	type WriteRow,
-	type WriteShape,
-	type Written,
+import type {
+	FullWrite,
+	NoWrite,
+	WriteRow,
+	WriteShape,
+	Written,
 } from "./write-result.ts";
 
 /**
@@ -125,14 +125,7 @@ export class RelateQuery<
 	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
-		}) as unknown as RelateQuery<
-			O,
-			C,
-			Edge,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>>;
 	}
 
 	content(
@@ -144,14 +137,7 @@ export class RelateQuery<
 			applyContent(next, data);
 			// A full record is checked strictly: every field is there.
 			next._lenient = false;
-		}) as unknown as RelateQuery<
-			O,
-			C,
-			Edge,
-			E,
-			Only,
-			FullWrite
-		>;
+		}) as unknown as RelateQuery<O, C, Edge, E, Only, FullWrite>;
 	}
 
 	merge<const D extends Partial<WriteData<E>>>(
@@ -159,19 +145,19 @@ export class RelateQuery<
 	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
-		}) as unknown as RelateQuery<
-			O,
-			C,
-			Edge,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>>;
 	}
 
 	patch(
 		operations: JsonPatchOp[],
-	): RelateQuery<O, C, Edge, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }> {
+	): RelateQuery<
+		O,
+		C,
+		Edge,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
 		return this.derive((next) => {
 			applyPatch(next, operations);
 		}) as unknown as RelateQuery<
@@ -187,14 +173,7 @@ export class RelateQuery<
 	/** Replace the edge's data. REPLACE does not apply defaults, so only the given fields are known. */
 	replace<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): RelateQuery<
-		O,
-		C,
-		Edge,
-		E,
-		Only,
-		Written<NoWrite, "replace", D>
-	> {
+	): RelateQuery<O, C, Edge, E, Only, Written<NoWrite, "replace", D>> {
 		return this.derive((next) => {
 			applyReplace(next, data);
 		}) as unknown as RelateQuery<

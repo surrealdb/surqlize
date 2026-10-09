@@ -38,12 +38,12 @@ import {
 } from "./modification-methods.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 import { validateWrite } from "./validate-input.ts";
-import {
-	type FullWrite,
-	type NoWrite,
-	type WriteRow,
-	type WriteShape,
-	type Written,
+import type {
+	FullWrite,
+	NoWrite,
+	WriteRow,
+	WriteShape,
+	Written,
 } from "./write-result.ts";
 
 /**
@@ -126,27 +126,13 @@ export class UpsertQuery<
 	): UpsertQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
-		}) as unknown as UpsertQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as UpsertQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
 	/** Replace the record with the given fields, so the other fields are gone. */
 	content<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): UpsertQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		Written<NoWrite, "replace", D>
-	> {
+	): UpsertQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
 		return this.derive((next) => {
 			applyContent(next, data);
 		}) as unknown as UpsertQuery<
@@ -164,19 +150,19 @@ export class UpsertQuery<
 	): UpsertQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
-		}) as unknown as UpsertQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as UpsertQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
 	patch(
 		operations: JsonPatchOp[],
-	): UpsertQuery<O, C, T, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }> {
+	): UpsertQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
 		return this.derive((next) => {
 			applyPatch(next, operations);
 		}) as unknown as UpsertQuery<
@@ -192,14 +178,7 @@ export class UpsertQuery<
 	/** Replace the record. The other fields of the record are gone. */
 	replace<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): UpsertQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		Written<NoWrite, "replace", D>
-	> {
+	): UpsertQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
 		return this.derive((next) => {
 			applyReplace(next, data);
 		}) as unknown as UpsertQuery<
@@ -230,7 +209,14 @@ export class UpsertQuery<
 	/** The state before the write may not have the fields it set, so only the id is known. */
 	return(
 		mode: "before",
-	): UpsertQuery<O, C, T, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }>;
+	): UpsertQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	>;
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<
 		P extends Inheritable<C>,

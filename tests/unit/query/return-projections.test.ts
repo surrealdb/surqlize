@@ -205,7 +205,11 @@ describe("CREATE return projections", () => {
 	test("RETURN VALUE { ... } — object", () => {
 		const query = db
 			.create("user")
-			.set({ name: { first: "Test", last: "User" }, age: 1, email: "t@example.com" })
+			.set({
+				name: { first: "Test", last: "User" },
+				age: 1,
+				email: "t@example.com",
+			})
 			.return((r) => ({ name: r.name, email: r.email }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);

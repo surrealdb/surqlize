@@ -40,12 +40,12 @@ import {
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 import { validateWrite } from "./validate-input.ts";
-import {
-	type FullWrite,
-	type NoWrite,
-	type WriteRow,
-	type WriteShape,
-	type Written,
+import type {
+	FullWrite,
+	NoWrite,
+	WriteRow,
+	WriteShape,
+	Written,
 } from "./write-result.ts";
 
 /**
@@ -131,14 +131,7 @@ export class UpdateQuery<
 	): UpdateQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
-		}) as unknown as UpdateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as UpdateQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
 	/** Remove fields from the record. Removed fields are absent from the result. */
@@ -154,7 +147,12 @@ export class UpdateQuery<
 		T,
 		E,
 		Only,
-		{ keys: W["keys"]; maybe: W["maybe"]; gone: W["gone"] | F[number]; mode: W["mode"] }
+		{
+			keys: W["keys"];
+			maybe: W["maybe"];
+			gone: W["gone"] | F[number];
+			mode: W["mode"];
+		}
 	> {
 		return this.derive((next) => {
 			applyUnset(next, [...fields]);
@@ -164,21 +162,19 @@ export class UpdateQuery<
 			T,
 			E,
 			Only,
-			{ keys: W["keys"]; maybe: W["maybe"]; gone: W["gone"] | F[number]; mode: W["mode"] }
+			{
+				keys: W["keys"];
+				maybe: W["maybe"];
+				gone: W["gone"] | F[number];
+				mode: W["mode"];
+			}
 		>;
 	}
 
 	/** Replace the record with the given fields, so the other fields are gone. */
 	content<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): UpdateQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		Written<NoWrite, "replace", D>
-	> {
+	): UpdateQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
 		return this.derive((next) => {
 			applyContent(next, data);
 		}) as unknown as UpdateQuery<
@@ -196,19 +192,19 @@ export class UpdateQuery<
 	): UpdateQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
-		}) as unknown as UpdateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as UpdateQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
 	patch(
 		operations: JsonPatchOp[],
-	): UpdateQuery<O, C, T, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }> {
+	): UpdateQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
 		return this.derive((next) => {
 			applyPatch(next, operations);
 		}) as unknown as UpdateQuery<
@@ -224,14 +220,7 @@ export class UpdateQuery<
 	/** Replace the record. The other fields of the record are gone. */
 	replace<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): UpdateQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		Written<NoWrite, "replace", D>
-	> {
+	): UpdateQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
 		return this.derive((next) => {
 			applyReplace(next, data);
 		}) as unknown as UpdateQuery<
@@ -278,7 +267,14 @@ export class UpdateQuery<
 	/** The state before the write may not have the fields it set, so only the id is known. */
 	return(
 		mode: "before",
-	): UpdateQuery<O, C, T, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }>;
+	): UpdateQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	>;
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<
 		P extends Inheritable<C>,

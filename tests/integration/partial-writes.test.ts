@@ -71,9 +71,9 @@ describe("partial CREATE writes do not throw after committing", () => {
 
 		expect(row!.name).toBe("Grace");
 		expect(row!.role).toBe("guest");
-		expect((await stored(getTestDb().surreal, "member:merge_partial"))?.name).toBe(
-			"Grace",
-		);
+		expect(
+			(await stored(getTestDb().surreal, "member:merge_partial"))?.name,
+		).toBe("Grace");
 	});
 
 	test("replace() without the required email does not throw", async () => {
@@ -195,9 +195,9 @@ describe("partial CREATE writes do not throw after committing", () => {
 
 		expect(row!.name).toBe("Undef");
 		expect(row!.email).toBeUndefined();
-		expect((await stored(getTestDb().surreal, "member:undef_partial"))?.name).toBe(
-			"Undef",
-		);
+		expect(
+			(await stored(getTestDb().surreal, "member:undef_partial"))?.name,
+		).toBe("Undef");
 	});
 
 	test("set() passing a defaulted field as undefined does not apply its default", async () => {
@@ -427,8 +427,14 @@ describe("partial RELATE writes do not throw after committing", () => {
 		const db = make();
 		const from = new RecordId("member", "rel_a");
 		const to = new RecordId("member", "rel_b");
-		await db.create("member", "rel_a").content({ name: "A", email: "a@x" }).execute();
-		await db.create("member", "rel_b").content({ name: "B", email: "b@x" }).execute();
+		await db
+			.create("member", "rel_a")
+			.content({ name: "A", email: "a@x" })
+			.execute();
+		await db
+			.create("member", "rel_b")
+			.content({ name: "B", email: "b@x" })
+			.execute();
 
 		const [edge] = await db
 			.relate("knows", from, to)
@@ -444,8 +450,14 @@ describe("partial RELATE writes do not throw after committing", () => {
 		const db = make();
 		const from = new RecordId("member", "rel_c");
 		const to = new RecordId("member", "rel_d");
-		await db.create("member", "rel_c").content({ name: "C", email: "c@x" }).execute();
-		await db.create("member", "rel_d").content({ name: "D", email: "d@x" }).execute();
+		await db
+			.create("member", "rel_c")
+			.content({ name: "C", email: "c@x" })
+			.execute();
+		await db
+			.create("member", "rel_d")
+			.content({ name: "D", email: "d@x" })
+			.execute();
 
 		const [edge] = await db
 			.relate("knows", from, to)
@@ -463,7 +475,10 @@ describe("validated() still checks partial writes", () => {
 	test("set() with a wrongly typed value is rejected before sending", async () => {
 		const db = make();
 		await expect(
-			db.create("member", "val_bad").set({ name: 42 as unknown as string }).execute(),
+			db
+				.create("member", "val_bad")
+				.set({ name: 42 as unknown as string })
+				.execute(),
 		).rejects.toThrow(ValidationError);
 		expect(await stored(getTestDb().surreal, "member:val_bad")).toBeUndefined();
 	});
@@ -511,9 +526,9 @@ describe("partial writes inside batch()", () => {
 		);
 
 		expect(created[0]!.name).toBe("Batch");
-		expect((await stored(getTestDb().surreal, "member:batch_partial"))?.name).toBe(
-			"Batch",
-		);
+		expect(
+			(await stored(getTestDb().surreal, "member:batch_partial"))?.name,
+		).toBe("Batch");
 	});
 });
 

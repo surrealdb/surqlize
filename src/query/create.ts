@@ -33,12 +33,12 @@ import {
 	type WriteData,
 } from "./modification-methods.ts";
 import { validateWrite } from "./validate-input.ts";
-import {
-	type FullWrite,
-	type NoWrite,
-	type WriteRow,
-	type WriteShape,
-	type Written,
+import type {
+	FullWrite,
+	NoWrite,
+	WriteRow,
+	WriteShape,
+	Written,
 } from "./write-result.ts";
 
 /**
@@ -115,14 +115,7 @@ export class CreateQuery<
 	): CreateQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
-		}) as unknown as CreateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as CreateQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
 	content(
@@ -132,14 +125,7 @@ export class CreateQuery<
 			applyContent(next, data);
 			// A full record is checked strictly: every field is there.
 			next._lenient = false;
-		}) as unknown as CreateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			FullWrite
-		>;
+		}) as unknown as CreateQuery<O, C, T, E, Only, FullWrite>;
 	}
 
 	/** Merge fields into the record. Fields that are not merged are absent from the result. */
@@ -148,14 +134,7 @@ export class CreateQuery<
 	): CreateQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
-		}) as unknown as CreateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<W, "set", D>
-		>;
+		}) as unknown as CreateQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
 	patch(
@@ -183,14 +162,7 @@ export class CreateQuery<
 	/** Replace the record. REPLACE does not apply defaults, so only the given fields are known. */
 	replace<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): CreateQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		Written<NoWrite, "replace", D>
-	> {
+	): CreateQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
 		return this.derive((next) => {
 			applyReplace(next, data);
 		}) as unknown as CreateQuery<
@@ -206,7 +178,14 @@ export class CreateQuery<
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<P extends Inheritable<C>>(
 		cb: (record: Actionable<C, WriteRow<E, W, "create">>) => P,
-	): CreateQuery<O, C, T, InheritableIntoType<C, ReturnType<typeof cb>>, Only, FullWrite>;
+	): CreateQuery<
+		O,
+		C,
+		T,
+		InheritableIntoType<C, ReturnType<typeof cb>>,
+		Only,
+		FullWrite
+	>;
 	return(
 		value:
 			| "none"

@@ -6,7 +6,7 @@ import {
 	ArrayType,
 	type HasDefault,
 	ObjectType,
-	OptionType,
+	type OptionType,
 } from "../types";
 
 /**
@@ -32,7 +32,12 @@ export type WriteShape = {
 export type NoWrite = { keys: never; maybe: never; gone: never; mode: "set" };
 
 /** A write of the whole record, whose result is the table's row. */
-export type FullWrite = { keys: never; maybe: never; gone: never; mode: "full" };
+export type FullWrite = {
+	keys: never;
+	maybe: never;
+	gone: never;
+	mode: "full";
+};
 
 /**
  * The keys of `D` that are certainly written: required, and not typed to accept
@@ -40,6 +45,7 @@ export type FullWrite = { keys: never; maybe: never; gone: never; mode: "full" }
  * the record.
  */
 type Definite<D> = {
+	// biome-ignore lint/complexity/noBannedTypes: `{}` here means any object type with no required keys, which is the point of the check
 	[K in keyof D]-?: {} extends Pick<D, K>
 		? never
 		: undefined extends D[K]
@@ -118,7 +124,10 @@ type Guaranteed<
  * set anything, so those fields are optional. A CREATE or RELATE only has the
  * fields it wrote, so the rest are absent.
  */
-type MayRemain<W extends WriteShape, K extends WriteKind> = W["mode"] extends "patch"
+type MayRemain<
+	W extends WriteShape,
+	K extends WriteKind,
+> = W["mode"] extends "patch"
 	? true
 	: K extends "update"
 		? W["mode"] extends "set"
@@ -134,9 +143,10 @@ type OptionalFields<
 	S extends Record<string, AbstractType>,
 	W extends WriteShape,
 	K extends WriteKind,
-> = MayRemain<W, K> extends true
-	? Exclude<keyof S, Guaranteed<S, W, K> | W["gone"]>
-	: Exclude<Extract<W["maybe"], keyof S>, W["gone"]>;
+> =
+	MayRemain<W, K> extends true
+		? Exclude<keyof S, Guaranteed<S, W, K> | W["gone"]>
+		: Exclude<Extract<W["maybe"], keyof S>, W["gone"]>;
 
 type RowFields<
 	S extends Record<string, AbstractType>,
@@ -164,7 +174,9 @@ export type WriteRow<
 				readonly infer: infer I;
 			}
 		? ModelType<RowFields<S, W, K>, Omit<I, keyof S>>
-		: E extends { readonly schema: infer S extends Record<string, AbstractType> }
+		: E extends {
+					readonly schema: infer S extends Record<string, AbstractType>;
+				}
 			? ObjectType<RowFields<S, W, K>>
 			: E;
 
