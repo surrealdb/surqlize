@@ -39,10 +39,20 @@ import {
 	type WriteData,
 } from "./modification-methods.ts";
 import { validateWrite } from "./validate-input.ts";
+import type {
+	FullWrite,
+	NoWrite,
+	WriteRow,
+	WriteShape,
+	Written,
+} from "./write-result.ts";
 
 /**
  * A fluent RELATE query builder for creating graph edges between records.
  * Supports SET, CONTENT, MERGE, PATCH, REPLACE, RETURN, and TIMEOUT clauses.
+ *
+ * `W` describes what has been written so far. It sets the type of the rows the
+ * query returns: see {@link WriteRow}.
  */
 export class RelateQuery<
 		O extends Orm,
@@ -50,8 +60,9 @@ export class RelateQuery<
 		Edge extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][Edge]["schema"],
 		Only extends boolean = false,
+		W extends WriteShape = NoWrite,
 	>
-	extends Query<C, QueryResult<E, Only>>
+	extends Query<C, QueryResult<WriteRow<E, W, "relate">, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
@@ -84,61 +95,107 @@ export class RelateQuery<
 			orm,
 			id: Symbol(),
 		} as C;
+		this._lenient = true;
 	}
 
 	get schema(): E {
 		return this[__ctx].orm.tables[this.edge]!.schema as unknown as E;
 	}
 
-	get [__type](): QueryResult<E, Only> {
+	get [__type](): QueryResult<WriteRow<E, W, "relate">, Only> {
 		const schema =
 			this._return && typeof this._return !== "string"
 				? this._return[__type]
 				: this.schema;
-		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+		return (this._only ? schema : t.array(schema)) as QueryResult<
+			WriteRow<E, W, "relate">,
+			Only
+		>;
 	}
 
-	only(): RelateQuery<O, C, Edge, E, true> {
+	only(): RelateQuery<O, C, Edge, E, true, W> {
 		return this.derive((next) => {
 			next._only = true;
-		}) as RelateQuery<O, C, Edge, E, true>;
+		}) as RelateQuery<O, C, Edge, E, true, W>;
 	}
 
-	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		return this.derive((next) =>
-			applySet(next, data as Record<string, unknown>),
-		);
+	/** Set fields on the edge. Fields that are not set are absent from the result. */
+	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
+		data: D,
+	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
+		return this.derive((next) => {
+			applySet(next, data as Record<string, unknown>);
+		}) as unknown as RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>>;
 	}
 
 	content(
 		data: E extends ObjectType
 			? Omit<CreateInput<E>, "in" | "out">
 			: E["infer"],
-	): this {
-		return this.derive((next) => applyContent(next, data));
+	): RelateQuery<O, C, Edge, E, Only, FullWrite> {
+		return this.derive((next) => {
+			applyContent(next, data);
+			// A full record is checked strictly: every field is there.
+			next._lenient = false;
+		}) as unknown as RelateQuery<O, C, Edge, E, Only, FullWrite>;
 	}
 
-	merge(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyMerge(next, data));
+	merge<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
+		return this.derive((next) => {
+			applyMerge(next, data);
+		}) as unknown as RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>>;
 	}
 
-	patch(operations: JsonPatchOp[]): this {
-		return this.derive((next) => applyPatch(next, operations));
+	patch(
+		operations: JsonPatchOp[],
+	): RelateQuery<
+		O,
+		C,
+		Edge,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
+		return this.derive((next) => {
+			applyPatch(next, operations);
+		}) as unknown as RelateQuery<
+			O,
+			C,
+			Edge,
+			E,
+			Only,
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
+		>;
 	}
 
-	replace(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyReplace(next, data));
+	/** Replace the edge's data. REPLACE does not apply defaults, so only the given fields are known. */
+	replace<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): RelateQuery<O, C, Edge, E, Only, Written<NoWrite, "replace", D>> {
+		return this.derive((next) => {
+			applyReplace(next, data);
+		}) as unknown as RelateQuery<
+			O,
+			C,
+			Edge,
+			E,
+			Only,
+			Written<NoWrite, "replace", D>
+		>;
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return(
-		cb: (record: Actionable<C, E>) => Inheritable<C>,
+		cb: (record: Actionable<C, WriteRow<E, W, "relate">>) => Inheritable<C>,
 	): RelateQuery<
 		O,
 		C,
 		Edge,
 		InheritableIntoType<C, ReturnType<typeof cb>>,
-		Only
+		Only,
+		FullWrite
 	>;
 	return(
 		value:
@@ -146,8 +203,8 @@ export class RelateQuery<
 			| "before"
 			| "after"
 			| "diff"
-			| ((record: Actionable<C, E>) => Inheritable<C>),
-	): this {
+			| ((record: Actionable<C, WriteRow<E, W, "relate">>) => Inheritable<C>),
+	): unknown {
 		if (typeof value === "function") {
 			const record = actionable({
 				[__ctx]: this[__ctx],
@@ -155,7 +212,7 @@ export class RelateQuery<
 				[__display]: ({ contextId }) => {
 					return contextId === this[__ctx].id ? "$this" : "$parent";
 				},
-			}) as Actionable<C, E>;
+			}) as Actionable<C, WriteRow<E, W, "relate">>;
 
 			const inheritable = value(record);
 			const workable = inheritableIntoWorkable(inheritable) as Workable<C, E>;

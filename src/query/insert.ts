@@ -38,6 +38,7 @@ import {
 	type SetValue,
 } from "./utils.ts";
 import { computedFieldsOf, implicitFieldsOf } from "./validate-input.ts";
+import type { FullWrite, WriteRow, WriteShape } from "./write-result.ts";
 
 type SetData<T extends ObjectType> = {
 	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
@@ -54,7 +55,8 @@ export class InsertQuery<
 	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, ArrayType<E>> {
+	W extends WriteShape = FullWrite,
+> extends Query<C, ArrayType<WriteRow<E, W, "create">>> {
 	readonly [__ctx]: C;
 	private _data?: unknown | unknown[];
 	private _fields?: string[];
@@ -81,11 +83,13 @@ export class InsertQuery<
 		return this[__ctx].orm.tables[this.tb]!.schema as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
+	get [__type](): ArrayType<WriteRow<E, W, "create">> {
 		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
+			return t.array(this._return[__type]) as ArrayType<
+				WriteRow<E, W, "create">
+			>;
 		}
-		return t.array(this.schema);
+		return t.array(this.schema) as ArrayType<WriteRow<E, W, "create">>;
 	}
 
 	/**
@@ -155,6 +159,9 @@ export class InsertQuery<
 	/**
 	 * Add an `ON DUPLICATE KEY UPDATE` clause.
 	 *
+	 * A row that conflicts is updated, not inserted, so the rows returned may be
+	 * records the update did not fully write. Only the id is typed as present.
+	 *
 	 * @param updates - Fields and values to update on conflict.
 	 * @throws {OrmError} If {@link ignore} has already been called.
 	 */
@@ -162,7 +169,13 @@ export class InsertQuery<
 		updates: E extends ObjectType
 			? Partial<SetData<E>>
 			: Record<string, unknown>,
-	): this {
+	): InsertQuery<
+		O,
+		C,
+		T,
+		E,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
 		if (this._ignore) {
 			throw new OrmError("Cannot use both ignore() and onDuplicate()");
 		}
@@ -172,7 +185,14 @@ export class InsertQuery<
 		);
 		return this.derive((next) => {
 			next._onDuplicate = processedData;
-		});
+			next._lenient = true;
+		}) as unknown as InsertQuery<
+			O,
+			C,
+			T,
+			E,
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
+		>;
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
@@ -187,7 +207,7 @@ export class InsertQuery<
 			| "after"
 			| "diff"
 			| ((tb: Actionable<C, E>) => Inheritable<C>),
-	): this {
+	): unknown {
 		if (typeof value === "function") {
 			const tb = actionable({
 				[__ctx]: this[__ctx],

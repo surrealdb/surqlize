@@ -39,6 +39,13 @@ import {
 import { resolveSubjectSchema } from "./subject.ts";
 import { andWhere } from "./utils.ts";
 import { validateWrite } from "./validate-input.ts";
+import type {
+	FullWrite,
+	NoWrite,
+	WriteRow,
+	WriteShape,
+	Written,
+} from "./write-result.ts";
 
 /**
  * A fluent UPSERT query builder. Creates the record if it doesn't exist, or
@@ -51,8 +58,9 @@ export class UpsertQuery<
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
 		Only extends boolean = false,
+		W extends WriteShape = NoWrite,
 	>
-	extends Query<C, QueryResult<E, Only>>
+	extends Query<C, QueryResult<WriteRow<E, W, "update">, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
@@ -75,6 +83,7 @@ export class UpsertQuery<
 			orm,
 			id: Symbol(),
 		} as C;
+		this._lenient = true;
 
 		this.subject = subject;
 
@@ -92,40 +101,95 @@ export class UpsertQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): QueryResult<E, Only> {
+	get [__type](): QueryResult<WriteRow<E, W, "update">, Only> {
 		const schema =
 			this._return && typeof this._return !== "string"
 				? this._return[__type]
 				: this.schema;
-		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+		return (this._only ? schema : t.array(schema)) as QueryResult<
+			WriteRow<E, W, "update">,
+			Only
+		>;
 	}
 
-	only(): UpsertQuery<O, C, T, E, true> {
+	only(): UpsertQuery<O, C, T, E, true, W> {
 		return this.derive((next) => {
 			next._only = true;
-		}) as UpsertQuery<O, C, T, E, true>;
+		}) as UpsertQuery<O, C, T, E, true, W>;
 	}
 
-	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		return this.derive((next) =>
-			applySet(next, data as Record<string, unknown>),
-		);
+	/**
+	 * Set fields. A SET leaves the fields it does not set in place, or absent if
+	 * the record is created, so those are typed as optional in the result.
+	 */
+	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
+		data: D,
+	): UpsertQuery<O, C, T, E, Only, Written<W, "set", D>> {
+		return this.derive((next) => {
+			applySet(next, data as Record<string, unknown>);
+		}) as unknown as UpsertQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
-	content(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyContent(next, data));
+	/** Replace the record with the given fields, so the other fields are gone. */
+	content<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): UpsertQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
+		return this.derive((next) => {
+			applyContent(next, data);
+		}) as unknown as UpsertQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			Written<NoWrite, "replace", D>
+		>;
 	}
 
-	merge(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyMerge(next, data));
+	merge<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): UpsertQuery<O, C, T, E, Only, Written<W, "set", D>> {
+		return this.derive((next) => {
+			applyMerge(next, data);
+		}) as unknown as UpsertQuery<O, C, T, E, Only, Written<W, "set", D>>;
 	}
 
-	patch(operations: JsonPatchOp[]): this {
-		return this.derive((next) => applyPatch(next, operations));
+	patch(
+		operations: JsonPatchOp[],
+	): UpsertQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	> {
+		return this.derive((next) => {
+			applyPatch(next, operations);
+		}) as unknown as UpsertQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
+		>;
 	}
 
-	replace(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyReplace(next, data));
+	/** Replace the record. The other fields of the record are gone. */
+	replace<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): UpsertQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
+		return this.derive((next) => {
+			applyReplace(next, data);
+		}) as unknown as UpsertQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			Written<NoWrite, "replace", D>
+		>;
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
@@ -150,19 +214,32 @@ export class UpsertQuery<
 		});
 	}
 
+	/** The state before the write may not have the fields it set, so only the id is known. */
+	return(
+		mode: "before",
+	): UpsertQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
+	>;
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): UpsertQuery<O, C, T, R, Only>;
+	>(
+		cb: (tb: Actionable<C, WriteRow<E, W, "update">>) => P,
+	): UpsertQuery<O, C, T, R, Only, FullWrite>;
 	return(
 		value:
 			| "none"
 			| "before"
 			| "after"
 			| "diff"
-			| ((tb: Actionable<C, E>) => Inheritable<C>),
-	): this {
+			| ((tb: Actionable<C, WriteRow<E, W, "update">>) => Inheritable<C>),
+	): unknown {
 		if (typeof value === "function") {
 			const tb = actionable({
 				[__ctx]: this[__ctx],
@@ -170,7 +247,7 @@ export class UpsertQuery<
 				[__display]: ({ contextId }) => {
 					return contextId === this[__ctx].id ? "$this" : "$parent";
 				},
-			}) as Actionable<C, E>;
+			}) as Actionable<C, WriteRow<E, W, "update">>;
 
 			const predicable = value(tb);
 			const workable = inheritableIntoWorkable<C, typeof predicable>(

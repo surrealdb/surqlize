@@ -95,9 +95,25 @@ describe("ONLY queries", () => {
 		type Upserted = t.infer<typeof upserted>;
 		type Deleted = t.infer<typeof deleted>;
 
-		const createdCheck: Equal<Created, User> = true;
-		const updatedCheck: Equal<Updated, User> = true;
-		const upsertedCheck: Equal<Upserted, User> = true;
+		// A write with no data guarantees only the id. An update or upsert
+		// leaves the stored fields in place, so they are typed as optional.
+		const createdCheck: Equal<Created, { id: RecordId<"user"> }> = true;
+		const updatedCheck: Equal<
+			Updated,
+			{
+				id: RecordId<"user">;
+				name: string | undefined;
+				age: number | undefined;
+			}
+		> = true;
+		const upsertedCheck: Equal<
+			Upserted,
+			{
+				id: RecordId<"user">;
+				name: string | undefined;
+				age: number | undefined;
+			}
+		> = true;
 		const deletedCheck: Equal<Deleted, User> = true;
 
 		expect(createdCheck).toBe(true);
