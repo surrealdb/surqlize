@@ -47,6 +47,7 @@
 		"test": "bun test",
 		"test:unit": "bun test tests/unit/",
 		"test:integration": "bun test tests/integration/",
+		"test:readme": "bun test tests/readme/",
 		"type-check": "tsc --noEmit",
 		"bench": "bun benchmarks/bench.ts",
 		"qc": "biome check .",
