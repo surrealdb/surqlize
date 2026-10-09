@@ -38,6 +38,38 @@ export function databaseFunction<
 	});
 }
 
+/**
+ * Validate a full-text match reference, the `N` in `@N@` and in
+ * `search::score(N)`. SurrealDB only accepts a literal integer from 0 to 255
+ * there, so it is rendered inline (see {@link literalWorkable}), never bound.
+ *
+ * @throws {RangeError} If `ref` is not an integer from 0 to 255.
+ */
+export function matchRef(ref: number): number {
+	if (!Number.isInteger(ref) || ref < 0 || ref > 255) {
+		throw new RangeError(
+			`full-text match reference must be an integer from 0 to 255, got ${ref}`,
+		);
+	}
+	return ref;
+}
+
+/**
+ * A workable that renders `sql` exactly as given. Use it for literals SurrealDB
+ * requires inline rather than as a bound `$parameter`.
+ */
+export function literalWorkable<C extends WorkableContext>(
+	ctx: C,
+	type: AbstractType,
+	sql: string,
+): Workable<C> {
+	return {
+		[__ctx]: ctx,
+		[__type]: type,
+		[__display]: () => sql,
+	};
+}
+
 /** Direction of a graph-traversal segment. */
 export type TraversalKind = "out" | "in" | "both";
 

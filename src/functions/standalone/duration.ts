@@ -36,33 +36,33 @@ export const duration = {
 	// Factory functions
 
 	fromDays<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_days", value);
+		return standaloneFn(value, t.duration(), "duration::from_days", value);
 	},
 	fromHours<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_hours", value);
+		return standaloneFn(value, t.duration(), "duration::from_hours", value);
 	},
 	fromMicros<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_micros", value);
+		return standaloneFn(value, t.duration(), "duration::from_micros", value);
 	},
 	fromMillis<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_millis", value);
+		return standaloneFn(value, t.duration(), "duration::from_millis", value);
 	},
 	fromMins<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_mins", value);
+		return standaloneFn(value, t.duration(), "duration::from_mins", value);
 	},
 	fromNanos<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_nanos", value);
+		return standaloneFn(value, t.duration(), "duration::from_nanos", value);
 	},
 	fromSecs<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_secs", value);
+		return standaloneFn(value, t.duration(), "duration::from_secs", value);
 	},
 	fromWeeks<C extends WorkableContext>(value: Workable<C>) {
-		return standaloneFn(value, t.string(), "duration::from_weeks", value);
+		return standaloneFn(value, t.duration(), "duration::from_weeks", value);
 	},
 
 	// Constant
 
 	max<C extends WorkableContext>(source: ContextSource<C>) {
-		return standaloneConst(source, t.string(), "duration::max");
+		return standaloneConst(source, t.duration(), "duration::max");
 	},
 };

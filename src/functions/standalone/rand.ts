@@ -36,7 +36,7 @@ export const rand = {
 		return standaloneFn(source, t.date(), "rand::time");
 	},
 	uuid<C extends WorkableContext>(source: ContextSource<C>) {
-		return standaloneFn(source, t.string(), "rand::uuid");
+		return standaloneFn(source, t.uuid(), "rand::uuid");
 	},
 	ulid<C extends WorkableContext>(source: ContextSource<C>) {
 		return standaloneFn(source, t.string(), "rand::ulid");
