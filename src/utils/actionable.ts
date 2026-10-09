@@ -1,5 +1,6 @@
 import { OrmError } from "../error";
-import { type GetFunctions, getFunctions } from "../functions";
+import type { GetFunctions } from "../functions";
+import { functionTable } from "../functions";
 import type { MergeFields } from "../query/subject.ts";
 import type { TableFieldsOf } from "../schema/traversal";
 import type {
@@ -12,7 +13,12 @@ import type {
 	StringType,
 	UnionType,
 } from "../types";
-import { type Workable, type WorkableContext, workableGet } from "./workable";
+import {
+	__type,
+	type Workable,
+	type WorkableContext,
+	workableGet,
+} from "./workable";
 
 /**
  * The merged field map a record link `record<Tb>` exposes for property access:
@@ -102,32 +108,37 @@ export function actionable<
 	C extends WorkableContext = WorkableContext,
 	T extends AbstractType = StringType,
 >(workable: Workable<C, T>): Actionable<C, T> {
-	const functions = getFunctions(workable);
+	// The shared, unbound table of functions for this type. Functions are bound
+	// to `workable` lazily, the first time they are read: binding the full table
+	// (over a hundred functions for a string) on every property access dominated
+	// query construction.
+	const table = functionTable(workable[__type].name);
+	const bound = new Map<string, unknown>();
 
-	return new Proxy(functions, {
+	return new Proxy(table, {
 		get(target, prop) {
 			if (typeof prop === "symbol") {
 				return workable[prop as keyof typeof workable];
 			}
 
-			const res = workableGet(workable, prop);
-			const val = actionable(res);
-
-			if (prop in functions) {
-				const fn = target[prop as keyof typeof target];
-
-				if (typeof fn === "function") {
-					return Object.assign(fn, {
-						valueOf() {
-							return val;
-						},
+			if (prop in target) {
+				let fn = bound.get(prop);
+				if (fn === undefined) {
+					const unbound = target[prop];
+					if (typeof unbound !== "function") {
+						throw new OrmError(`Property ${prop} is not a function`);
+					}
+					// The workable the property would resolve to as a field is only
+					// needed through `valueOf()`, so it is built on demand.
+					fn = Object.assign(unbound.bind(workable), {
+						valueOf: () => actionable(workableGet(workable, prop)),
 					});
+					bound.set(prop, fn);
 				}
-
-				throw new OrmError(`Property ${prop} is not a function`);
+				return fn;
 			}
 
-			return val;
+			return actionable(workableGet(workable, prop));
 		},
-	}) as Actionable<C, T>;
+	}) as unknown as Actionable<C, T>;
 }

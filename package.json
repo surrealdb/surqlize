@@ -48,6 +48,7 @@
 		"test:unit": "bun test tests/unit/",
 		"test:integration": "bun test tests/integration/",
 		"type-check": "tsc --noEmit",
+		"bench": "bun benchmarks/bench.ts",
 		"qc": "biome check .",
 		"qa": "biome check . --write",
 		"build": "tsup && bun run check:dist",

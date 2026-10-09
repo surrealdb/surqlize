@@ -1,5 +1,36 @@
 export class OrmError extends Error {}
 
+/** One failed check found while validating data against a schema. */
+export type ValidationIssue = {
+	/** Where the value sits, e.g. `age`, `address.city` or `tags[1]`; `(root)` for the data itself. */
+	readonly path: string;
+	/** What the schema expects there, e.g. `number`, `Date` or `string or number`. */
+	readonly expected: string;
+	/** The value that was found (`undefined` when the field is missing). */
+	readonly received: unknown;
+	/** A readable one-line description of the issue. */
+	readonly message: string;
+};
+
+/**
+ * Thrown when data does not match a table's schema. Unlike
+ * {@link TypeParseError}, which stops at the first mismatch, it carries every
+ * failing field in {@link ValidationError.issues}.
+ */
+export class ValidationError extends OrmError {
+	constructor(
+		readonly issues: readonly ValidationIssue[],
+		readonly table?: string,
+	) {
+		const where = table === undefined ? "data" : `data for table "${table}"`;
+		const count = `${issues.length} validation error${issues.length === 1 ? "" : "s"}`;
+		super(
+			`Invalid ${where}: ${count}\n${issues.map((i) => `  - ${i.message}`).join("\n")}`,
+		);
+		this.name = "ValidationError";
+	}
+}
+
 /**
  * Thrown when a query fails in the way a duplicated `surrealdb` install makes
  * it fail. Surqlize binds query subjects as the SDK's `Table`, and the SDK

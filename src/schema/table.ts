@@ -1,5 +1,6 @@
 import { escapeIdent, toSurqlString } from "surrealdb";
 import { OrmError } from "../error";
+import type { CreateInput, WriteData } from "../query/modification-methods";
 import { type AbstractType, ObjectType, type RecordType, t } from "../types";
 import {
 	__ctx,
@@ -11,6 +12,12 @@ import {
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
 import { type ModelClass, registerModelClass } from "../utils/model";
+import {
+	type SafeParseResult,
+	safeParseWith,
+	throwIfInvalid,
+	type ValidationMode,
+} from "../validation";
 import type { Orm } from "./orm";
 
 export type { ModelClass } from "../utils/model";
@@ -208,24 +215,92 @@ export class TableSchema<
 		});
 	}
 
+	// A table is immutable (`computed()` returns a new one), so what it derives
+	// from its fields is built once. Rebuilding it on every access made each
+	// query rebuild a whole object type per property lookup.
+	private _fieldsCache?: Fd & { id: RecordType<Tb> } & {};
+	private _schemaCache?: GetSchemaType<Tb, Fd, I>;
+
 	get fields(): Fd & { id: RecordType<Tb> } & {} {
-		return {
-			...this._fields,
-			id: t.record(this.tb as string),
-		} as Fd & { id: RecordType<Tb> } & {};
+		if (!this._fieldsCache) {
+			this._fieldsCache = {
+				...this._fields,
+				id: t.record(this.tb as string),
+			} as Fd & { id: RecordType<Tb> } & {};
+		}
+		return this._fieldsCache;
 	}
 
 	type = undefined as unknown as GetInferType<Tb, Fd, I>;
 
 	get schema(): GetSchemaType<Tb, Fd, I> {
-		return (this.model
-			? new ModelType(this.fields, this.model)
-			: t.object(this.fields)) as unknown as GetSchemaType<Tb, Fd, I>;
+		if (!this._schemaCache) {
+			this._schemaCache = (this.model
+				? new ModelType(this.fields, this.model)
+				: t.object(this.fields)) as unknown as GetSchemaType<Tb, Fd, I>;
+		}
+		return this._schemaCache;
 	}
 
 	/** Type-guard that checks whether a value matches this table's schema. */
 	validate(value: unknown): value is GetInferType<Tb, Fd, I> {
 		return this.schema.validate(value);
+	}
+
+	/**
+	 * Check `data` against this table's schema without throwing, listing
+	 * every field that fails rather than only the first. The `mode` says what
+	 * the data is: `"create"` (default) is the input of a create or insert,
+	 * where fields with a `.default()` or of type `option<...>` may be left out
+	 * and computed fields are rejected; `"update"` is a partial write; `"row"` is a whole stored
+	 * record. On success, `data` is typed accordingly.
+	 *
+	 * The data is returned as given: validation does not convert it.
+	 */
+	safeParse(
+		data: unknown,
+		options?: { mode?: "create" },
+	): SafeParseResult<CreateInput<GetSchemaType<Tb, Fd, I>>>;
+	safeParse(
+		data: unknown,
+		options: { mode: "update" },
+	): SafeParseResult<Partial<WriteData<GetSchemaType<Tb, Fd, I>>>>;
+	safeParse(
+		data: unknown,
+		options: { mode: "row" },
+	): SafeParseResult<GetInferType<Tb, Fd, I>>;
+	safeParse(
+		data: unknown,
+		options: { mode?: ValidationMode } = {},
+	): SafeParseResult<unknown> {
+		return safeParseWith(
+			this.schema,
+			data,
+			options.mode ?? "create",
+			this.tb,
+			["id"],
+			this.computedFields,
+		);
+	}
+
+	/**
+	 * Like {@link TableSchema.safeParse}, but returns the typed data or throws.
+	 *
+	 * @throws {ValidationError} Listing every field that fails.
+	 */
+	parse(
+		data: unknown,
+		options?: { mode?: "create" },
+	): CreateInput<GetSchemaType<Tb, Fd, I>>;
+	parse(
+		data: unknown,
+		options: { mode: "update" },
+	): Partial<WriteData<GetSchemaType<Tb, Fd, I>>>;
+	parse(data: unknown, options: { mode: "row" }): GetInferType<Tb, Fd, I>;
+	parse(data: unknown, options: { mode?: ValidationMode } = {}): unknown {
+		const result = this.safeParse(data, options as { mode: "row" });
+		if (!result.success) throwIfInvalid(result.error.issues, this.tb);
+		return data;
 	}
 }
 
@@ -259,5 +334,9 @@ export function table<
 	fields: Fd,
 	model?: M,
 ): TableSchema<Tb, Fd, [M] extends [never] ? unknown : InstanceType<M>> {
-	return new TableSchema(tb, fields, model);
+	return new TableSchema(tb, fields, model) as unknown as TableSchema<
+		Tb,
+		Fd,
+		[M] extends [never] ? unknown : InstanceType<M>
+	>;
 }

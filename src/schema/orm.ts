@@ -68,6 +68,12 @@ export type MappedTables<T extends AnyTable[]> = {
  */
 export type SchemaMap = Record<string, AnyTable>;
 
+/** Options an {@link Orm} is created with. */
+export type OrmOptions = {
+	/** Validate written data against the table schema before sending it. */
+	validate?: boolean;
+};
+
 // Convert the union of a schema map's values into a tuple so the object form of
 // `orm()` resolves to exactly the same `Orm<[...]>` type as the rest-param form.
 // Element order is irrelevant: every consumer (`MappedTables`, the lookup
@@ -183,11 +189,40 @@ function typeFromValue(value: unknown): AbstractType {
  * calling the constructor directly.
  */
 export class Orm<T extends AnyTable[] = AnyTable[]> {
+	/**
+	 * Whether queries check the data they write against the table schema before
+	 * sending it. Off by default; see {@link Orm.validated}.
+	 */
+	readonly validation: boolean;
+
 	constructor(
 		public readonly surreal: SurrealConnection,
 		public readonly tables: MappedTables<T>,
 		public readonly lookup: CreateSchemaLookup<T>,
-	) {}
+		options: OrmOptions = {},
+	) {
+		this.validation = options.validate ?? false;
+	}
+
+	/**
+	 * A view of this ORM in which every query that writes data (create, insert,
+	 * update, upsert, relate) first checks it against the table schema, and
+	 * throws a {@link ValidationError} listing every failing field instead of
+	 * sending it. Like {@link Orm.withSignal}, it shares the connection and
+	 * changes nothing else. A single query can still opt out with
+	 * `.validated(false)`.
+	 *
+	 * @example
+	 * ```ts
+	 * const db = orm(surreal, user).validated();
+	 * await db.create("user").content({ name: 42 }); // throws ValidationError
+	 * ```
+	 */
+	validated(enabled = true): Orm<T> {
+		return new Orm<T>(this.surreal, this.tables, this.lookup, {
+			validate: enabled,
+		});
+	}
 
 	/**
 	 * Wrap a raw JavaScript value as an actionable SurrealQL expression. Record
@@ -618,6 +653,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 			this.surreal.withSignal(signal),
 			this.tables,
 			this.lookup,
+			{ validate: this.validation },
 		);
 	}
 
@@ -667,7 +703,9 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		// (Transaction extends Orm)
 		const { Transaction: Tx } = await import("../query/transaction");
 		const surrealTx = await this.surreal.beginTransaction();
-		const tx = new Tx<T>(surrealTx, this.tables, this.lookup);
+		const tx = new Tx<T>(surrealTx, this.tables, this.lookup, {
+			validate: this.validation,
+		});
 
 		if (!cb) return tx;
 

@@ -45,6 +45,7 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications that survive reconnects
 - **Cancellation, timeouts and retries** - Abort queries with an `AbortSignal`, bound them with a request timeout, and retry them on transaction conflicts
 - **Graph relationships** - First-class support for edges and graph traversal
+- **Runtime validation** - Opt in to checking written data against the schema before it is sent, with every failing field reported
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
 
@@ -857,6 +858,60 @@ const deleted = await db
   .return("before");
 // deleted: User  (not User[])
 ```
+
+## Runtime validation
+
+TypeScript checks your data at compile time, but data from a form, an API request or `JSON.parse` is only checked when you check it. Surqlize can validate the data a write carries against the table schema **before** it is sent to SurrealDB. It is off by default.
+
+### Validating every write
+
+`db.validated()` returns a view of the ORM (sharing the same connection, like `withSignal()`) in which `create`, `insert`, `update`, `upsert` and `relate` check their data first:
+
+```typescript
+const db = orm(surreal, user).validated();
+
+await db.create("user").content({ name: 42, address: { city: 1 }, tags: ["a", 2] });
+// Throws before anything is sent:
+// ValidationError: Invalid data for table "user": 4 validation errors
+//   - name: expected string, received 42
+//   - age: expected number, received undefined
+//   - address.city: expected string, received 1
+//   - tags[1]: expected string, received 2
+```
+
+A single query can opt in or out with `.validated()` / `.validated(false)`. Validation also applies in batches, inside transactions, to `.prepare()`, and survives `withSignal()`.
+
+`ValidationError` extends `OrmError`. It does not stop at the first problem: `error.issues` lists every failing field as `{ path, expected, received, message }`, where `path` looks like `address.city` or `tags[1]` (or `[2].age` for the third row of an `insert`), and `error.table` names the table.
+
+### What is checked
+
+| Data | Checked as |
+| --- | --- |
+| `create().content()`, `insert()` rows, `relate().content()` | the full input: every field must be present and valid, except `option<...>` fields, fields with a `.default()`, and `id` (and `in` / `out` on edges) |
+| `update` / `upsert` `.content()`, `.merge()`, `.replace()` | a partial record: only the fields present are checked |
+| `.set()`, `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
+
+- Nested objects, arrays, tuples, unions, record links (including the linked table) and tables linked to a class are all checked.
+- **Computed fields are read-only**: supplying a value for one is an issue.
+- Fields the schema does not declare are ignored, and so are `.patch()` operations.
+- Values SurrealDB evaluates itself, such as `expr(...)` defaults and subquery expressions, are not checked client-side.
+- Validation never changes your data: what is checked is what is sent. Defaults are still filled in by the query as before.
+
+### Validating data yourself
+
+Tables and edges have the same check as a standalone helper, for example at the edge of your API:
+
+```typescript
+const result = user.safeParse(body);            // mode "create" by default
+if (!result.success) return respond(400, result.error.issues);
+await db.create("user").content(result.data);   // result.data is typed as the create input
+
+const input = user.parse(body);                 // returns the typed data, or throws ValidationError
+user.safeParse(patch, { mode: "update" });      // a partial write
+user.safeParse(row, { mode: "row" });           // a whole stored record, id and computed fields included
+```
+
+`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
 
 ## Batch
 
@@ -1956,6 +2011,17 @@ Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `awa
 }
 ```
 
+### Connections and pooling
+
+Surqlize does not open, own or pool connections: you hand it a `Surreal` (or a session), and the SurrealDB SDK owns the connection, including reconnecting. A pool is not needed for concurrency, because the SDK multiplexes concurrent queries over a single connection, so queries from many `orm()` calls or request handlers can be in flight at once. Use these instead:
+
+- **One `Surreal` connection per process**, created at start-up and shared by every ORM instance.
+- **A session per tenant or per request** (`newSession()` / `forkSession()`, above) when you need isolated namespace, database, authentication or variables. Sessions share the connection, so they are cheap to create and close.
+- **`db.withSignal(signal)`** for per-request cancellation (see [Cancellation, timeouts and retries](#cancellation-timeouts-and-retries)).
+- **`db.batch()` or a transaction** when several statements must run together.
+
+Reach for several `Surreal` connections only when you want to spread load across servers or isolate failure domains, and manage them in your own code.
+
 ## Comparison with other ORMs
 
 | Feature | Surqlize | SurrealDB.js | Prisma | Drizzle | TypeORM |
@@ -1987,12 +2053,18 @@ This project is in active development. Planned features include:
 - [x] **Transaction support** - Batch and interactive transactions
 - [x] **Multi-session support** - Multiple sessions over a single connection
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
-- [ ] **Runtime validation** - Validate data at runtime using schema definitions
+- [x] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
 - [x] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
-- [ ] **Performance optimizations** - Query caching, connection pooling
+- [x] **Performance optimizations** - Faster query construction (see [Performance](#performance)); connection pooling is left to the SDK, with sessions for isolation (see [Connections and pooling](#connections-and-pooling))
 - [ ] **Schema migrations** - Version control for database schemas
 - [ ] **Documentation site** - Comprehensive guides and API reference
+
+## Performance
+
+Queries are built from immutable builders, and building and rendering one costs microseconds: a typical `select` with a `where`, `orderBy`, `fetch` and `return` builds and renders in about 10 µs, far below a network round trip. The library therefore does not cache rendered queries. To skip building altogether, build a query once and reuse it: builders are immutable, so a prebuilt query is safe to share and to execute repeatedly.
+
+The benchmarks in `benchmarks/` need no database. Run them with `bun run bench` (optionally a name filter, e.g. `bun run bench select`, and `--json file` to save the results).
 
 ## Development
 
@@ -2010,6 +2082,7 @@ bun run examples/demo.ts
 bun run test:unit          # Unit tests
 bun run test:integration   # Integration tests (requires SurrealDB)
 bun run type-check         # TypeScript type checking
+bun run bench              # Query construction benchmarks
 
 # Lint and format
 bun run qc   # Check for issues
