@@ -35,6 +35,7 @@ import {
 	type ModificationMode,
 	type ModificationState,
 	type SetData,
+	type WriteData,
 } from "./modification-methods.ts";
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
@@ -115,11 +116,11 @@ export class UpdateQuery<
 		return this.derive((next) => applyUnset(next, fields as string[]));
 	}
 
-	content(data: Partial<E["infer"]>): this {
+	content(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyContent(next, data));
 	}
 
-	merge(data: Partial<E["infer"]>): this {
+	merge(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyMerge(next, data));
 	}
 
@@ -127,7 +128,7 @@ export class UpdateQuery<
 		return this.derive((next) => applyPatch(next, operations));
 	}
 
-	replace(data: Partial<E["infer"]>): this {
+	replace(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyReplace(next, data));
 	}
 
