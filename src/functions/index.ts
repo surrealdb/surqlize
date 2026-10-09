@@ -47,17 +47,36 @@ export type GetFunctions<
 				(...args: IntoWorkable<C>[]) => Actionable<C, AbstractType>
 			>);
 
+/** Merged (unbound) function tables, one per type name: they never change. */
+const tables = new Map<string, Record<string, (...args: never[]) => unknown>>();
+
+/**
+ * The unbound function table for a type: the `any` functions overlaid with the
+ * type-specific ones. Built once per type name and shared, so it must not be
+ * mutated. Bind a function to its workable before calling it.
+ */
+export function functionTable(
+	typeName: string,
+): Record<string, (...args: never[]) => unknown> {
+	let table = tables.get(typeName);
+	if (!table) {
+		table = { ...functions.any };
+		if (typeName in functions) {
+			Object.assign(table, functions[typeName as keyof BaseFunctions]);
+		}
+		tables.set(typeName, table);
+	}
+	return table;
+}
+
 export function getFunctions<C extends WorkableContext, T extends AbstractType>(
 	workable: Workable<C, T>,
 ): GetFunctions<C, T> {
-	const fnc = { ...functions.any };
+	const fnc: Record<string, unknown> = {};
+	const table = functionTable(workable[__type].name);
 
-	if (workable[__type].name in functions) {
-		Object.assign(fnc, functions[workable[__type].name as keyof BaseFunctions]);
-	}
-
-	for (const key in fnc) {
-		fnc[key as "eq"] = fnc[key as "eq"].bind(workable) as (typeof fnc)["eq"];
+	for (const key in table) {
+		fnc[key] = table[key]!.bind(workable);
 	}
 
 	return fnc as GetFunctions<C, T>;
