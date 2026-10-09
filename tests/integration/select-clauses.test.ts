@@ -97,14 +97,33 @@ describe("SELECT clause integration tests", () => {
 	});
 
 	describe("TIMEOUT", () => {
-		test("query with timeout generates correct SurrealQL", () => {
-			// TIMEOUT is parameterized via ctx.var() which SurrealDB rejects
-			// ("Invalid timeout value") since it expects a literal duration.
-			// Verify the query string is correct rather than executing it.
+		test("select with timeout executes", async () => {
+			// A bound string is rejected by SELECT's TIMEOUT clause ("Invalid
+			// timeout value"), so the duration is cast to a duration on the server.
 			const { db } = getTestDb();
-			const query = db.select("user").timeout("5s");
-			const str = query.toString();
-			expect(str).toContain("TIMEOUT");
+			const result = await db.select("user").timeout("5s").execute();
+			expect(result.length).toBe(3);
+		});
+
+		test("select with timeout and a where clause executes", async () => {
+			const { db } = getTestDb();
+			const result = await db
+				.select("user")
+				.where((u) => u.age.gt(26))
+				.timeout("10s")
+				.execute();
+			expect(result.map((u) => u.age).sort()).toEqual([30, 35]);
+		});
+
+		test("select with timeout and only() executes", async () => {
+			const { db } = getTestDb();
+			const user = await db
+				.select("user")
+				.where((u) => u.age.eq(25))
+				.only()
+				.timeout("5s")
+				.execute();
+			expect(user.name.first).toBe("Bob");
 		});
 	});
 

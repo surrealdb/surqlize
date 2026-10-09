@@ -4,6 +4,7 @@ import type { DisplayContext } from "./display";
 import {
 	__ctx,
 	__display,
+	__fields,
 	__type,
 	isWorkable,
 	type Workable,
@@ -115,11 +116,12 @@ export function inheritableIntoWorkable<
 	return {
 		[__ctx]: converted[firstKey]![__ctx],
 		[__type]: new ObjectType(fieldTypes),
+		[__fields]: converted,
 		[__display]: (ctx: DisplayContext) => {
 			const innerDisplays = Object.entries(converted).map(
 				([key, val]) => `${key}: ${val[__display](ctx)}`,
 			);
 			return `{ ${innerDisplays.join(", ")} }`;
 		},
-	} as InheritableIntoWorkable<C, T>;
+	} as unknown as InheritableIntoWorkable<C, T>;
 }

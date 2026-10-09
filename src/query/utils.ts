@@ -1,6 +1,26 @@
 import { escapeIdent } from "surrealdb";
+import { joiningFilter } from "../functions/filters.ts";
 import { type AbstractType, SurqlExpression } from "../types";
-import type { DisplayContext } from "../utils";
+import {
+	__ctx,
+	type DisplayContext,
+	type Workable,
+	type WorkableContext,
+} from "../utils";
+
+/**
+ * AND a condition onto the filter already on a query. Chained `.where()` calls
+ * accumulate: each one narrows the rows the previous ones kept, so the filter is
+ * `(first AND second)` rather than the last call replacing the first.
+ */
+export function andWhere<C extends WorkableContext>(
+	filter: Workable<C> | undefined,
+	condition: Workable<C>,
+): Workable<C> {
+	return filter
+		? joiningFilter(condition[__ctx], "AND", filter, condition)
+		: condition;
+}
 
 /**
  * Escape a dotted SurrealQL idiom path (e.g. `out.author`) segment by segment.

@@ -1,4 +1,5 @@
-import { type RecordId, Table } from "surrealdb";
+import { escapeIdent, type RecordId, Table } from "surrealdb";
+import { OrmError } from "../error.ts";
 import { ModelType } from "../schema/model-type.ts";
 import type { Orm } from "../schema/orm.ts";
 import type { RowTraversal } from "../schema/traversal.ts";
@@ -25,6 +26,7 @@ import { traversableRow } from "../utils/traversal.ts";
 import {
 	__ctx,
 	__display,
+	__fields,
 	__type,
 	isWorkable,
 	sanitizeWorkable,
@@ -39,7 +41,7 @@ import {
 	whereFromObject,
 } from "./object-filter.ts";
 import { type ResolveEntry, resolveSubjectSchema } from "./subject.ts";
-import { escapeIdiomPath } from "./utils.ts";
+import { andWhere, escapeIdiomPath } from "./utils.ts";
 
 type FieldKeys<O extends Orm, T extends keyof O["tables"] & string> =
 	O["tables"][T]["schema"] extends ObjectType<infer F>
@@ -181,6 +183,43 @@ export type FetchedSchema<
 			: E;
 
 /**
+ * The shape of a row after `SPLIT` on the given array fields: each split field
+ * holds one element of its array rather than the whole array.
+ */
+export type SplitEntry<E extends AbstractType, Fields extends string> =
+	E extends ModelType<infer S, infer I>
+		? ModelType<SplitFields<S, Fields>, I>
+		: E extends ObjectType<infer S>
+			? ObjectType<SplitFields<S, Fields>>
+			: E;
+
+type SplitFields<S, Fields extends string> = {
+	[K in keyof S]: K extends Fields
+		? S[K] extends ArrayType<infer Item extends AbstractType>
+			? Item
+			: S[K]
+		: S[K];
+};
+
+/** The runtime counterpart of {@link SplitEntry}: each split array field becomes its item type. */
+function splitSchema(
+	schema: AbstractType,
+	fields: readonly string[],
+): AbstractType {
+	if (!(schema instanceof ObjectType) || fields.length === 0) return schema;
+	const resolved: ObjectTypeInner = { ...schema.schema };
+	for (const field of fields) {
+		const type = resolved[field];
+		if (type instanceof ArrayType && !Array.isArray(type.schema)) {
+			resolved[field] = type.schema;
+		}
+	}
+	return schema instanceof ModelType
+		? new ModelType(resolved, schema.model)
+		: new ObjectType(resolved);
+}
+
+/**
  * A fluent SELECT query builder. Supports WHERE, ORDER BY, GROUP BY, SPLIT,
  * FETCH, LIMIT, START, TIMEOUT, and return projections via `.return()`.
  */
@@ -197,6 +236,8 @@ export class SelectQuery<
 	private _limit?: number;
 	private _filter?: Workable<C>;
 	private _entry?: Workable<C, E>;
+	/** The fields of an object `.return()` projection, when it is one. */
+	private _entryFields?: [string, Workable<C>][];
 	private _orderBy?: Array<{
 		field: Workable<C> | string;
 		direction?: "ASC" | "DESC";
@@ -253,9 +294,12 @@ export class SelectQuery<
 		// schema and reject it for missing (unprojected) fields. The `.return()`
 		// callback still sees the fetch-resolved schema because it reads `entry`
 		// *before* assigning `_entry`.
-		return (this._entry?.[__type] ??
-			this._fetchResolvedType ??
-			resolveSubjectSchema(this[__ctx].orm, this.tb)) as E;
+		if (this._entry) return this._entry[__type] as E;
+		// Without a projection, each row is the table's (or fetched) schema, with
+		// every SPLIT array field holding a single element.
+		const base =
+			this._fetchResolvedType ?? resolveSubjectSchema(this[__ctx].orm, this.tb);
+		return splitSchema(base, this._split ?? []) as E;
 	}
 
 	get [__type](): QueryResult<E, Only> {
@@ -280,8 +324,11 @@ export class SelectQuery<
 		const base = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: type,
-			[__display]: ({ contextId }) => {
-				return contextId === this[__ctx].id ? "$this" : "$parent";
+			[__display]: (ctx) => {
+				if (ctx.contextId !== this[__ctx].id) return "$parent";
+				// A grouped or split SELECT names its row's fields bare: SurrealDB
+				// rejects `$this` there.
+				return ctx.bareRowsOf === this[__ctx].id ? "" : "$this";
 			},
 		}) as Actionable<C, S>;
 		return traversableRow(
@@ -312,16 +359,23 @@ export class SelectQuery<
 			predicable,
 		) as unknown as Workable<C, R>;
 		const entry = sanitizeWorkable(workable);
+		const fields = (
+			workable as unknown as { [__fields]?: Record<string, Workable<C>> }
+		)[__fields];
+		const entryFields = fields ? Object.entries(fields) : undefined;
 
 		return this.derive((next) => {
-			(next as unknown as SelectQuery<O, C, T, R, Only>)._entry = entry;
+			const select = next as unknown as SelectQuery<O, C, T, R, Only>;
+			select._entry = entry;
+			select._entryFields = entryFields;
 		}) as unknown as SelectQuery<O, C, T, R, Only>;
 	}
 
 	/**
 	 * Filter rows. Takes either a callback building the condition from the row,
 	 * or a plain filter object (`{ name: "x", age: { gt: 18 } }`) that compiles to
-	 * the same condition — see {@link WhereObject}.
+	 * the same condition — see {@link WhereObject}. Chained calls AND together;
+	 * {@link clearWhere} removes them.
 	 */
 	where(
 		cb: (
@@ -347,16 +401,20 @@ export class SelectQuery<
 			typeof input === "function"
 				? input(tb)
 				: whereFromObject(tb as unknown as Workable<C>, input);
-		// An object filter that imposes no condition leaves the query unfiltered.
-		if (!condition) {
-			return this.derive((next) => {
-				next._filter = undefined;
-			});
-		}
+		// An object filter that imposes no condition (such as `where({})`) adds
+		// nothing, so the filter already on the query stays.
+		if (!condition) return this;
 
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
-			next._filter = filter;
+			next._filter = andWhere(next._filter, filter);
+		});
+	}
+
+	/** Remove every `.where()` condition set so far. */
+	clearWhere(): this {
+		return this.derive((next) => {
+			next._filter = undefined;
 		});
 	}
 
@@ -460,22 +518,64 @@ export class SelectQuery<
 		return this._addOrderBy(field, direction, { collate: true });
 	}
 
+	/**
+	 * Group rows by the given fields. A grouped query must have a `.return()`
+	 * projection that selects each of them, and its aggregates, as in
+	 * `db.select("post").groupBy("author").return((p) => ({ author: p.author, posts: count(p) }))`.
+	 * It cannot be combined with {@link split}.
+	 */
 	groupBy(...fields: FieldKeys<O, T>[]): this {
+		if (fields.length === 0) {
+			throw new OrmError("groupBy() needs at least one field");
+		}
+		this.assertNotSplit("groupBy");
 		return this.derive((next) => {
 			next._groupBy = fields;
 		});
 	}
 
+	/**
+	 * Group all rows into one, for table-wide aggregates. Needs a `.return()`
+	 * projection of aggregates, such as `count(u)` or `math.mean(u.age)`.
+	 */
 	groupAll(): this {
+		this.assertNotSplit("groupAll");
 		return this.derive((next) => {
 			next._groupBy = "ALL";
 		});
 	}
 
-	split(...fields: FieldKeys<O, T>[]): this {
+	/**
+	 * Emit one row per element of the given array fields. SurrealDB does not allow
+	 * SPLIT and GROUP BY in the same query, so this cannot be combined with
+	 * {@link groupBy} or {@link groupAll}. Call it before {@link return}.
+	 */
+	split<F extends FieldKeys<O, T>>(
+		...fields: F[]
+	): SelectQuery<O, C, T, SplitEntry<E, F>, Only> {
+		if (this._groupBy !== undefined) {
+			throw new OrmError(
+				"split() cannot be combined with groupBy() or groupAll(): SurrealDB does not allow SPLIT and GROUP in one query",
+			);
+		}
+		// A projection is typed and parsed from the rows as they were before the
+		// split, so a split field inside it would still be typed as the whole array.
+		if (this._entry) {
+			throw new OrmError(
+				"split() must come before return(): the projection was typed before the split",
+			);
+		}
 		return this.derive((next) => {
 			next._split = fields;
-		});
+		}) as unknown as SelectQuery<O, C, T, SplitEntry<E, F>, Only>;
+	}
+
+	private assertNotSplit(method: string): void {
+		if (this._split && this._split.length > 0) {
+			throw new OrmError(
+				`${method}() cannot be combined with split(): SurrealDB does not allow SPLIT and GROUP in one query`,
+			);
+		}
 	}
 
 	fetch<P extends FetchPaths<O, T>>(
@@ -533,34 +633,81 @@ export class SelectQuery<
 		return /* surql */ ` ORDER BY ${orderParts.join(", ")}`;
 	}
 
+	/**
+	 * The projection after `SELECT`. A grouped or split query has to name its
+	 * keys as selected fields, which an object `VALUE { … }` cannot do, so its
+	 * object projection is a field list (`email AS writer, count(true) AS posts`).
+	 * SurrealDB rejects a grouped query with no projection, and one that does not
+	 * select each of its keys, so both are reported here as an {@link OrmError}.
+	 */
+	private displayProjection(ctx: DisplayContext, bare: boolean): string {
+		if (!this._entry) {
+			if (this._groupBy !== undefined) {
+				throw new OrmError(
+					"groupBy() and groupAll() need a return() projection of aggregates: SurrealDB cannot group SELECT *",
+				);
+			}
+			return "*";
+		}
+		const fields = this._entryFields;
+		if (!bare) return /* surql */ `VALUE ${this._entry[__display](ctx)}`;
+
+		const exprs = fields
+			? fields.map(([, field]) => field[__display](ctx))
+			: [this._entry[__display](ctx)];
+
+		const keys =
+			this._groupBy === "ALL" ? [] : (this._groupBy ?? this._split ?? []);
+		const kind = this._groupBy !== undefined ? "groupBy" : "split";
+		for (const key of keys) {
+			if (!exprs.includes(escapeIdiomPath(key))) {
+				throw new OrmError(
+					`${kind}("${key}") needs the return() projection to select "${key}" as a field`,
+				);
+			}
+		}
+
+		if (!fields) return /* surql */ `VALUE ${exprs[0]}`;
+		return fields
+			.map(([alias], i) => `${exprs[i]} AS ${escapeIdent(alias)}`)
+			.join(", ");
+	}
+
+	/** The SPLIT and GROUP clauses, which come after WHERE and before ORDER BY. */
+	private displayGrouping(): string {
+		let clauses = "";
+		if (this._split && this._split.length > 0)
+			clauses += /* surql */ ` SPLIT ${this._split.map(escapeIdiomPath).join(", ")}`;
+
+		if (this._groupBy) {
+			clauses +=
+				this._groupBy === "ALL"
+					? " GROUP ALL"
+					: /* surql */ ` GROUP BY ${this._groupBy.map(escapeIdiomPath).join(", ")}`;
+		}
+		return clauses;
+	}
+
 	[__display](inp: DisplayContext) {
+		const grouped = this._groupBy !== undefined;
+		const split = this._split !== undefined && this._split.length > 0;
 		const ctx = displayContext({
 			...inp,
 			contextId: this[__ctx].id,
+			bareRowsOf: grouped || split ? this[__ctx].id : undefined,
 		});
 
 		const thing = this.displaySubject(ctx);
 		const start = this._start !== undefined ? ctx.var(this._start) : undefined;
 		const limit = this._limit !== undefined ? ctx.var(this._limit) : undefined;
 
-		const predicates = this._entry
-			? /* surql */ `VALUE ${this._entry[__display](ctx)}`
-			: "*";
+		const predicates = this.displayProjection(ctx, grouped || split);
 		let query = /* surql */ `SELECT ${predicates} FROM ${this._only ? "ONLY " : ""}${thing}`;
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
-		if (this._split && this._split.length > 0)
-			query += /* surql */ ` SPLIT ${this._split.map(escapeIdiomPath).join(", ")}`;
-
-		if (this._groupBy) {
-			query +=
-				this._groupBy === "ALL"
-					? " GROUP ALL"
-					: /* surql */ ` GROUP BY ${this._groupBy.map(escapeIdiomPath).join(", ")}`;
-		}
-
+		query += this.displayGrouping();
 		query += this.displayOrderBy(ctx);
 
 		if (limit) query += /* surql */ ` LIMIT ${limit}`;
@@ -569,8 +716,11 @@ export class SelectQuery<
 		if (this._fetch && this._fetch.length > 0)
 			query += /* surql */ ` FETCH ${this._fetch.map(escapeIdiomPath).join(", ")}`;
 
+		// SELECT's TIMEOUT rejects a bound string ("Invalid timeout value"), though
+		// UPDATE, CREATE and the others accept it. The cast makes the parameter a
+		// duration on every supported server version (3.0.5 to 3.3.0).
 		if (this._timeout)
-			query += /* surql */ ` TIMEOUT ${ctx.var(this._timeout)}`;
+			query += /* surql */ ` TIMEOUT <duration> ${ctx.var(this._timeout)}`;
 
 		return `(${query})`;
 	}

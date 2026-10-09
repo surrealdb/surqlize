@@ -3,8 +3,11 @@ import { RecordId, Surreal, Table } from "surrealdb";
 import {
 	__display,
 	and,
+	count,
 	displayContext,
 	edge,
+	math,
+	OrmError,
 	or,
 	orm,
 	t,
@@ -349,8 +352,13 @@ describe("SELECT GROUP BY", () => {
 
 	const db = orm(new Surreal(), user);
 
+	// A grouped SELECT needs a return() projection: `SELECT *` cannot be
+	// aggregated, so the server rejects a grouped query without one.
 	test("generates GROUP BY with single field", () => {
-		const query = db.select("user").groupBy("email");
+		const query = db
+			.select("user")
+			.groupBy("email")
+			.return((u) => ({ email: u.email, total: count(u) }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -358,7 +366,10 @@ describe("SELECT GROUP BY", () => {
 	});
 
 	test("generates GROUP BY with multiple fields", () => {
-		const query = db.select("user").groupBy("email", "age");
+		const query = db
+			.select("user")
+			.groupBy("email", "age")
+			.return((u) => ({ email: u.email, age: u.age, total: count(u) }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -366,7 +377,10 @@ describe("SELECT GROUP BY", () => {
 	});
 
 	test("generates GROUP ALL", () => {
-		const query = db.select("user").groupAll();
+		const query = db
+			.select("user")
+			.groupAll()
+			.return((u) => ({ total: count(u) }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -375,7 +389,11 @@ describe("SELECT GROUP BY", () => {
 	});
 
 	test("groupAll overrides previous groupBy", () => {
-		const query = db.select("user").groupBy("email").groupAll();
+		const query = db
+			.select("user")
+			.groupBy("email")
+			.groupAll()
+			.return((u) => ({ total: count(u) }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -384,7 +402,11 @@ describe("SELECT GROUP BY", () => {
 	});
 
 	test("groupBy overrides previous groupAll", () => {
-		const query = db.select("user").groupAll().groupBy("email");
+		const query = db
+			.select("user")
+			.groupAll()
+			.groupBy("email")
+			.return((u) => ({ email: u.email, total: count(u) }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
@@ -599,11 +621,11 @@ describe("SELECT clause ordering", () => {
 	const db = orm(new Surreal(), user);
 
 	test("emits clauses in correct SurrealQL order", () => {
+		// SPLIT and GROUP BY are mutually exclusive, so this uses SPLIT alone.
 		const query = db
 			.select("user")
 			.where(($this) => $this.age.gte(18))
 			.split("tags")
-			.groupBy("email")
 			.orderBy("age", "DESC")
 			.start(10)
 			.limit(20)
@@ -615,17 +637,15 @@ describe("SELECT clause ordering", () => {
 		// Verify all clauses are present
 		expect(result).toContain("WHERE");
 		expect(result).toContain("SPLIT tags");
-		expect(result).toContain("GROUP BY email");
 		expect(result).toContain("ORDER BY age DESC");
 		expect(result).toContain("START");
 		expect(result).toContain("LIMIT");
 		expect(result).toContain("FETCH tags");
 		expect(result).toContain("TIMEOUT");
 
-		// Verify correct ordering: WHERE < SPLIT < GROUP < ORDER < LIMIT < START < FETCH < TIMEOUT
+		// Verify correct ordering: WHERE < SPLIT < ORDER < LIMIT < START < FETCH < TIMEOUT
 		const whereIdx = result.indexOf("WHERE");
 		const splitIdx = result.indexOf("SPLIT");
-		const groupIdx = result.indexOf("GROUP BY");
 		const orderIdx = result.indexOf("ORDER BY");
 		const startIdx = result.indexOf("START");
 		const limitIdx = result.indexOf("LIMIT");
@@ -633,8 +653,7 @@ describe("SELECT clause ordering", () => {
 		const timeoutIdx = result.indexOf("TIMEOUT");
 
 		expect(whereIdx).toBeLessThan(splitIdx);
-		expect(splitIdx).toBeLessThan(groupIdx);
-		expect(groupIdx).toBeLessThan(orderIdx);
+		expect(splitIdx).toBeLessThan(orderIdx);
 		expect(orderIdx).toBeLessThan(limitIdx);
 		expect(limitIdx).toBeLessThan(startIdx);
 		expect(startIdx).toBeLessThan(fetchIdx);
@@ -689,7 +708,6 @@ describe("SELECT clause ordering", () => {
 			.limit(20)
 			.start(10)
 			.orderBy("age", "DESC")
-			.groupBy("email")
 			.split("tags")
 			.where(($this) => $this.age.gte(18));
 		const ctx = displayContext();
@@ -697,7 +715,6 @@ describe("SELECT clause ordering", () => {
 
 		const whereIdx = result.indexOf("WHERE");
 		const splitIdx = result.indexOf("SPLIT");
-		const groupIdx = result.indexOf("GROUP BY");
 		const orderIdx = result.indexOf("ORDER BY");
 		const startIdx = result.indexOf("START");
 		const limitIdx = result.indexOf("LIMIT");
@@ -705,8 +722,7 @@ describe("SELECT clause ordering", () => {
 		const timeoutIdx = result.indexOf("TIMEOUT");
 
 		expect(whereIdx).toBeLessThan(splitIdx);
-		expect(splitIdx).toBeLessThan(groupIdx);
-		expect(groupIdx).toBeLessThan(orderIdx);
+		expect(splitIdx).toBeLessThan(orderIdx);
 		expect(orderIdx).toBeLessThan(limitIdx);
 		expect(limitIdx).toBeLessThan(startIdx);
 		expect(startIdx).toBeLessThan(fetchIdx);
@@ -861,5 +877,129 @@ describe("SELECT compound WHERE", () => {
 		expect(result).toContain("WHERE");
 		expect(result).toContain("OR");
 		expect(result).toMatch(/\(.+OR.+\)/);
+	});
+});
+
+describe("SELECT GROUP and SPLIT projections", () => {
+	const user = table("user", {
+		name: t.string(),
+		age: t.number(),
+		email: t.string(),
+		tags: t.array(t.string()),
+	});
+
+	const db = orm(new Surreal(), user);
+
+	test("GROUP ALL renders row fields bare, never as $this", () => {
+		const sql = db
+			.select("user")
+			.groupAll()
+			.return((u) => ({ total: count(u), avg: math.mean(u.age) }))
+			.toString();
+
+		expect(sql).not.toContain("$this");
+		expect(sql).toContain(
+			"SELECT count(true) AS total, math::mean(age) AS avg FROM",
+		);
+		expect(sql).toContain("GROUP ALL");
+	});
+
+	test("GROUP ALL with a scalar aggregate renders a VALUE that yields a number", () => {
+		const sql = db
+			.select("user")
+			.groupAll()
+			.return((u) => count(u))
+			.toString();
+
+		expect(sql).toContain("SELECT VALUE count(true) FROM");
+	});
+
+	test("GROUP BY renders a field list, aliasing the grouped key", () => {
+		const sql = db
+			.select("user")
+			.groupBy("email")
+			.return((u) => ({ writer: u.email, posts: count(u) }))
+			.toString();
+
+		expect(sql).toContain("SELECT email AS writer, count(true) AS posts FROM");
+		expect(sql).toContain("GROUP BY email");
+		expect(sql).not.toContain("VALUE");
+		expect(sql).not.toContain("$this");
+	});
+
+	test("SPLIT renders a field list, aliasing the split field", () => {
+		const sql = db
+			.select("user")
+			.split("tags")
+			.return((u) => ({ tag: u.tags, name: u.name }))
+			.toString();
+
+		expect(sql).toContain("SELECT tags AS tag, name AS name FROM");
+		expect(sql).toContain("SPLIT tags");
+		expect(sql).not.toContain("$this");
+	});
+
+	test("WHERE in a grouped query renders bare fields", () => {
+		const sql = db
+			.select("user")
+			.where((u) => u.age.gt(18))
+			.groupBy("email")
+			.return((u) => ({ email: u.email, n: count(u) }))
+			.toString();
+
+		expect(sql).toContain("WHERE age > ");
+		expect(sql).not.toContain("$this");
+	});
+
+	test("GROUP BY without a return() is rejected", () => {
+		expect(() => db.select("user").groupBy("email").toString()).toThrow(
+			OrmError,
+		);
+	});
+
+	test("GROUP ALL without a return() is rejected", () => {
+		expect(() => db.select("user").groupAll().toString()).toThrow(OrmError);
+	});
+
+	test("SPLIT without a return() is still a plain SELECT *", () => {
+		expect(db.select("user").split("tags").toString()).toContain(
+			"SELECT * FROM",
+		);
+	});
+
+	test("SPLIT and GROUP BY cannot be combined, in either order", () => {
+		expect(() => db.select("user").split("tags").groupAll()).toThrow(OrmError);
+		expect(() => db.select("user").groupBy("email").split("tags")).toThrow(
+			OrmError,
+		);
+	});
+
+	test("a grouped key missing from the projection is rejected", () => {
+		const query = db
+			.select("user")
+			.groupBy("email")
+			.return((u) => ({ total: count(u) }));
+
+		expect(() => query.toString()).toThrow(OrmError);
+		expect(() => query.toString()).toThrow(/email/);
+	});
+
+	test("split() after return() is rejected: the projection was typed before the split", () => {
+		expect(() =>
+			db
+				.select("user")
+				.return((u) => ({ tag: u.tags }))
+				.split("tags"),
+		).toThrow(OrmError);
+	});
+
+	test("a split field missing from the projection is rejected", () => {
+		const query = db
+			.select("user")
+			.split("tags")
+			.return((u) => ({ name: u.name }));
+
+		expect(() => query.toString()).toThrow(OrmError);
+		expect(() => query.toString()).toThrow(/tags/);
 	});
 });

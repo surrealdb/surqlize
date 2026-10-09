@@ -39,6 +39,7 @@ import {
 } from "./modification-methods.ts";
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
+import { andWhere } from "./utils.ts";
 import { validateWrite } from "./validate-input.ts";
 
 /**
@@ -152,15 +153,20 @@ export class UpdateQuery<
 			typeof input === "function"
 				? input(tb)
 				: whereFromObject(tb as unknown as Workable<C>, input);
-		if (!condition) {
-			return this.derive((next) => {
-				next._filter = undefined;
-			});
-		}
+		// An object filter that imposes no condition (such as `where({})`) adds
+		// nothing, so the filter already on the query stays.
+		if (!condition) return this;
 
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
-			next._filter = filter;
+			next._filter = andWhere(next._filter, filter);
+		});
+	}
+
+	/** Remove every `.where()` condition set so far. */
+	clearWhere(): this {
+		return this.derive((next) => {
+			next._filter = undefined;
 		});
 	}
 

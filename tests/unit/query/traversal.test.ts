@@ -141,6 +141,35 @@ describe("graph traversal — SurrealQL generation", () => {
 		expect(sql).toContain(")->post");
 	});
 
+	test("chained where() on an edge segment AND together", () => {
+		const q = db.select("user").return((u) => ({
+			posts: u.id
+				.out((g) =>
+					g("authored")
+						.where((e) => e.role.eq("author"))
+						.where((e) => e.created.lt(new Date(0))),
+				)
+				.out("post"),
+		}));
+		const sql = render(q);
+		expect(sql).toMatch(/->\(authored WHERE \(role = .+ AND created < .+\)\)/);
+	});
+
+	test("clearWhere() on an edge segment drops its earlier filter", () => {
+		const q = db.select("user").return((u) => ({
+			posts: u.id
+				.out((g) =>
+					g("authored")
+						.where((e) => e.role.eq("author"))
+						.clearWhere(),
+				)
+				.out("post"),
+		}));
+		const sql = render(q);
+		expect(sql).toContain("->authored->post");
+		expect(sql).not.toContain("WHERE");
+	});
+
 	test("mixes a plain alternative with a filtered one in one step", () => {
 		const account = table("account", { handle: t.string() });
 		const follows = edge("account", "follows", "account", { since: t.date() });
