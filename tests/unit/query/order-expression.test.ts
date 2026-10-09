@@ -88,6 +88,42 @@ describe("ORDER BY an expression", () => {
 		expect(() => render(query)).toThrow(OrmError);
 	});
 
+	test("an expression sort combined with groupBy() is rejected: a grouped sort key must be a selected field", () => {
+		const query = db
+			.select("doc")
+			.groupBy("title")
+			.orderBy((d) => vector.magnitude(d.embedding), "DESC")
+			.return((d) => ({ title: d.title }));
+
+		expect(() => render(query)).toThrow(
+			/cannot be combined with groupBy\(\) or groupAll\(\)/,
+		);
+	});
+
+	test("an expression sort combined with groupAll() is rejected the same way", () => {
+		const query = db
+			.select("doc")
+			.groupAll()
+			.orderBy((d) => vector.magnitude(d.embedding));
+
+		expect(() => render(query)).toThrow(
+			/cannot be combined with groupBy\(\) or groupAll\(\)/,
+		);
+	});
+
+	test("an expression sort with split() is hoisted, and renders bare beside the split row", () => {
+		const { sql } = render(
+			db
+				.select("doc")
+				.split("embedding")
+				.orderBy((d) => vector.magnitude(d.embedding), "DESC"),
+		);
+
+		expect(sql).toContain(
+			"SELECT *, vector::magnitude(embedding) AS __order_0 OMIT __order_0 FROM $_v0 SPLIT embedding ORDER BY __order_0 DESC",
+		);
+	});
+
 	test("orderByNumeric and orderByCollate accept expressions too", () => {
 		const { sql } = render(
 			db

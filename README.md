@@ -484,14 +484,22 @@ An expression sort cannot be combined with `.return()`: a returned object would 
 #### Grouping with GROUP BY
 
 ```typescript
-// Group by field(s)
-const grouped = db.select("post")
-  .groupBy("author");
+import { count, math } from "surqlize";
 
-// Group all (for table-wide aggregates)
-const totalCount = db.select("user")
-  .groupAll();
+// Group by a field: the return() projection selects the key and the aggregates
+const perAuthor = db.select("post")
+  .groupBy("author")
+  .return((post) => ({ writer: post.author, posts: count(post) }));
+
+// Group all rows into one: the return() projection holds table-wide aggregates
+const totals = db.select("user")
+  .groupAll()
+  .return((user) => ({ total: count(user), avgAge: math.mean(user.age) }));
 ```
+
+A grouped query needs a `.return()` projection, because SurrealDB cannot group `SELECT *`. The projection must select each `groupBy()` field (here `post.author`, aliased as `writer`), and its other fields are aggregates such as `count()` and `math.mean()`. A single aggregate can also be returned on its own, as in `groupAll().return((user) => count(user))`. `groupBy()` and `groupAll()` throw an `OrmError` when the projection is missing or does not select a grouped field. `groupBy()` and `groupAll()` cannot be combined with `split()`, because SurrealDB does not allow SPLIT and GROUP in one query. Aggregate functions are listed under [Standalone functions](#standalone-functions).
+
+Select only the grouped fields and aggregates in a grouped projection. SurrealDB returns any other field as an array of its values per group (`title: ["A", "B"]`), which does not match the field's declared type, so it fails to parse.
 
 #### Loading relations with FETCH
 
@@ -546,7 +554,14 @@ const splitTags = db.select("post")
 // Split multiple arrays
 const multiSplit = db.select("post")
   .split("tags", "categories");
+
+// One row per tag. The projection must select the split field, here as `tag`.
+const perTag = db.select("post")
+  .split("tags")
+  .return((post) => ({ tag: post.tags, title: post.title }));
 ```
+
+After `split()`, each split field holds a single element, so it is typed as the element type (`string` for `array<string>`), not the array. A `.where()` after `split()` still filters on the whole array, since SurrealDB applies WHERE before SPLIT. `split()` cannot be combined with `groupBy()` or `groupAll()`, and it must be called before `.return()`, because a projection is typed from the rows before the split (calling it after throws an `OrmError`).
 
 #### Setting query timeout
 
@@ -1247,6 +1262,26 @@ db.select("user").where((user) =>
 
 Both `and()` and `or()` require at least two conditions and accept any number of additional conditions. Nesting them produces correctly parenthesized output, so precedence is always explicit.
 
+### Chaining `where()` calls
+
+Chained `.where()` calls AND together: each one narrows the rows the earlier ones kept. Callbacks and [object filters](#object-based-filters-and-sorting) can be mixed freely. This holds for `select`, `update`, `delete`, `live` and `upsert`, and for the edge filter of a traversal segment (`g("authored").where(...).where(...)`, where `clearWhere()` drops the filter).
+
+```typescript
+db.select("user")
+  .where((user) => user.age.gte(18))
+  .where({ email: { endsWith: "@example.com" } });
+// WHERE ($this.age >= 18 AND string::ends_with($this.email, "@example.com"))
+```
+
+An object filter with no condition, such as `where({})`, or one whose values are all `undefined`, adds nothing, so the filter already on the query stays. To remove every condition set so far, call `clearWhere()`:
+
+```typescript
+const adults = db.select("user").where((user) => user.age.gte(18));
+
+adults.where({ name: undefined }); // still WHERE $this.age >= 18
+adults.clearWhere();               // no WHERE clause at all
+```
+
 ### Object-based filters and sorting
 
 `where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks, and the two styles can be mixed freely. The objects are fully type-checked against your schema.
@@ -1279,11 +1314,11 @@ Fields of an object, and fields of a record link, can be filtered or sorted by i
 
 Notes:
 
-- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) produces no `WHERE` clause, so optional parameters can be passed straight through.
+- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) adds no condition, so optional parameters can be passed straight through. A `where()` with no condition leaves the filter from earlier calls in place (see [Chaining `where()` calls](#chaining-where-calls)).
 - A key that names a field always wins over an operator or combinator of the same name.
 - Unknown fields, unsupported operators and invalid directions throw an `OrmError` (and are rejected by the type checker).
 - Directions are `"asc"` / `"desc"` (upper case also works) and are applied in key order. `orderByNumeric` and `orderByCollate` remain fluent-only and chain after an object `orderBy`.
-- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries.
+- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries (`upsert` takes the callback form only).
 
 ## Type-specific functions
 

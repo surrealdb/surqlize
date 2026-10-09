@@ -35,6 +35,7 @@ export function displayContext(upstream?: Partial<DisplayContext>) {
 		var: v,
 		variables,
 		contextId: upstream?.contextId ?? Symbol(),
+		bareRowsOf: upstream?.bareRowsOf,
 	} satisfies DisplayContext;
 }
 
@@ -43,4 +44,10 @@ export type DisplayContext = {
 	var: (value: unknown) => string;
 	variables: Record<string, unknown>;
 	contextId: symbol;
+	/**
+	 * The context id of a grouped or split SELECT whose own row is referenced
+	 * without a `$this` prefix. SurrealDB rejects `$this` in a grouped selection,
+	 * so its fields are rendered as bare identifiers instead.
+	 */
+	bareRowsOf?: symbol;
 };

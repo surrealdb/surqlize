@@ -37,6 +37,7 @@ import {
 	type WriteData,
 } from "./modification-methods.ts";
 import { resolveSubjectSchema } from "./subject.ts";
+import { andWhere } from "./utils.ts";
 import { validateWrite } from "./validate-input.ts";
 
 /**
@@ -138,7 +139,14 @@ export class UpsertQuery<
 
 		const filter = sanitizeWorkable(cb(tb));
 		return this.derive((next) => {
-			next._filter = filter;
+			next._filter = andWhere(next._filter, filter);
+		});
+	}
+
+	/** Remove every `.where()` condition set so far. */
+	clearWhere(): this {
+		return this.derive((next) => {
+			next._filter = undefined;
 		});
 	}
 

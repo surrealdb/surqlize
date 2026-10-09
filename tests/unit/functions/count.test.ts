@@ -11,14 +11,18 @@ describe("Count functions", () => {
 
 	const db = orm(new Surreal(), user);
 
-	test("count() generates count()", () => {
+	test("count(row) counts rows as count(true)", () => {
+		// A bare count() is named `count` when used as a VALUE, so a single
+		// aggregate in a GROUP ALL returns { count: n } instead of n. count(true)
+		// counts the same rows and returns the number.
 		const query = db.select("user").return((user) => ({
 			total: count(user),
 		}));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
-		expect(result).toContain("count()");
+		expect(result).toContain("count(true)");
+		expect(result).not.toContain("count()");
 	});
 
 	test("count(value) generates count(", () => {
