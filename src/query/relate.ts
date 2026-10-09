@@ -122,7 +122,7 @@ export class RelateQuery<
 	/** Set fields on the edge. Fields that are not set are absent from the result. */
 	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
 		data: D,
-	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
 		}) as unknown as RelateQuery<
@@ -131,7 +131,7 @@ export class RelateQuery<
 			Edge,
 			E,
 			Only,
-			Written<W, "set", Extract<keyof D, string>>
+			Written<W, "set", D>
 		>;
 	}
 
@@ -156,7 +156,7 @@ export class RelateQuery<
 
 	merge<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
 		}) as unknown as RelateQuery<
@@ -165,13 +165,13 @@ export class RelateQuery<
 			Edge,
 			E,
 			Only,
-			Written<W, "set", Extract<keyof D, string>>
+			Written<W, "set", D>
 		>;
 	}
 
 	patch(
 		operations: JsonPatchOp[],
-	): RelateQuery<O, C, Edge, E, Only, { keys: never; gone: never; mode: "patch" }> {
+	): RelateQuery<O, C, Edge, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }> {
 		return this.derive((next) => {
 			applyPatch(next, operations);
 		}) as unknown as RelateQuery<
@@ -180,7 +180,7 @@ export class RelateQuery<
 			Edge,
 			E,
 			Only,
-			{ keys: never; gone: never; mode: "patch" }
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
 		>;
 	}
 
@@ -193,7 +193,7 @@ export class RelateQuery<
 		Edge,
 		E,
 		Only,
-		{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+		Written<NoWrite, "replace", D>
 	> {
 		return this.derive((next) => {
 			applyReplace(next, data);
@@ -203,14 +203,11 @@ export class RelateQuery<
 			Edge,
 			E,
 			Only,
-			{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+			Written<NoWrite, "replace", D>
 		>;
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
-	return(
-		mode: "before",
-	): RelateQuery<O, C, Edge, E, Only, { keys: never; gone: never; mode: "patch" }>;
 	return(
 		cb: (record: Actionable<C, WriteRow<E, W, "relate">>) => Inheritable<C>,
 	): RelateQuery<

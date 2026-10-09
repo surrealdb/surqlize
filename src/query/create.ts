@@ -112,7 +112,7 @@ export class CreateQuery<
 	 */
 	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
 		data: D,
-	): CreateQuery<O, C, T, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+	): CreateQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
 		}) as unknown as CreateQuery<
@@ -121,7 +121,7 @@ export class CreateQuery<
 			T,
 			E,
 			Only,
-			Written<W, "set", Extract<keyof D, string>>
+			Written<W, "set", D>
 		>;
 	}
 
@@ -145,7 +145,7 @@ export class CreateQuery<
 	/** Merge fields into the record. Fields that are not merged are absent from the result. */
 	merge<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): CreateQuery<O, C, T, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+	): CreateQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
 		}) as unknown as CreateQuery<
@@ -154,7 +154,7 @@ export class CreateQuery<
 			T,
 			E,
 			Only,
-			Written<W, "set", Extract<keyof D, string>>
+			Written<W, "set", D>
 		>;
 	}
 
@@ -166,7 +166,7 @@ export class CreateQuery<
 		T,
 		E,
 		Only,
-		{ keys: never; gone: never; mode: "patch" }
+		{ keys: never; maybe: never; gone: never; mode: "patch" }
 	> {
 		return this.derive((next) => {
 			applyPatch(next, operations);
@@ -176,7 +176,7 @@ export class CreateQuery<
 			T,
 			E,
 			Only,
-			{ keys: never; gone: never; mode: "patch" }
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
 		>;
 	}
 
@@ -189,7 +189,7 @@ export class CreateQuery<
 		T,
 		E,
 		Only,
-		{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+		Written<NoWrite, "replace", D>
 	> {
 		return this.derive((next) => {
 			applyReplace(next, data);
@@ -199,7 +199,7 @@ export class CreateQuery<
 			T,
 			E,
 			Only,
-			{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+			Written<NoWrite, "replace", D>
 		>;
 	}
 

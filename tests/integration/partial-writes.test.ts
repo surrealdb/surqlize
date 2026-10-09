@@ -185,6 +185,33 @@ describe("partial CREATE writes do not throw after committing", () => {
 		expect(row.id.toString()).toBe("member:only_partial");
 	});
 
+	test("set() with a key passed as undefined does not throw and leaves the field out", async () => {
+		const db = make();
+		const maybeEmail: string | undefined = undefined;
+		const [row] = await db
+			.create("member", "undef_partial")
+			.set({ name: "Undef", email: maybeEmail })
+			.execute();
+
+		expect(row!.name).toBe("Undef");
+		expect(row!.email).toBeUndefined();
+		expect((await stored(getTestDb().surreal, "member:undef_partial"))?.name).toBe(
+			"Undef",
+		);
+	});
+
+	test("set() passing a defaulted field as undefined does not apply its default", async () => {
+		const db = make();
+		const maybeRole: string | undefined = undefined;
+		const [row] = await db
+			.create("member", "undef_default")
+			.set({ name: "Undef", role: maybeRole })
+			.execute();
+
+		expect(row!.name).toBe("Undef");
+		expect(row!.role).toBeUndefined();
+	});
+
 	test("set() called twice keeps both written fields", async () => {
 		const db = make();
 		const [row] = await db
@@ -470,6 +497,23 @@ describe("validated() still checks partial writes", () => {
 				.set({ nickname: 7 as unknown as string })
 				.execute(),
 		).rejects.toThrow(ValidationError);
+	});
+});
+
+describe("partial writes inside batch()", () => {
+	const getTestDb = withTestDb({ setup: defineTables });
+	const make = () => orm(getTestDb().surreal, member, knows);
+
+	test("a partial create() in a batch does not throw after committing", async () => {
+		const db = make();
+		const [created] = await db.batch(
+			db.create("member", "batch_partial").set({ name: "Batch" }),
+		);
+
+		expect(created[0]!.name).toBe("Batch");
+		expect((await stored(getTestDb().surreal, "member:batch_partial"))?.name).toBe(
+			"Batch",
+		);
 	});
 });
 

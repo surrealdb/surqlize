@@ -85,6 +85,48 @@ async function createResults() {
 	void projected;
 }
 
+/*
+ * A key whose value may be `undefined` may not be present in the record. A
+ * `.set()` with such a key leaves the field out, and a `.default()` is not
+ * applied to a key that was passed, even as `undefined`.
+ */
+async function maybeWrittenResults(maybeEmail: string | undefined) {
+	const partial: Partial<{ name: string; email: string }> = {};
+
+	const fromPartial = await db.create("member").set(partial).execute();
+	type FromPartial = (typeof fromPartial)[number];
+	assertType<Equal<FromPartial["name"], string | undefined>>();
+
+	const fromMaybe = await db
+		.create("member")
+		.set({ name: "Ada", email: maybeEmail })
+		.execute();
+	type FromMaybe = (typeof fromMaybe)[number];
+	assertType<Equal<FromMaybe["name"], string>>();
+	assertType<Equal<FromMaybe["email"], string | undefined>>();
+
+	const defaultMaybe = await db
+		.create("member")
+		.set({ name: "Ada", email: "a@x", role: undefined as string | undefined })
+		.execute();
+	type DefaultMaybe = (typeof defaultMaybe)[number];
+	assertType<Equal<DefaultMaybe["role"], string | undefined>>();
+
+	const mergedMaybe = await db
+		.create("member")
+		.merge({ name: "Ada", email: maybeEmail })
+		.execute();
+	type MergedMaybe = (typeof mergedMaybe)[number];
+	assertType<Equal<MergedMaybe["email"], string | undefined>>();
+
+	const updated = await db
+		.update("member", "a")
+		.set({ role: maybeEmail as string | undefined })
+		.execute();
+	type Updated = (typeof updated)[number];
+	assertType<Equal<Updated["role"], string | undefined>>();
+}
+
 async function updateResults() {
 	// UPDATE .set(): the written field is required, the rest may be absent.
 	const viaSet = await db
@@ -205,6 +247,7 @@ async function unchangedResults() {
 
 test("partial write result types are checked by the compiler", () => {
 	expect(typeof createResults).toBe("function");
+	expect(typeof maybeWrittenResults).toBe("function");
 	expect(typeof updateResults).toBe("function");
 	expect(typeof upsertResults).toBe("function");
 	expect(typeof relateResults).toBe("function");

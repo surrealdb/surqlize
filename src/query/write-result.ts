@@ -20,31 +20,62 @@ import {
  *   the fields.
  */
 export type WriteShape = {
+	/** Fields the write certainly sets. */
 	keys: string;
+	/** Fields the write may set: they are optional, or may be `undefined`. */
+	maybe: string;
 	gone: string;
 	mode: "full" | "set" | "replace" | "patch";
 };
 
 /** Before any data is written: the write is a SET with nothing in it. */
-export type NoWrite = { keys: never; gone: never; mode: "set" };
+export type NoWrite = { keys: never; maybe: never; gone: never; mode: "set" };
 
 /** A write of the whole record, whose result is the table's row. */
-export type FullWrite = { keys: never; gone: never; mode: "full" };
+export type FullWrite = { keys: never; maybe: never; gone: never; mode: "full" };
 
-/** The shape after `keys` are written with `mode`, keeping what was written before. */
+/**
+ * The keys of `D` that are certainly written: required, and not typed to accept
+ * `undefined`. A key that is optional, or may be `undefined`, may be absent from
+ * the record.
+ */
+type Definite<D> = {
+	[K in keyof D]-?: {} extends Pick<D, K>
+		? never
+		: undefined extends D[K]
+			? never
+			: K;
+}[keyof D] &
+	string;
+
+/** The keys of `D` that may be absent from the record: see {@link Definite}. */
+type Maybe<D> = Exclude<keyof D & string, Definite<D>>;
+
+/**
+ * The shape after `D` is written with `mode`, keeping what was written before.
+ * A key written both ways is certainly written.
+ */
 export type Written<
 	W extends WriteShape,
 	Mode extends WriteShape["mode"],
-	Keys extends string,
-> = { keys: W["keys"] | Keys; gone: W["gone"]; mode: Mode };
+	D,
+> = {
+	keys: W["keys"] | Definite<D>;
+	maybe: Exclude<W["maybe"] | Maybe<D>, W["keys"] | Definite<D>>;
+	gone: W["gone"];
+	mode: Mode;
+};
 
 /** Which write query produced the result. */
 export type WriteKind = "create" | "update" | "relate";
 
 /** Fields with a `.default()`, which CREATE fills in. */
-type DefaultKeys<S> = {
-	[K in keyof S]-?: S[K] extends HasDefault ? K : never;
-}[keyof S];
+type DefaultKeys<S, W extends WriteShape> = Exclude<
+	{
+		[K in keyof S]-?: S[K] extends HasDefault ? K : never;
+	}[keyof S],
+	W["maybe"]
+>;
 
 /** Fields that may be absent: `option<…>` fields. */
 type OptionKeys<S extends Record<string, AbstractType>> = {
@@ -70,14 +101,14 @@ type Guaranteed<
 	| (W["mode"] extends "set"
 			? K extends "update"
 				? never
-				: OptionKeys<S> | (K extends "create" ? DefaultKeys<S> : never)
+				: OptionKeys<S> | (K extends "create" ? DefaultKeys<S, W> : never)
 			: never)
 	| (W["mode"] extends "replace"
 			? K extends "update"
 				? never
 				: OptionKeys<S>
 			: never),
-	W["gone"]
+	W["gone"] | W["maybe"]
 > &
 	keyof S;
 
@@ -95,17 +126,25 @@ type MayRemain<W extends WriteShape, K extends WriteKind> = W["mode"] extends "p
 			: false
 		: false;
 
+/**
+ * The fields that may be absent: every field the write does not guarantee where
+ * the stored record may keep the rest, otherwise the fields that may be unset.
+ */
+type OptionalFields<
+	S extends Record<string, AbstractType>,
+	W extends WriteShape,
+	K extends WriteKind,
+> = MayRemain<W, K> extends true
+	? Exclude<keyof S, Guaranteed<S, W, K> | W["gone"]>
+	: Exclude<Extract<W["maybe"], keyof S>, W["gone"]>;
+
 type RowFields<
 	S extends Record<string, AbstractType>,
 	W extends WriteShape,
 	K extends WriteKind,
-> = { [P in Guaranteed<S, W, K>]: S[P] } & (MayRemain<W, K> extends true
-	? {
-			[P in Exclude<keyof S, Guaranteed<S, W, K> | W["gone"]>]: OptionType<
-				S[P]
-			>;
-		}
-	: {});
+> = { [P in Guaranteed<S, W, K>]: S[P] } & {
+	[P in OptionalFields<S, W, K>]: OptionType<S[P]>;
+};
 
 /**
  * The type of the rows a write returns. Only the fields the write guarantees are

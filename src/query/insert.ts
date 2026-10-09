@@ -173,7 +173,7 @@ export class InsertQuery<
 		updates: E extends ObjectType
 			? Partial<SetData<E>>
 			: Record<string, unknown>,
-	): InsertQuery<O, C, T, E, { keys: never; gone: never; mode: "patch" }> {
+	): InsertQuery<O, C, T, E, { keys: never; maybe: never; gone: never; mode: "patch" }> {
 		if (this._ignore) {
 			throw new OrmError("Cannot use both ignore() and onDuplicate()");
 		}
@@ -189,7 +189,7 @@ export class InsertQuery<
 			C,
 			T,
 			E,
-			{ keys: never; gone: never; mode: "patch" }
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
 		>;
 	}
 

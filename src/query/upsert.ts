@@ -123,7 +123,7 @@ export class UpsertQuery<
 	 */
 	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
 		data: D,
-	): UpsertQuery<O, C, T, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+	): UpsertQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
 		}) as unknown as UpsertQuery<
@@ -132,7 +132,7 @@ export class UpsertQuery<
 			T,
 			E,
 			Only,
-			Written<W, "set", Extract<keyof D, string>>
+			Written<W, "set", D>
 		>;
 	}
 
@@ -145,7 +145,7 @@ export class UpsertQuery<
 		T,
 		E,
 		Only,
-		{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+		Written<NoWrite, "replace", D>
 	> {
 		return this.derive((next) => {
 			applyContent(next, data);
@@ -155,13 +155,13 @@ export class UpsertQuery<
 			T,
 			E,
 			Only,
-			{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+			Written<NoWrite, "replace", D>
 		>;
 	}
 
 	merge<const D extends Partial<WriteData<E>>>(
 		data: D,
-	): UpsertQuery<O, C, T, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+	): UpsertQuery<O, C, T, E, Only, Written<W, "set", D>> {
 		return this.derive((next) => {
 			applyMerge(next, data);
 		}) as unknown as UpsertQuery<
@@ -170,13 +170,13 @@ export class UpsertQuery<
 			T,
 			E,
 			Only,
-			Written<W, "set", Extract<keyof D, string>>
+			Written<W, "set", D>
 		>;
 	}
 
 	patch(
 		operations: JsonPatchOp[],
-	): UpsertQuery<O, C, T, E, Only, { keys: never; gone: never; mode: "patch" }> {
+	): UpsertQuery<O, C, T, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }> {
 		return this.derive((next) => {
 			applyPatch(next, operations);
 		}) as unknown as UpsertQuery<
@@ -185,7 +185,7 @@ export class UpsertQuery<
 			T,
 			E,
 			Only,
-			{ keys: never; gone: never; mode: "patch" }
+			{ keys: never; maybe: never; gone: never; mode: "patch" }
 		>;
 	}
 
@@ -198,7 +198,7 @@ export class UpsertQuery<
 		T,
 		E,
 		Only,
-		{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+		Written<NoWrite, "replace", D>
 	> {
 		return this.derive((next) => {
 			applyReplace(next, data);
@@ -208,7 +208,7 @@ export class UpsertQuery<
 			T,
 			E,
 			Only,
-			{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+			Written<NoWrite, "replace", D>
 		>;
 	}
 
@@ -230,7 +230,7 @@ export class UpsertQuery<
 	/** The state before the write may not have the fields it set, so only the id is known. */
 	return(
 		mode: "before",
-	): UpsertQuery<O, C, T, E, Only, { keys: never; gone: never; mode: "patch" }>;
+	): UpsertQuery<O, C, T, E, Only, { keys: never; maybe: never; gone: never; mode: "patch" }>;
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<
 		P extends Inheritable<C>,

@@ -642,6 +642,8 @@ A write that does not supply the whole record still succeeds, and returns only t
 | `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
 | `delete()` and `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
 
+A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied.
+
 `.unset()` removes the unset fields from the result type. A `.return((row) => …)` projection only sees the fields the row is typed with, so it cannot read a field the write did not set. Inserts with `.onDuplicate()` return rows that may have been updated rather than inserted, so only `id` is required for those.
 
 ```typescript
