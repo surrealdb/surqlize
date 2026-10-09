@@ -417,6 +417,64 @@ describe("DELETE returns rows as stored", () => {
 
 		expect(row!.email).toBe("gone@example.com");
 	});
+
+	// A partial record (written by set() without `email`) used to be deleted, and
+	// then the strict parse of the deleted row threw after the delete had committed.
+	test("delete().return('before') on a partial record does not throw after deleting", async () => {
+		const db = make();
+		await db.create("member", "del_partial").set({ name: "Gone" }).execute();
+
+		const [row] = await db
+			.delete("member", "del_partial")
+			.return("before")
+			.execute();
+
+		expect(row!.id.toString()).toBe("member:del_partial");
+		expect(row!.name).toBe("Gone");
+		expect(row!.email).toBeUndefined();
+		expect(
+			await stored(getTestDb().surreal, "member:del_partial"),
+		).toBeUndefined();
+	});
+
+	test("delete().only().return('before') on a partial record returns the row", async () => {
+		const db = make();
+		await db
+			.create("member", "del_only_partial")
+			.set({ name: "One" })
+			.execute();
+
+		const row = await db
+			.delete("member", "del_only_partial")
+			.only()
+			.return("before")
+			.execute();
+
+		expect(row.name).toBe("One");
+		expect(
+			await stored(getTestDb().surreal, "member:del_only_partial"),
+		).toBeUndefined();
+	});
+
+	test("delete().return(projection) on a partial record does not throw after deleting", async () => {
+		const db = make();
+		await db
+			.create("member", "del_proj_partial")
+			.set({ name: "Proj" })
+			.execute();
+
+		const rows = await db
+			.delete("member", "del_proj_partial")
+			.return((m) => ({ name: m.name }))
+			.execute();
+
+		// The projected values are not asserted: a projection's `$this` is NONE in a
+		// DELETE's RETURN VALUE, a separate bug. This test only guards the throw.
+		expect(rows).toHaveLength(1);
+		expect(
+			await stored(getTestDb().surreal, "member:del_proj_partial"),
+		).toBeUndefined();
+	});
 });
 
 describe("partial RELATE writes do not throw after committing", () => {

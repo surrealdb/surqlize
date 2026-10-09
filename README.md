@@ -661,7 +661,8 @@ A write that does not supply the whole record still succeeds, and returns only t
 | `update()` / `upsert()` `.set()` / `.merge()` | `id` and the fields written. The other fields may already be stored, so they are optional |
 | `update()` / `upsert()` `.content()` / `.replace()` | `id` and the fields written. The record is replaced, so no other field remains |
 | `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
-| `delete()` and `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
+| `delete()` with `RETURN BEFORE` / `AFTER` or a projection | `id`; every other field is optional. The record may have been stored partially, and it is deleted before the row is read |
+| `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
 
 A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied.
 
@@ -939,7 +940,8 @@ const deleted = await db
   .delete("user", "alice")
   .only()
   .return("before");
-// deleted: User  (not User[])
+// deleted: one row, typed as described in "What a partial write returns" (not an array).
+// Only `id` is guaranteed: the stored record may be partial.
 ```
 
 ## Runtime validation

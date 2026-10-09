@@ -48,6 +48,20 @@ import type {
 } from "./write-result.ts";
 
 /**
+ * What an edge's `in` or `out` can be: a record, a list of records, or a query
+ * that yields records. A query is rendered as a subquery, so its rows supply the
+ * endpoint records: a record type, or table rows (a `select()`, optionally with
+ * `.only()`), which always carry an `id`.
+ */
+export type RelateEndpoint<C extends WorkableContext = WorkableContext> =
+	| RecordId
+	| RecordId[]
+	| Workable<C, RecordType>
+	| Workable<C, ArrayType<RecordType>>
+	| Workable<C, ObjectType<{ id: RecordType<string> }>>
+	| Workable<C, ArrayType<ObjectType<{ id: RecordType<string> }>>>;
+
+/**
  * A fluent RELATE query builder for creating graph edges between records.
  * Supports SET, CONTENT, MERGE, PATCH, REPLACE, RETURN, and TIMEOUT clauses.
  *
@@ -79,16 +93,8 @@ export class RelateQuery<
 	constructor(
 		orm: O,
 		readonly edge: Edge,
-		readonly from:
-			| RecordId[]
-			| Workable<C, ArrayType<RecordType>>
-			| RecordId
-			| Workable<C, RecordType>,
-		readonly to:
-			| RecordId[]
-			| Workable<C, ArrayType<RecordType>>
-			| RecordId
-			| Workable<C, RecordType>,
+		readonly from: RelateEndpoint<C>,
+		readonly to: RelateEndpoint<C>,
 	) {
 		super();
 		this[__ctx] = {

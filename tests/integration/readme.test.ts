@@ -385,9 +385,9 @@ describe("README: RELATE", () => {
 		expect(edge?.role).toBe("author");
 	});
 
-	// Known bug: relate() without content() returns the edge, but its required fields
-	// (created) are missing from the row, so reading it back fails to parse.
-	knownBug("relate() without content() returns the edge", async () => {
+	// The edge's required fields (created, role) are not written, so the returned
+	// row leaves them out. The row must still parse.
+	test("relate() without content() returns the edge", async () => {
 		const db = orm(getTestDb().surreal, ...graphSchema);
 
 		const edges = await db.relate(
@@ -397,6 +397,39 @@ describe("README: RELATE", () => {
 		);
 
 		expect(edges).toHaveLength(1);
+		expect(edges[0]!.in.toString()).toBe("user:bob");
+		expect(edges[0]!.out.toString()).toBe("post:post1");
+		expect("created" in edges[0]!).toBe(false);
+	});
+
+	test("relate().only() without content() returns the edge", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
+
+		const edge = await db
+			.relate(
+				"authored",
+				new RecordId("user", "bob"),
+				new RecordId("post", "post1"),
+			)
+			.only();
+
+		expect(edge.out.toString()).toBe("post:post1");
+	});
+
+	// README: "Using with query results". A select is a record source, so RELATE
+	// takes its rows as the endpoints.
+	test("relate() takes select queries as its endpoints", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
+
+		const userQuery = db.select("user", "carol");
+		const postQuery = db.select("post", "post1");
+		const [edge] = await db
+			.relate("authored", userQuery, postQuery)
+			.content({ created: new Date(), role: "author" });
+
+		expect(edge!.in.toString()).toBe("user:carol");
+		expect(edge!.out.toString()).toBe("post:post1");
+		expect(edge!.role).toBe("author");
 	});
 });
 
