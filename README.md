@@ -602,6 +602,20 @@ const user = await db
 // user: User  (not User[])
 ```
 
+#### Which write method enforces required fields?
+
+Only `.content()` requires the full record on `CREATE`: its input type is the table's fields, minus those with a `.default()` or `option<…>` type, and minus `id` and computed fields. The other ways of writing are deliberately permissive, to mirror SurrealQL (and so that the database can supply the rest, for example through its own `DEFINE FIELD … DEFAULT`):
+
+| Method | Required fields | Type of the argument |
+| --- | --- | --- |
+| `.content()` | Enforced on `create`; optional on `update` / `upsert` | The record |
+| `.set()` | Not enforced | A partial record, per field (`+=` / `-=` and dotted paths work) |
+| `.merge()` | Not enforced | A partial record |
+| `.replace()` | Not enforced | A partial record |
+| `.patch()` | Not checked at all | JSON Patch operations, with the `path` as a plain string |
+
+Use `.content()` when you want the compiler to enforce required fields. With [runtime validation](#runtime-validation) enabled, `.content()` is checked as a full record, `.set()` field by field, and `.patch()` is not checked.
+
 ### INSERT statements
 
 Insert one or multiple records with support for bulk operations and conflict handling.
