@@ -31,11 +31,13 @@ import {
 	applyPatch,
 	applyReplace,
 	applySet,
+	assertDottedRootsSupplied,
 	type CreateInput,
 	displayModificationClause,
 	type JsonPatchOp,
 	type ModificationMode,
 	type ModificationState,
+	type OrphanDottedKeys,
 	type SetData,
 	type WriteData,
 } from "./modification-methods.ts";
@@ -122,8 +124,9 @@ export class RelateQuery<
 
 	/** Set fields on the edge. Fields that are not set are absent from the result. */
 	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
-		data: D,
+		data: D & OrphanDottedKeys<D>,
 	): RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>> {
+		assertDottedRootsSupplied(data as Record<string, unknown>);
 		return this.derive((next) => {
 			applySet(next, data as Record<string, unknown>);
 		}) as unknown as RelateQuery<O, C, Edge, E, Only, Written<W, "set", D>>;

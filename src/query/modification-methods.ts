@@ -71,6 +71,37 @@ type DottedSetData<S> = {
 };
 
 /**
+ * The dotted keys of `D` whose parent object is not also a key of `D`. Each maps
+ * to `never`, so `D & OrphanDottedKeys<D>` rejects them: a CREATE or RELATE
+ * would otherwise store a partial object that cannot be read back in full.
+ */
+export type OrphanDottedKeys<D> = {
+	[K in keyof D as K extends `${infer Root}.${string}`
+		? Root extends keyof D
+			? never
+			: K
+		: never]: never;
+};
+
+/**
+ * Throw if a dotted key in `data` has no parent object set in the same call. The
+ * runtime check behind {@link OrphanDottedKeys}, for data that is not typed.
+ *
+ * @throws {OrmError} Naming the key and the missing parent object.
+ */
+export function assertDottedRootsSupplied(data: Record<string, unknown>): void {
+	for (const key of Object.keys(data)) {
+		const dot = key.indexOf(".");
+		if (dot === -1) continue;
+		const root = key.slice(0, dot);
+		if (data[root] !== undefined) continue;
+		throw new OrmError(
+			`set() key "${key}" writes into "${root}", but "${root}" is not set in the same call. Set the parent object in full alongside it (for example .set({ ${root}: { … }, "${key}": … })): CREATE and RELATE would otherwise store a partial object that cannot be read back.`,
+		);
+	}
+}
+
+/**
  * The fields a write may set: every field except the computed (read-only) ones,
  * and the dotted paths into nested object fields.
  */

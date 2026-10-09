@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { Surreal } from "surrealdb";
-import { __display, displayContext, orm, t, table } from "../../../src";
+import { RecordId, Surreal } from "surrealdb";
+import { __display, displayContext, edge, orm, t, table } from "../../../src";
+import { OrmError } from "../../../src/error";
 
 /**
  * Compile-time checks for dotted keys in `.set()` (`{ "name.first": "Ada" }`).
@@ -13,6 +14,8 @@ const user = table("user", {
 	age: t.number(),
 	email: t.string(),
 });
+
+const person = table("person", { name: t.string() });
 
 const db = orm(new Surreal(), user);
 
@@ -35,9 +38,50 @@ describe("dotted keys in set()", () => {
 		expect(render(q)).toContain("age = ");
 	});
 
-	test("the dotted path works on create() and relate-free inserts too", () => {
-		const q = db.create("user").set({ "name.last": "Lovelace" });
+	test("create() accepts a dotted key when its parent object is set in the same call", () => {
+		const q = db
+			.create("user")
+			.set({ name: { first: "Ada", last: "Lovelace" }, "name.last": "Byron" });
 		expect(render(q)).toContain("name.last = ");
+	});
+
+	test("create() rejects a dotted key whose parent object is not set in the same call", () => {
+		expect(() =>
+			db.create("user").set({
+				// @ts-expect-error name is not set in this call, so name.last would store a partial object
+				"name.last": "Lovelace",
+			}),
+		).toThrow(OrmError);
+	});
+
+	test("relate() rejects a dotted key whose parent object is not set in the same call", () => {
+		const meta = edge("person", "knows", "person", {
+			detail: t.object({ note: t.string() }),
+		});
+		const people = orm(new Surreal(), person, meta);
+		expect(() =>
+			people
+				.relate(
+					"knows",
+					new RecordId("person", "a"),
+					new RecordId("person", "b"),
+				)
+				.set({
+					// @ts-expect-error detail is not set in this call, so detail.note would store a partial object
+					"detail.note": "x",
+				}),
+		).toThrow(OrmError);
+	});
+
+	test("relate() accepts a dotted key when its parent object is set in the same call", () => {
+		const meta = edge("person", "knows", "person", {
+			detail: t.object({ note: t.string() }),
+		});
+		const people = orm(new Surreal(), person, meta);
+		const q = people
+			.relate("knows", new RecordId("person", "a"), new RecordId("person", "b"))
+			.set({ detail: { note: "a" }, "detail.note": "b" });
+		expect(render(q)).toContain("detail.note = ");
 	});
 
 	test("an unknown dotted key is rejected", () => {

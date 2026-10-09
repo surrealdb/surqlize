@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { orm, t, table } from "../../src";
+import { orm, TypeParseError, t, table } from "../../src";
+import { OrmError } from "../../src/error";
 import { withTestDb } from "./setup";
 
 const person = table("person", {
@@ -45,25 +46,68 @@ describe("dotted keys in set() against a live server", () => {
 		expect(row.age).toBe(36);
 	});
 
-	// Known limitation: a dotted key into an object the record does not have yet
-	// stores a partial object (`name = { first: "Ada" }`), and reading the record
-	// back with the full schema then fails until `last` is set. The write itself
-	// succeeds, so this asserts what is stored, not the read-back.
-	test("create().set() with only a dotted key into a missing object stores the partial object", async () => {
+	test("create().set() with a dotted key and no parent object throws before anything is sent", async () => {
 		const { surreal } = getTestDb();
 		const db = orm(surreal, person);
 
-		await db
+		let sent = 0;
+		const query = surreal.query.bind(surreal);
+		surreal.query = ((...args: Parameters<typeof query>) => {
+			sent++;
+			return query(...args);
+		}) as typeof surreal.query;
+
+		expect(() =>
+			db.create("person", "b").set({
+				// @ts-expect-error name is not set in this call
+				"name.first": "Ada",
+				age: 1,
+			}),
+		).toThrow(OrmError);
+		expect(sent).toBe(0);
+
+		const [stored] = await surreal
+			.query("SELECT * FROM person:b")
+			.collect<[unknown[]]>();
+		expect(stored).toEqual([]);
+	});
+
+	test("create().set() with the parent object set in full in the same call writes the dotted key", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, person);
+
+		const row = await db
 			.create("person", "b")
-			.set({ "name.first": "Ada", age: 1 })
+			.set({
+				name: { first: "Ada", last: "Lovelace" },
+				"name.first": "Byron",
+				age: 1,
+			})
+			.only()
+			.execute();
+
+		expect(row.name).toEqual({ first: "Byron", last: "Lovelace" });
+	});
+
+	// Limit: an UPDATE cannot know whether the object exists on the stored record,
+	// so a dotted key into a missing object is allowed and stores a partial object.
+	// Reading the record back with the full schema then fails until it is completed.
+	test("update().set() into a missing object stores a partial object that the full schema cannot read back", async () => {
+		const { surreal } = getTestDb();
+		await surreal.query(`CREATE person:c SET age = 2`);
+		const db = orm(surreal, person);
+
+		await db
+			.update("person", "c")
+			.set({ "name.first": "Cy" })
 			.return("none")
 			.execute();
 
 		const [stored] = await surreal
-			.query("SELECT * FROM person:b")
-			.collect<[{ name: { first: string }; age: number }[]]>();
-		expect(stored?.[0]).toMatchObject({ name: { first: "Ada" }, age: 1 });
-		expect(stored?.[0]?.name).toEqual({ first: "Ada" });
+			.query("SELECT * FROM person:c")
+			.collect<[{ name: unknown }[]]>();
+		expect(stored?.[0]?.name).toEqual({ first: "Cy" });
+		await expect(db.select("person").execute()).rejects.toThrow(TypeParseError);
 	});
 });
 
