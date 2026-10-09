@@ -1,3 +1,5 @@
+import { toPlainModel } from "./model";
+
 /**
  * Create a variable store for parameterized query rendering. Returns a tuple of
  * the variables record and a function to register new variables.
@@ -7,7 +9,7 @@ export function createVariableStore() {
 	const v = (value: unknown) => {
 		const num = Object.keys(variables).length;
 		const name = `_v${num}`;
-		variables[name] = value;
+		variables[name] = toPlainModel(value);
 		return `$${name}`;
 	};
 
