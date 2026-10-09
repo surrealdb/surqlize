@@ -46,3 +46,7 @@ export type {
 // (`displayContext` / `__display`) and the structural types that appear in
 // public signatures are part of the surface.
 export { __ctx, __display, __type, displayContext } from "./utils";
+export type {
+	SafeParseResult,
+	ValidationMode,
+} from "./validation";

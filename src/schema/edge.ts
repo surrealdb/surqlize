@@ -1,9 +1,16 @@
+import type { CreateInput, WriteData } from "../query/modification-methods";
 import {
 	type AbstractType,
 	type ObjectType,
 	type RecordType,
 	t,
 } from "../types";
+import {
+	type SafeParseResult,
+	safeParseWith,
+	throwIfInvalid,
+	type ValidationMode,
+} from "../validation";
 /** A record mapping field names (excluding `id`, `in`, `out`) to their type definitions. */
 export type EdgeFields = Record<
 	Exclude<string, "id" | "in" | "out">,
@@ -79,6 +86,67 @@ export class EdgeSchema<
 	/** Type-guard that checks whether a value matches this edge's schema. */
 	validate(value: unknown): value is GetEdgeInferType<From, Tb, To, Fd> {
 		return this.schema.validate(value);
+	}
+
+	/**
+	 * Check `data` against this edge's schema without throwing, listing
+	 * every field that fails rather than only the first. The `mode` says what
+	 * the data is: `"create"` (default) is the input of a create or insert,
+	 * where fields with a `.default()` or of type `option<...>` may be left out
+	 * and `id`, `in` and `out` are not required; `"update"` is a partial write; `"row"` is a whole stored
+	 * record. On success, `data` is typed accordingly.
+	 *
+	 * The data is returned as given: validation does not convert it.
+	 */
+	safeParse(
+		data: unknown,
+		options?: { mode?: "create" },
+	): SafeParseResult<
+		Omit<CreateInput<GetEdgeSchemaType<From, Tb, To, Fd>>, "in" | "out">
+	>;
+	safeParse(
+		data: unknown,
+		options: { mode: "update" },
+	): SafeParseResult<Partial<WriteData<GetEdgeSchemaType<From, Tb, To, Fd>>>>;
+	safeParse(
+		data: unknown,
+		options: { mode: "row" },
+	): SafeParseResult<GetEdgeInferType<From, Tb, To, Fd>>;
+	safeParse(
+		data: unknown,
+		options: { mode?: ValidationMode } = {},
+	): SafeParseResult<unknown> {
+		return safeParseWith(
+			this.schema,
+			data,
+			options.mode ?? "create",
+			this.tb,
+			["id", "in", "out"],
+			[],
+		);
+	}
+
+	/**
+	 * Like {@link EdgeSchema.safeParse}, but returns the typed data or throws.
+	 *
+	 * @throws {ValidationError} Listing every field that fails.
+	 */
+	parse(
+		data: unknown,
+		options?: { mode?: "create" },
+	): Omit<CreateInput<GetEdgeSchemaType<From, Tb, To, Fd>>, "in" | "out">;
+	parse(
+		data: unknown,
+		options: { mode: "update" },
+	): Partial<WriteData<GetEdgeSchemaType<From, Tb, To, Fd>>>;
+	parse(
+		data: unknown,
+		options: { mode: "row" },
+	): GetEdgeInferType<From, Tb, To, Fd>;
+	parse(data: unknown, options: { mode?: ValidationMode } = {}): unknown {
+		const result = this.safeParse(data, options as { mode: "row" });
+		if (!result.success) throwIfInvalid(result.error.issues, this.tb);
+		return data;
 	}
 }
 

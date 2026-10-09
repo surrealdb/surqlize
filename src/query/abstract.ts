@@ -44,6 +44,34 @@ export abstract class Query<
 	protected _skipParse = false;
 	/** Client-side options applied when the query is sent. */
 	protected _request: RequestOptions = {};
+	/** Per-query override of the ORM's input validation; `undefined` defers to the ORM. */
+	protected _validate?: boolean;
+
+	/**
+	 * Check the data this query writes against the table schema before it is
+	 * sent, throwing a {@link ValidationError} that lists every failing field.
+	 * `.validated()` turns it on for this query and `.validated(false)` off; by
+	 * default it follows the ORM (see `Orm.validated()`), which is off.
+	 */
+	validated(enabled = true): this {
+		return this.derive((next) => {
+			next._validate = enabled;
+		});
+	}
+
+	/**
+	 * Validate the data this query writes, if input validation is on for it.
+	 * Called before the query is sent (and before a batch sends it).
+	 *
+	 * @throws {ValidationError} If the data does not match the table schema.
+	 */
+	assertInput(): void {
+		if (this._validate ?? this[__ctx].orm.validation) this.validateInput();
+	}
+
+	/** Overridden by the write queries to check the data they carry. */
+	protected validateInput(): void {}
+
 	/** Type-guard that checks whether a value matches this query's result type. */
 	validate(value: unknown): value is T["infer"] {
 		return this[__type].validate(value);
@@ -229,6 +257,7 @@ export abstract class Query<
 
 	/** Execute the query against SurrealDB and return the parsed result. */
 	async execute() {
+		this.assertInput();
 		const ctx = displayContext();
 		const query = this[__display](ctx);
 		const { surreal } = this[__ctx].orm;
@@ -267,6 +296,7 @@ export abstract class Query<
 	 * `surreal.query(prepared).retry()`.
 	 */
 	prepare(): BoundQuery<[this["type"]]> {
+		this.assertInput();
 		const ctx = displayContext();
 		const query = this[__display](ctx);
 		return new BoundQuery<[this["type"]]>(query, ctx.variables);
