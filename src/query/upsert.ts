@@ -34,6 +34,7 @@ import {
 	type ModificationMode,
 	type ModificationState,
 	type SetData,
+	type WriteData,
 } from "./modification-methods.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 
@@ -109,11 +110,11 @@ export class UpsertQuery<
 		);
 	}
 
-	content(data: Partial<E["infer"]>): this {
+	content(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyContent(next, data));
 	}
 
-	merge(data: Partial<E["infer"]>): this {
+	merge(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyMerge(next, data));
 	}
 
@@ -121,7 +122,7 @@ export class UpsertQuery<
 		return this.derive((next) => applyPatch(next, operations));
 	}
 
-	replace(data: Partial<E["infer"]>): this {
+	replace(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyReplace(next, data));
 	}
 

@@ -1,5 +1,6 @@
 import { OrmError } from "../error.ts";
-import type { ObjectType } from "../types";
+import type { ComputedKeys } from "../schema/table.ts";
+import type { AbstractType, ObjectType } from "../types";
 import type { DisplayContext } from "../utils/display.ts";
 import {
 	escapeIdiomPath,
@@ -9,9 +10,17 @@ import {
 } from "./utils.ts";
 
 // Shared types
+/** The fields a write may set: every field except the computed (read-only) ones. */
 export type SetData<T extends ObjectType> = {
-	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
+	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
+		T["schema"][K]
+	>;
 };
+
+/** The record a write may supply: `E["infer"]` without its computed fields. */
+export type WriteData<E extends AbstractType> = E extends ObjectType
+	? Omit<E["infer"], ComputedKeys<E["schema"]>>
+	: E["infer"];
 
 export type JsonPatchOp =
 	| { op: "add"; path: string; value: unknown }

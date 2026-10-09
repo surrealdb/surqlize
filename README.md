@@ -150,6 +150,47 @@ const user = table("user", {
 
 **Note**: Every table automatically includes an `id` field of type `RecordId<TableName>`.
 
+### Computed fields
+
+A computed field is read-only: SurrealDB derives its value from an expression each time the record is read (`DEFINE FIELD … COMPUTED`, which needs **SurrealDB ≥ 3.0**). Add one with `.computed(name, type, expression)`. The expression receives the row (rendered as `$this`) and the ORM, so it can run subqueries:
+
+```typescript
+import { type Orm, table, t } from "surqlize";
+
+const post = table("post", { title: t.string(), author: t.record("user") });
+
+const user = table("user", { first: t.string(), last: t.string() })
+  .computed("fullName", t.string(), (row) => row.first.concat(" ", row.last))
+  .computed("postCount", t.number(), (row, db: Orm<[typeof post]>) =>
+    db
+      .select("post")
+      .where((p) => p.author.eq(row.id))
+      .return((p) => p.id)
+      .wrap()
+      .len(),
+  );
+```
+
+Computed fields are part of the row type of selects, and can be used in `where`, `orderBy` and `return` like any other field. They are left out of the input types of `create`, `update`, `upsert`, `insert` and `relate`, so writing one is a compile-time error:
+
+```typescript
+const [u] = await db.select("user").where((u) => u.postCount.gt(0)); // u.fullName: string
+await db.create("user").set({ first: "Ada", last: "Lovelace" });
+await db.create("user").set({ fullName: "x" }); // type error
+```
+
+The field must exist in the database before it can be read. Create it with `db.defineComputed()` (all tables, or pass table names), or put the statements from `user.computedStatements(db)` into a migration:
+
+```typescript
+await db.defineComputed();
+// DEFINE FIELD OVERWRITE fullName ON TABLE user COMPUTED (string::concat($this.first, " ", $this.last))
+```
+
+Notes:
+
+- The `db` passed to the expression is untyped, because the tables are registered after they are defined. Annotate the parameter (`db: Orm<[typeof post]>`) to type the tables it queries.
+- Tables read by an expression must exist when a record is read, and the expression is inlined into the `DEFINE` statement, so it cannot use query parameters.
+
 ### Edges and graph relations
 
 Define graph edges to model relationships between tables:

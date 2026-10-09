@@ -209,6 +209,30 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	}
 
 	/**
+	 * Create (or overwrite) the computed fields of the registered tables in the
+	 * database, with `DEFINE FIELD OVERWRITE … COMPUTED …` (SurrealDB 3.0+). Pass
+	 * table names to restrict it to those tables. Safe to run repeatedly.
+	 *
+	 * @example
+	 * ```ts
+	 * await db.defineComputed();
+	 * ```
+	 */
+	async defineComputed(
+		...tables: (keyof this["tables"] & string)[]
+	): Promise<void> {
+		const names = tables.length > 0 ? tables : Object.keys(this.tables);
+		const statements = names.flatMap((name) => {
+			const schema = (this.tables as Record<string, AnyTable>)[name];
+			return schema instanceof TableSchema
+				? schema.computedStatements(this)
+				: [];
+		});
+		if (statements.length === 0) return;
+		await this.surreal.query(`${statements.join(";\n")};`);
+	}
+
+	/**
 	 * Build a SELECT query for a table, record ID, or workable record reference.
 	 *
 	 * @param tb - A table name, `RecordId`, workable record, or table name with a second `id` argument.
