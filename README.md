@@ -1442,8 +1442,8 @@ const user = table("user", {
 
 db.select("user").return((user) => ({
   name: user.name,
-  // Transform bio to uppercase if it exists
-  bioUpper: user.bio.map((b) => b.toUpperCase()),
+  // Transform bio to uppercase if it exists (NONE otherwise)
+  bioUpper: user.bio.map((b) => b.uppercase()),
   // Chain multiple operations
   bioLength: user.bio.map((b) => b.len()),
 }));
@@ -1539,6 +1539,21 @@ db.select("user").return((user) => ({
 ```
 
 Available standalone function families: `count`, `math` (aggregation + constants), `time`, `crypto`, `rand`, `duration`, `type_`, `encoding`, `geo`, `http`, `meta`, `object`, `parse`, `search`, `session`, `set_`, `sleep`, `value`, `vector`, `bytes`, `not`.
+
+Two details of the search and vector families:
+
+- **Full-text match references.** `search.score()`, `search.highlight()` and `search.offsets()` read a match by its numbered reference. Pass the same N to `.search(value, N)` in the same query, which renders `@N@`. Without a number, `.search(value)` renders `@@`, and several unnumbered matches in one query cannot be told apart. Use numbers whenever more than one match needs its own score.
+
+  ```typescript
+  db.select("post")
+    .where((post) => post.title.search("hello", 1))
+    .return((post) => ({
+      score: search.score(post.title, 1),
+      marked: search.highlight(post.title, "<b>", "</b>", 1),
+    }));
+  ```
+
+- **Vector literals.** A plain number array can be passed to a `vector` function beside a field or other expression, so `vector.similarityCosine(post.embedding, [1, 0, 0])` needs no `db.value()`. Single-operand functions (`magnitude`, `normalize`), and calls whose operands are all plain arrays, still need `db.value([...])`, because there is no field to take the query context from.
 
 ## Advanced Features
 
