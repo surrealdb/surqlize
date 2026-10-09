@@ -188,3 +188,44 @@ describe("nested FETCH integration tests", () => {
 		expect(typeof assertMultiTable).toBe("function");
 	});
 });
+
+// Reproduces https://github.com/surrealdb/surqlize/issues/60 — fetching a typed
+// record link whose target table is not registered with the ORM.
+describe("FETCH of a link to an unregistered table", () => {
+	const workspace = table("workspace", {
+		name: t.string(),
+	});
+	const memberOf = edge("user", "member_of", "workspace", {
+		role: t.string(),
+	});
+
+	const getTestDb = withTestDb({
+		setup: async ({ surreal }) => {
+			await surreal.query(`
+				CREATE workspace:ws1 SET name = "Acme";
+				RELATE user:bob->member_of->workspace:ws1 SET role = "admin";
+			`);
+		},
+	});
+
+	test("decodes the fetched record when its table is registered", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, workspace, memberOf);
+
+		const result = await db.select("member_of").fetch("out").execute();
+
+		expect(result).toHaveLength(1);
+		expect(result[0]!.out.name).toBe("Acme");
+	});
+
+	test("does not reject the fetched record when its table is not registered", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, memberOf);
+
+		const result = await db.select("member_of").fetch("out").execute();
+
+		expect(result).toHaveLength(1);
+		expect(result[0]!.role).toBe("admin");
+		expect(result[0]!.out).toMatchObject({ name: "Acme" });
+	});
+});

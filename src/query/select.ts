@@ -81,15 +81,24 @@ type PathTail<K extends string, P extends string> = P extends `${K}.${infer R}`
 	: never;
 
 /**
+ * The shape of a fetched record whose table is not registered with the ORM: its
+ * fields are unknown, so only the `id` is typed.
+ */
+type UnknownRecord<Tb extends string | undefined> = ObjectType<{
+	id: RecordType<Tb>;
+}>;
+
+/**
  * Resolve a record link to the schema it points at, unwrapping `option<…>` and
- * `array<…>` wrappers. Non-record types (and records to unknown tables) are
- * left untouched.
+ * `array<…>` wrappers. Non-record types are left untouched; a record to an
+ * unregistered table resolves to an {@link UnknownRecord}, as FETCH replaces the
+ * link with the record regardless of whether the ORM knows its table.
  */
 type ResolveLink<O extends Orm, F extends AbstractType> =
 	F extends RecordType<infer Tb>
 		? Tb extends keyof O["tables"] & string
 			? O["tables"][Tb]["schema"]
-			: F
+			: UnknownRecord<Tb>
 		: F extends UnionType<infer Members extends AbstractType[]>
 			? UnionType<{
 					[K in keyof Members]: Members[K] extends AbstractType
@@ -115,7 +124,7 @@ type ResolveNested<
 	F extends RecordType<infer Tb>
 		? Tb extends keyof O["tables"] & string
 			? FetchedSchema<O, O["tables"][Tb]["schema"], Tails>
-			: F
+			: UnknownRecord<Tb>
 		: F extends UnionType<infer Members extends AbstractType[]>
 			? UnionType<{
 					[K in keyof Members]: Members[K] extends AbstractType
@@ -571,25 +580,28 @@ function resolveFetchRecord(
 	const tb = fieldType.tb;
 
 	if (typeof tb === "string") {
-		const target = orm.tables[tb];
-		if (!target) return fieldType;
-		return tails.length === 0
-			? target.schema
-			: resolveFetchObject(target.schema, tails, orm);
+		return resolveFetchTable(tb, tails, orm);
 	}
 
 	if (!Array.isArray(tb)) return fieldType;
 
-	const targets = tb.map((table) => orm.tables[table]);
-	if (!targets.every((target) => target)) return fieldType;
+	return new UnionType(tb.map((table) => resolveFetchTable(table, tails, orm)));
+}
 
-	return new UnionType(
-		targets.map((target) =>
-			tails.length === 0
-				? target!.schema
-				: resolveFetchObject(target!.schema, tails, orm),
-		),
-	);
+/**
+ * The schema of a record fetched from `tb`. A table the ORM does not know has no
+ * declared fields, so it resolves to an object that only types its `id`.
+ */
+function resolveFetchTable(
+	tb: string,
+	tails: string[],
+	orm: Orm,
+): AbstractType {
+	const target = orm.tables[tb];
+	if (!target) return new ObjectType({ id: new RecordType(tb) });
+	return tails.length === 0
+		? target.schema
+		: resolveFetchObject(target.schema, tails, orm);
 }
 
 function resolveFetchArray(
