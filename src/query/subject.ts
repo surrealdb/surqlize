@@ -83,7 +83,9 @@ export function resolveSubjectSchema(
  *   (`option<…>` → `T | undefined`), because SurrealDB returns `NONE` for that
  *   field on rows whose table does not define it.
  */
-export function mergeSchemas(members: ObjectType[]): ObjectType {
+export function mergeSchemas(
+	members: ObjectType<ObjectTypeInner>[],
+): ObjectType<ObjectTypeInner> {
 	const occurrences = new Map<string, AbstractType[]>();
 	for (const member of members) {
 		for (const [key, type] of Object.entries(member.schema)) {

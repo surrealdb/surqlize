@@ -150,6 +150,51 @@ const user = table("user", {
 
 **Note**: Every table automatically includes an `id` field of type `RecordId<TableName>`.
 
+### Linking a class to a table
+
+Pass a class as the third argument of `table()` to give rows methods and
+computed properties. Rows selected from (or returned by a write to) the table
+are instances of the class, and instances of the class are accepted as record
+content:
+
+```typescript
+class User {
+  given_name!: string;
+  family_name!: string;
+
+  get fullName() {
+    return `${this.given_name} ${this.family_name}`;
+  }
+}
+
+const user = table(
+  "user",
+  { given_name: t.string(), family_name: t.string() },
+  User,
+);
+
+const db = orm(surreal, user);
+
+const [ada] = await db.select("user", "ada");
+ada instanceof User; // true
+ada.fullName; // "Ada Lovelace" (typed as string)
+
+const input = Object.assign(new User(), { given_name: "Grace", family_name: "Hopper" });
+await db.create("user").content(input);
+```
+
+Type inference is unchanged and needs no code generation: the row type is the
+fields declared in the table plus the instance type of the class. Notes:
+
+- Rows are hydrated without running the class constructor, so declare fields
+  with `!` rather than initializers. Instances passed as content are sent as
+  their own enumerable properties; getters and methods are not stored.
+- Hydration also applies to rows resolved by `.fetch()`, each with its own class.
+  Queries with a `.return()` projection return plain objects.
+- Helpers that issue queries themselves (such as `this.update()` or static
+  `findByEmail()` methods) are not provided: write them against your `db`
+  instance, e.g. `db.select("user").where(...)`.
+
 ### Edges and graph relations
 
 Define graph edges to model relationships between tables:

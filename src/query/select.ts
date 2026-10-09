@@ -1,5 +1,6 @@
 import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
+import { ModelType } from "../schema/table.ts";
 import type { RowTraversal } from "../schema/traversal.ts";
 import {
 	type AbstractType,
@@ -156,13 +157,22 @@ export type FetchedSchema<
 	E extends AbstractType,
 	Paths extends string,
 > =
-	E extends ObjectType<infer S>
-		? ObjectType<{
-				[K in keyof S]: K extends PathHead<Paths>
-					? FetchField<O, S[K], PathTail<K & string, Paths>>
-					: S[K];
-			}>
-		: E;
+	E extends ModelType<infer S, infer I>
+		? ModelType<
+				{
+					[K in keyof S]: K extends PathHead<Paths>
+						? FetchField<O, S[K], PathTail<K & string, Paths>>
+						: S[K];
+				},
+				I
+			>
+		: E extends ObjectType<infer S>
+			? ObjectType<{
+					[K in keyof S]: K extends PathHead<Paths>
+						? FetchField<O, S[K], PathTail<K & string, Paths>>
+						: S[K];
+				}>
+			: E;
 
 /**
  * A fluent SELECT query builder. Supports WHERE, ORDER BY, GROUP BY, SPLIT,
@@ -537,7 +547,9 @@ export function resolveFetchObject(
 		const fieldType = resolved[head];
 		if (fieldType) resolved[head] = resolveFetchField(fieldType, tails, orm);
 	}
-	return new ObjectType(resolved);
+	return schema instanceof ModelType
+		? new ModelType(resolved, schema.model)
+		: new ObjectType(resolved);
 }
 
 /**
