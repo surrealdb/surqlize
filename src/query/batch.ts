@@ -97,6 +97,7 @@ export class BatchQuery<Q extends Query<any, any>[]> {
 	}
 
 	async execute(): Promise<BatchResult<Q>> {
+		for (const q of this.queries) q.assertInput();
 		const ctx = displayContext();
 		const statements = this.statements(ctx);
 		const connection = bindSignals(this.surreal, this.options);

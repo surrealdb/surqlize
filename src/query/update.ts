@@ -39,6 +39,7 @@ import {
 } from "./modification-methods.ts";
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
+import { validateWrite } from "./validate-input.ts";
 
 /**
  * A fluent UPDATE query builder. Supports SET, UNSET, CONTENT, MERGE, PATCH,
@@ -205,6 +206,16 @@ export class UpdateQuery<
 		return this.derive((next) => {
 			next._timeout = duration;
 		});
+	}
+
+	protected override validateInput(): void {
+		validateWrite(
+			this[__ctx].orm,
+			String(this.tb),
+			this.schema,
+			this,
+			"update",
+		);
 	}
 
 	[__display](inp: DisplayContext) {

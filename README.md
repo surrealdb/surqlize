@@ -45,6 +45,7 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications that survive reconnects
 - **Cancellation, timeouts and retries** - Abort queries with an `AbortSignal`, bound them with a request timeout, and retry them on transaction conflicts
 - **Graph relationships** - First-class support for edges and graph traversal
+- **Runtime validation** - Opt in to checking written data against the schema before it is sent, with every failing field reported
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
 
@@ -857,6 +858,60 @@ const deleted = await db
   .return("before");
 // deleted: User  (not User[])
 ```
+
+## Runtime validation
+
+TypeScript checks your data at compile time, but data from a form, an API request or `JSON.parse` is only checked when you check it. Surqlize can validate the data a write carries against the table schema **before** it is sent to SurrealDB. It is off by default.
+
+### Validating every write
+
+`db.validated()` returns a view of the ORM (sharing the same connection, like `withSignal()`) in which `create`, `insert`, `update`, `upsert` and `relate` check their data first:
+
+```typescript
+const db = orm(surreal, user).validated();
+
+await db.create("user").content({ name: 42, address: { city: 1 }, tags: ["a", 2] });
+// Throws before anything is sent:
+// ValidationError: Invalid data for table "user": 4 validation errors
+//   - name: expected string, received 42
+//   - age: expected number, received undefined
+//   - address.city: expected string, received 1
+//   - tags[1]: expected string, received 2
+```
+
+A single query can opt in or out with `.validated()` / `.validated(false)`. Validation also applies in batches, inside transactions, to `.prepare()`, and survives `withSignal()`.
+
+`ValidationError` extends `OrmError`. It does not stop at the first problem: `error.issues` lists every failing field as `{ path, expected, received, message }`, where `path` looks like `address.city` or `tags[1]` (or `[2].age` for the third row of an `insert`), and `error.table` names the table.
+
+### What is checked
+
+| Data | Checked as |
+| --- | --- |
+| `create().content()`, `insert()` rows, `relate().content()` | the full input: every field must be present and valid, except `option<...>` fields, fields with a `.default()`, and `id` (and `in` / `out` on edges) |
+| `update` / `upsert` `.content()`, `.merge()`, `.replace()` | a partial record: only the fields present are checked |
+| `.set()`, `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
+
+- Nested objects, arrays, tuples, unions, record links (including the linked table) and tables linked to a class are all checked.
+- **Computed fields are read-only**: supplying a value for one is an issue.
+- Fields the schema does not declare are ignored, and so are `.patch()` operations.
+- Values SurrealDB evaluates itself, such as `expr(...)` defaults and subquery expressions, are not checked client-side.
+- Validation never changes your data: what is checked is what is sent. Defaults are still filled in by the query as before.
+
+### Validating data yourself
+
+Tables and edges have the same check as a standalone helper, for example at the edge of your API:
+
+```typescript
+const result = user.safeParse(body);            // mode "create" by default
+if (!result.success) return respond(400, result.error.issues);
+await db.create("user").content(result.data);   // result.data is typed as the create input
+
+const input = user.parse(body);                 // returns the typed data, or throws ValidationError
+user.safeParse(patch, { mode: "update" });      // a partial write
+user.safeParse(row, { mode: "row" });           // a whole stored record, id and computed fields included
+```
+
+`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
 
 ## Batch
 
@@ -1897,7 +1952,7 @@ This project is in active development. Planned features include:
 - [x] **Transaction support** - Batch and interactive transactions
 - [x] **Multi-session support** - Multiple sessions over a single connection
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
-- [ ] **Runtime validation** - Validate data at runtime using schema definitions
+- [x] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
 - [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [ ] **Performance optimizations** - Query caching, connection pooling

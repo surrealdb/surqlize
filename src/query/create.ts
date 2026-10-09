@@ -32,6 +32,7 @@ import {
 	type SetData,
 	type WriteData,
 } from "./modification-methods.ts";
+import { validateWrite } from "./validate-input.ts";
 
 /**
  * A fluent CREATE query builder. Supports SET, CONTENT, MERGE, PATCH, REPLACE,
@@ -151,6 +152,10 @@ export class CreateQuery<
 		return this.derive((next) => {
 			next._timeout = duration;
 		});
+	}
+
+	protected override validateInput(): void {
+		validateWrite(this[__ctx].orm, this.tb, this.schema, this, "create");
 	}
 
 	[__display](inp: DisplayContext) {
