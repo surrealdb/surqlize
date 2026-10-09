@@ -1630,7 +1630,7 @@ export default {
 
 Fields declared as `t.array(t.number())` are vectors, and expose `.knn()`, which renders SurrealQL's KNN operator `<|k,…|>`. It composes with `.where()` like any other condition:
 
-```typescript
+```typescript illustrative
 import { vector } from "surqlize";
 
 const doc = table("doc", {
