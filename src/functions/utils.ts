@@ -1,10 +1,19 @@
+import { OrmError } from "../error";
 import {
 	ANY,
 	createGraphSegment,
 	type GraphSegmentArg,
 	isGraphSegmentSpec,
+	type RecursionBody,
+	type RecursionDepth,
 } from "../schema/traversal";
-import { type AbstractType, GraphType, type ObjectType } from "../types";
+import {
+	type AbstractType,
+	GraphType,
+	type ObjectType,
+	OptionType,
+	RecordType,
+} from "../types";
 import {
 	__ctx,
 	__display,
@@ -169,4 +178,72 @@ export function edgeFilter<C extends WorkableContext>(
 	if (!cb) return undefined;
 	const predicate = cb(edgeFieldProxy(ctx, schema));
 	return (dctx) => predicate[__display](dctx);
+}
+
+const MAX_RECURSION_DEPTH = 256;
+
+function checkBound(bound: number, label: string): number {
+	if (!Number.isInteger(bound) || bound < 1 || bound > MAX_RECURSION_DEPTH) {
+		throw new OrmError(
+			`Recursion ${label} must be an integer between 1 and ${MAX_RECURSION_DEPTH}, received ${bound}`,
+		);
+	}
+	return bound;
+}
+
+/**
+ * Render a recursion depth as the inside of SurrealQL's `.{…}` braces:
+ * `3` → `3`, `{ min: 2, max: 4 }` → `2..4`, `{ min: 2 }` → `2..`,
+ * `{ max: 4 }` → `..4`, `{}` → `..`.
+ */
+export function renderRecursionDepth(depth: RecursionDepth): string {
+	if (typeof depth === "number") return String(checkBound(depth, "depth"));
+	const min =
+		depth.min === undefined ? undefined : checkBound(depth.min, "min");
+	const max =
+		depth.max === undefined ? undefined : checkBound(depth.max, "max");
+	if (min !== undefined && max !== undefined && min > max) {
+		throw new OrmError(
+			`Recursion min (${min}) must not be greater than max (${max})`,
+		);
+	}
+	return `${min ?? ""}..${max ?? ""}`;
+}
+
+/**
+ * Build a recursive traversal: `<parent>.{<depth><modifiers>}(<body>)`. The body
+ * is built once against a placeholder node that renders as nothing, so a step
+ * such as `n.out("knows").out("person")` renders as the bare `->knows->person`
+ * path SurrealDB repeats.
+ */
+export function recursion<
+	C extends WorkableContext,
+	Tb extends string,
+	R extends AbstractType = GraphType<Tb>,
+>(
+	parent: Workable<C>,
+	tb: Tb,
+	spec: {
+		depth: string;
+		modifiers?: (ctx: DisplayContext) => string;
+		optional?: boolean;
+	},
+	body: RecursionBody<C, Tb>,
+): Actionable<C, R> {
+	const node = actionable({
+		[__ctx]: parent[__ctx],
+		[__type]: new RecordType(tb),
+		[__display]: () => "",
+	});
+	const step = body(node as never);
+	const graph = new GraphType(tb);
+
+	return actionable({
+		[__ctx]: parent[__ctx],
+		[__type]: spec.optional ? new OptionType(graph) : graph,
+		[__display](ctx: DisplayContext) {
+			const modifiers = spec.modifiers?.(ctx) ?? "";
+			return `${parent[__display](ctx)}.{${spec.depth}${modifiers}}(${step[__display](ctx)})`;
+		},
+	}) as never;
 }

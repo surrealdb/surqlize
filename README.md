@@ -1729,6 +1729,92 @@ db.select("user").where((user) => user.out("authored").len().gt(0));
 db.select("user").where((user) => user.out("authored").isEmpty());
 ```
 
+### Recursive traversal
+
+Follow a step repeatedly with `recurse`, `collect` and `shortest` (SurrealQL
+recursive paths, `.{min..max}(…)`). The repeated step is a callback that receives
+the node being expanded and must land back on the **same table**, so every
+iteration is typed against one record type. They work on a select row
+(`person.recurse(…)`, rooted at its `id`) or on any record link.
+
+```typescript
+const person = table("person", { name: t.string() });
+const knows = edge("person", "knows", "person", { since: t.number() });
+const db = orm(new Surreal(), person, knows);
+
+// In the examples below, `step` stands for the callback
+// `(n) => n.out("knows").out("person")`. Write it inline so `n` is typed.
+```
+
+#### Depth ranges: `recurse(depth, step)`
+
+`depth` is a fixed count or a `{ min?, max? }` range (inclusive integers,
+`1..256`). A fixed depth returns the nodes exactly that many hops away; a range
+returns the nodes at the deepest level reached.
+
+```typescript
+db.select("person").return((p) => ({
+  friendsOfFriends: p.recurse(2, step),                 // .{2}(->knows->person)
+  between: p.recurse({ min: 2, max: 4 }, step),         // .{2..4}(…)
+  atLeast: p.recurse({ min: 2 }, step),                 // .{2..}(…)
+  atMost: p.recurse({ max: 3 }, step),                  // .{..3}(…)
+}));
+// each field: RecordId<"person">[]
+```
+
+Without a bound, a range on a graph that contains cycles does not terminate in a
+useful time. Bound it, or use `collect`.
+
+#### Flattened unique nodes: `collect([depth,] step, { inclusive? })`
+
+`collect` returns every distinct node reached within the depth, nearest first.
+It is cycle-safe, so the depth is optional (`{..+collect}`). `inclusive: true`
+adds the starting record (`+inclusive`).
+
+```typescript
+db.select("person").return((p) => ({
+  network: p.collect(step),                        // .{..+collect}(…)
+  nearby: p.collect({ max: 2 }, step),             // .{..2+collect}(…)
+  nearbyAndMe: p.collect({ max: 2 }, step, { inclusive: true }),
+  // Materialise the nodes like any other traversal:
+  names: p.collect({ max: 2 }, step).select().return((f) => ({ name: f.name })),
+}));
+```
+
+#### Shortest path: `shortest(target, step, { inclusive? })`
+
+`shortest` returns the nodes walked from the start to `target` (the start itself
+is only included with `inclusive: true`). The target is bound as a query
+parameter. When there is no path, SurrealDB returns `NONE`, so the result is
+typed `RecordId<"person">[] | undefined`. Use `.unwrap()` to materialise it:
+
+```typescript
+const route = await db
+  .select("person", "alice")
+  .return((p) => ({
+    path: p.shortest(new RecordId("person", "dave"), step), // RecordId[] | undefined
+    pathNames: p
+      .shortest(new RecordId("person", "dave"), step)
+      .unwrap()
+      .select()
+      .return((n) => ({ name: n.name })),
+  }))
+  .execute();
+```
+
+Edge filters and multi-edge steps work inside the step, e.g.
+`(n) => n.out((g) => g("knows").where((e) => e.since.gte(2015))).out("person")`.
+Because the step is typed against the table it starts from, stepping onto a
+different table (`n.out("wrote").out("post")`) is a compile error.
+
+Notes and limits:
+
+- Recursive paths need SurrealDB 2.1 or newer; the CI matrix (3.0.5 to 3.3.0) is
+  covered by the integration tests.
+- `shortest` is unbounded. If the target is the start record itself the result
+  is `NONE`, even with `inclusive`.
+- `+path` (every walked path) is not exposed yet.
+
 ### Edge adjacency metadata
 
 The `lookup` maps expose which edges connect which tables at runtime:
@@ -1899,7 +1985,7 @@ This project is in active development. Planned features include:
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
 - [ ] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
-- [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
+- [x] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [ ] **Performance optimizations** - Query caching, connection pooling
 - [ ] **Schema migrations** - Version control for database schemas
 - [ ] **Documentation site** - Comprehensive guides and API reference

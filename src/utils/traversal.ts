@@ -8,7 +8,14 @@ import {
 import type { Workable, WorkableContext } from "./workable";
 
 /** Traversal verbs that the row sugar exposes by delegating to the row's `id`. */
-const TRAVERSAL_VERBS = new Set(["out", "in", "both"]);
+const TRAVERSAL_VERBS = new Set([
+	"out",
+	"in",
+	"both",
+	"recurse",
+	"collect",
+	"shortest",
+]);
 
 /**
  * Wrap a row actionable so graph traversal verbs can be called directly on it:
