@@ -8,6 +8,7 @@ import {
 	bindSignals,
 	type RequestOptions,
 	type SurrealConnection,
+	withSdkDiagnosis,
 } from "./request.ts";
 
 /**
@@ -106,10 +107,12 @@ export class BatchQuery<Q extends Query<any, any>[]> {
 			statements.length === 0
 				? []
 				: [new BoundQuery(statements.join("; "), ctx.variables)];
-		const results = await connection.transaction<unknown[]>(queries, {
-			retry: this.options.retry,
-			requestTimeout: this.options.requestTimeout,
-		});
+		const results = await withSdkDiagnosis(connection, () =>
+			connection.transaction<unknown[]>(queries, {
+				retry: this.options.retry,
+				requestTimeout: this.options.requestTimeout,
+			}),
+		);
 		return results.map((result, i) => {
 			return this.queries[i]!.parseResult(result);
 		}) as BatchResult<Q>;
