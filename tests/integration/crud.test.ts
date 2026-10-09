@@ -131,7 +131,8 @@ describe("CRUD Integration Tests", () => {
 				.execute();
 
 			expect(updateResult[0]!.age).toBe(41);
-			expect(updateResult[0]!.name.first).toBe("Frank");
+			// `name` was not set by this update, so it is typed as optional.
+			expect(updateResult[0]!.name!.first).toBe("Frank");
 		});
 
 		test("updates with += operator", async () => {

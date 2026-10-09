@@ -607,7 +607,7 @@ const user = await db
   .create("user", "john")
   .only()
   .set({ name: "John" });
-// user: User  (not User[])
+// user: one row, typed as described in "What a partial write returns" (not an array)
 ```
 
 #### Which write method enforces required fields?
@@ -623,6 +623,41 @@ Only `.content()` requires the full record on `CREATE`: its input type is the ta
 | `.patch()` | Not checked at all | JSON Patch operations, with the `path` as a plain string |
 
 Use `.content()` when you want the compiler to enforce required fields. With [runtime validation](#runtime-validation) enabled, `.content()` is checked as a full record, `.set()` field by field, and `.patch()` is not checked.
+
+#### What a partial write returns
+
+A write that does not supply the whole record still succeeds, and returns only the fields it knows are present. The record is stored as written, so a required field left unset stays unset, and the query does not throw after the write has committed. The result type follows what was written:
+
+| Write | Fields the returned row is typed with |
+| --- | --- |
+| `create().content()` | Every field (required fields are enforced) |
+| `create().set()` / `.merge()` | `id`, the fields written, fields with a `.default()` (CREATE applies them), and `option<…>` fields |
+| `create().replace()` | `id`, the fields written, and `option<…>` fields (REPLACE does not apply defaults) |
+| `create()` with no data | `id`, fields with a `.default()`, and `option<…>` fields |
+| `create().patch()` | `id`; every other field is optional |
+| `relate().content()` | Every field, including `in` and `out` |
+| `relate().set()` / `.merge()` / `.replace()` | `id`, `in`, `out`, the fields written, and `option<…>` fields (RELATE does not apply defaults) |
+| `update()` / `upsert()` `.set()` / `.merge()` | `id` and the fields written. The other fields may already be stored, so they are optional |
+| `update()` / `upsert()` `.content()` / `.replace()` | `id` and the fields written. The record is replaced, so no other field remains |
+| `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
+| `delete()` and `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
+
+`.unset()` removes the unset fields from the result type. A `.return((row) => …)` projection only sees the fields the row is typed with, so it cannot read a field the write did not set. Inserts with `.onDuplicate()` return rows that may have been updated rather than inserted, so only `id` is required for those.
+
+```typescript
+const user = table("user", {
+  name: t.string(),
+  email: t.string(),
+  nickname: t.option(t.string()),
+  role: t.string().default("guest"),
+});
+
+const [ada] = await db.create("user").set({ name: "Ada" }).execute();
+// ada: { id, name: string, nickname: string | undefined, role: string }
+// Stored without an email. db.select("user") throws until one is set.
+```
+
+Class-linked tables still return instances of their class.
 
 ### INSERT statements
 
@@ -714,7 +749,7 @@ const upserted = await db
   .upsert("user", "john")
   .only()
   .set({ name: "John" });
-// upserted: User  (not User[])
+// upserted: one row, typed as described in "What a partial write returns" (not an array)
 ```
 
 ### UPDATE statements
@@ -774,8 +809,10 @@ const user = await db
   .update("user", "john")
   .only()
   .set({ name: "Johnny" });
-// user: User  (not User[])
+// user: one row, typed as described in "What a partial write returns" (not an array)
 ```
+
+An update leaves the fields it does not set in place, so the result types them as optional. `.content()` and `.replace()` replace the record, so only the fields given remain. See [What a partial write returns](#what-a-partial-write-returns).
 
 ### RELATE statements
 
@@ -918,6 +955,7 @@ A single query can opt in or out with `.validated()` / `.validated(false)`. Vali
 - Fields the schema does not declare are ignored, and so are `.patch()` operations.
 - Values SurrealDB evaluates itself, such as `expr(...)` defaults and subquery expressions, are not checked client-side.
 - Validation never changes your data: what is checked is what is sent. Defaults are still filled in by the query as before.
+- A partial write (`.set()`, `.merge()`, `.replace()` or `.patch()` on `create`, and the partial writes of `update`, `upsert` and `relate`) is not required to supply every field. Its result is typed to match, as described in [What a partial write returns](#what-a-partial-write-returns), so the missing required fields are not reported as an error. A value that is supplied is still checked.
 
 ### Validating data yourself
 
@@ -1535,6 +1573,8 @@ const projection = await db.update("user", "alice")
   .set({ age: 31, email: "new@email.com" })
   .return((u) => ({ name: u.name, age: u.age }));
 ```
+
+For a partial write, the projection can only read the fields the result is typed with (see [What a partial write returns](#what-a-partial-write-returns)).
 
 ### Query Timeouts
 

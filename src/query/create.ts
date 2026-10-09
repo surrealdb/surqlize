@@ -33,10 +33,20 @@ import {
 	type WriteData,
 } from "./modification-methods.ts";
 import { validateWrite } from "./validate-input.ts";
+import {
+	type FullWrite,
+	type NoWrite,
+	type WriteRow,
+	type WriteShape,
+	type Written,
+} from "./write-result.ts";
 
 /**
  * A fluent CREATE query builder. Supports SET, CONTENT, MERGE, PATCH, REPLACE,
  * RETURN, and TIMEOUT clauses.
+ *
+ * `W` describes what has been written so far. It sets the type of the rows the
+ * query returns: see {@link WriteRow}.
  */
 export class CreateQuery<
 		O extends Orm,
@@ -44,8 +54,9 @@ export class CreateQuery<
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
 		Only extends boolean = false,
+		W extends WriteShape = NoWrite,
 	>
-	extends Query<C, QueryResult<E, Only>>
+	extends Query<C, QueryResult<WriteRow<E, W, "create">, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
@@ -70,6 +81,7 @@ export class CreateQuery<
 			orm,
 			id: Symbol(),
 		} as C;
+		this._lenient = true;
 		this._id = id;
 	}
 
@@ -77,53 +89,131 @@ export class CreateQuery<
 		return this[__ctx].orm.tables[this.tb]!.schema as unknown as E;
 	}
 
-	get [__type](): QueryResult<E, Only> {
+	get [__type](): QueryResult<WriteRow<E, W, "create">, Only> {
 		const schema =
 			this._return && typeof this._return !== "string"
 				? this._return[__type]
 				: this.schema;
-		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+		return (this._only ? schema : t.array(schema)) as QueryResult<
+			WriteRow<E, W, "create">,
+			Only
+		>;
 	}
 
-	only(): CreateQuery<O, C, T, E, true> {
+	only(): CreateQuery<O, C, T, E, true, W> {
 		return this.derive((next) => {
 			next._only = true;
-		}) as CreateQuery<O, C, T, E, true>;
+		}) as CreateQuery<O, C, T, E, true, W>;
 	}
 
-	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
-		return this.derive((next) =>
-			applySet(next, data as Record<string, unknown>),
-		);
+	/**
+	 * Set fields. Fields that are not set are absent from the result, so the
+	 * result only types the fields that are known to be there.
+	 */
+	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
+		data: D,
+	): CreateQuery<O, C, T, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+		return this.derive((next) => {
+			applySet(next, data as Record<string, unknown>);
+		}) as unknown as CreateQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			Written<W, "set", Extract<keyof D, string>>
+		>;
 	}
 
-	content(data: E extends ObjectType ? CreateInput<E> : E["infer"]): this {
-		return this.derive((next) => applyContent(next, data));
+	content(
+		data: E extends ObjectType ? CreateInput<E> : E["infer"],
+	): CreateQuery<O, C, T, E, Only, FullWrite> {
+		return this.derive((next) => {
+			applyContent(next, data);
+			// A full record is checked strictly: every field is there.
+			next._lenient = false;
+		}) as unknown as CreateQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			FullWrite
+		>;
 	}
 
-	merge(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyMerge(next, data));
+	/** Merge fields into the record. Fields that are not merged are absent from the result. */
+	merge<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): CreateQuery<O, C, T, E, Only, Written<W, "set", Extract<keyof D, string>>> {
+		return this.derive((next) => {
+			applyMerge(next, data);
+		}) as unknown as CreateQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			Written<W, "set", Extract<keyof D, string>>
+		>;
 	}
 
-	patch(operations: JsonPatchOp[]): this {
-		return this.derive((next) => applyPatch(next, operations));
+	patch(
+		operations: JsonPatchOp[],
+	): CreateQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: never; gone: never; mode: "patch" }
+	> {
+		return this.derive((next) => {
+			applyPatch(next, operations);
+		}) as unknown as CreateQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			{ keys: never; gone: never; mode: "patch" }
+		>;
 	}
 
-	replace(data: Partial<WriteData<E>>): this {
-		return this.derive((next) => applyReplace(next, data));
+	/** Replace the record. REPLACE does not apply defaults, so only the given fields are known. */
+	replace<const D extends Partial<WriteData<E>>>(
+		data: D,
+	): CreateQuery<
+		O,
+		C,
+		T,
+		E,
+		Only,
+		{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+	> {
+		return this.derive((next) => {
+			applyReplace(next, data);
+		}) as unknown as CreateQuery<
+			O,
+			C,
+			T,
+			E,
+			Only,
+			{ keys: Extract<keyof D, string>; gone: never; mode: "replace" }
+		>;
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
-	return(
-		cb: (record: Actionable<C, E>) => Inheritable<C>,
-	): CreateQuery<O, C, T, InheritableIntoType<C, ReturnType<typeof cb>>, Only>;
+	return<P extends Inheritable<C>>(
+		cb: (record: Actionable<C, WriteRow<E, W, "create">>) => P,
+	): CreateQuery<O, C, T, InheritableIntoType<C, ReturnType<typeof cb>>, Only, FullWrite>;
 	return(
 		value:
 			| "none"
 			| "before"
 			| "after"
 			| "diff"
-			| ((record: Actionable<C, E>) => Inheritable<C>),
+			| ((record: Actionable<C, WriteRow<E, W, "create">>) => Inheritable<C>),
 	): unknown {
 		if (typeof value === "function") {
 			const record = actionable({
@@ -132,7 +222,7 @@ export class CreateQuery<
 				[__display]: ({ contextId }) => {
 					return contextId === this[__ctx].id ? "$this" : "$parent";
 				},
-			}) as Actionable<C, E>;
+			}) as Actionable<C, WriteRow<E, W, "create">>;
 
 			const inheritable = value(record);
 			const workable = inheritableIntoWorkable(inheritable);

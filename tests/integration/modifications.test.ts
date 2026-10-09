@@ -47,8 +47,8 @@ describe("Modification methods integration tests", () => {
 				.execute();
 
 			expect(result[0]!.email).toBe("merged@example.com");
-			// Other fields should be preserved
-			expect(result[0]!.name.first).toBe("Original");
+			// Other fields should be preserved. `name` was not merged, so it is typed as optional.
+			expect(result[0]!.name!.first).toBe("Original");
 			expect(result[0]!.age).toBe(30);
 		});
 	});
