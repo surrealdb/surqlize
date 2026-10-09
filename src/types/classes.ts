@@ -19,6 +19,30 @@ function pathSegment(prop: string | number): string {
 	return `[${JSON.stringify(prop)}]`;
 }
 
+/**
+ * A raw SurrealQL expression (e.g. `time::now()`), rendered verbatim rather
+ * than bound as a parameter. Use {@link expr} to create one. The text is
+ * interpolated into the query as-is, so it must come from trusted code (such as
+ * a schema definition), never from user input.
+ */
+export class SurqlExpression {
+	constructor(readonly sql: string) {}
+}
+
+/** Wrap a trusted SurrealQL expression for use as a field {@link AbstractType.default | default}. */
+export function expr(sql: string): SurqlExpression {
+	return new SurqlExpression(sql);
+}
+
+/**
+ * A field default: a static value, a function producing one (called each time
+ * a query is built), or a {@link SurqlExpression} evaluated by SurrealDB.
+ */
+export type DefaultValue<T = unknown> = T | (() => T) | SurqlExpression;
+
+/** Marks a type that carries a default, making it optional on create. */
+export type HasDefault = { readonly _default: DefaultValue };
+
 export abstract class AbstractType<T = unknown> {
 	abstract readonly name: string;
 	abstract readonly expected: string | [string, string, ...string[]];
@@ -26,6 +50,29 @@ export abstract class AbstractType<T = unknown> {
 	infer = undefined as unknown as T;
 	accept = undefined as unknown as T;
 	abstract validate(value: unknown): value is T;
+
+	/** The default applied on create when the field is absent. See {@link default}. */
+
+	/**
+	 * Give this field a default, applied by CREATE/INSERT when the field is
+	 * omitted (or `undefined`). The field becomes optional in create input while
+	 * its output type is unchanged. Accepts a static value, a function (e.g.
+	 * `() => new Date()`, evaluated per query), or an {@link expr} SurrealQL
+	 * expression evaluated by the database.
+	 *
+	 * Returns a copy; the original type is left untouched.
+	 */
+	default<Self extends AbstractType>(
+		this: Self,
+		value: DefaultValue<Self["infer"]>,
+	): Self & HasDefault {
+		const copy = Object.assign(
+			Object.create(Object.getPrototypeOf(this)),
+			this,
+		) as Self & HasDefault;
+		(copy as { _default?: DefaultValue })._default = value;
+		return copy;
+	}
 
 	/**
 	 * Validate and return `value`, or throw if it does not match this type.

@@ -17,12 +17,14 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query, type QueryResult } from "./abstract.ts";
+import { schemaDefaults, withDefaults } from "./defaults.ts";
 import {
 	applyContent,
 	applyMerge,
 	applyPatch,
 	applyReplace,
 	applySet,
+	type CreateInput,
 	displayModificationClause,
 	type JsonPatchOp,
 	type ModificationMode,
@@ -94,9 +96,7 @@ export class CreateQuery<
 		);
 	}
 
-	content(
-		data: E extends ObjectType ? Omit<WriteData<E>, "id"> : E["infer"],
-	): this {
+	content(data: E extends ObjectType ? CreateInput<E> : E["infer"]): this {
 		return this.derive((next) => applyContent(next, data));
 	}
 
@@ -123,7 +123,7 @@ export class CreateQuery<
 			| "after"
 			| "diff"
 			| ((record: Actionable<C, E>) => Inheritable<C>),
-	): this {
+	): unknown {
 		if (typeof value === "function") {
 			const record = actionable({
 				[__ctx]: this[__ctx],
@@ -170,7 +170,10 @@ export class CreateQuery<
 
 		let query = /* surql */ `CREATE ${this._only ? "ONLY " : ""}${target}`;
 
-		query += displayModificationClause(this, ctx);
+		query += displayModificationClause(
+			withDefaults(this, schemaDefaults(this.schema)),
+			ctx,
+		);
 
 		if (this._return) {
 			if (typeof this._return === "string") {

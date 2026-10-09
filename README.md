@@ -166,6 +166,28 @@ const user = table("user", {
 
 **Note**: Every table automatically includes an `id` field of type `RecordId<TableName>`.
 
+### Default values
+
+Call `.default()` on any field type to give it a default. The field becomes optional when creating a record, while the type you read back stays non-optional:
+
+```typescript
+import { expr, t, table } from "surqlize";
+
+const user = table("user", {
+  name: t.string(),
+  isVerified: t.bool().default(false),             // static value
+  createdAt: t.date().default(() => new Date()),   // function, called each time a query is built
+  seenAt: t.date().default(expr("time::now()")),   // SurrealQL expression, evaluated by SurrealDB
+});
+
+await db.create("user").content({ name: "Ada" }); // isVerified, createdAt and seenAt are optional
+// Result type: { id, name: string, isVerified: boolean, createdAt: Date, seenAt: Date }
+```
+
+Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) whenever the field is omitted or `undefined`; an explicit value always wins. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `UPSERT`, `UPDATE`, `RELATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
+
+`expr()` text is inserted into the query verbatim: only pass trusted, hard-coded SurrealQL, never user input.
+
 ### Computed fields
 
 A computed field is read-only: SurrealDB derives its value from an expression each time the record is read (`DEFINE FIELD … COMPUTED`, which needs **SurrealDB ≥ 3.0**). Add one with `.computed(name, type, expression)`. The expression receives the row (rendered as `$this`) and the ORM, so it can run subqueries:

@@ -25,8 +25,15 @@ import {
 } from "../utils/workable.ts";
 import { Query } from "./abstract.ts";
 import {
+	fillData,
+	fillValues,
+	renderData,
+	schemaDefaults,
+} from "./defaults.ts";
+import {
 	generateSetAssignments,
 	processSetOperators,
+	renderValue,
 	type SetValue,
 } from "./utils.ts";
 
@@ -223,15 +230,17 @@ export class InsertQuery<
 		query += /* surql */ ` INTO ${table}`;
 
 		// Object-style syntax
+		const defaults = schemaDefaults(this.schema);
 		if (this._data) {
-			query += /* surql */ ` ${ctx.var(this._data)}`;
+			query += /* surql */ ` ${renderData(fillData(this._data, defaults), ctx)}`;
 		}
 
 		// VALUES tuple syntax
 		else if (this._fields && this._values) {
-			query += /* surql */ ` (${this._fields.map(escapeIdent).join(", ")})`;
-			const valueGroups = this._values.map(
-				(row) => `(${row.map((v) => ctx.var(v)).join(", ")})`,
+			const filled = fillValues(this._fields, this._values, defaults);
+			query += /* surql */ ` (${filled.fields.map(escapeIdent).join(", ")})`;
+			const valueGroups = filled.rows.map(
+				(row) => `(${row.map((v) => renderValue(v, ctx)).join(", ")})`,
 			);
 			query += /* surql */ ` VALUES ${valueGroups.join(", ")}`;
 		}

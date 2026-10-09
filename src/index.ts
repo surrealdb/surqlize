@@ -14,6 +14,7 @@ export * from "./query/create";
 export * from "./query/delete";
 export * from "./query/insert";
 export * from "./query/live";
+export type { CreateInput } from "./query/modification-methods";
 export type {
 	FieldCondition,
 	OperatorFilter,
