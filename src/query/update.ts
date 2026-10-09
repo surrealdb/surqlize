@@ -36,6 +36,7 @@ import {
 	type ModificationState,
 	type SetData,
 } from "./modification-methods.ts";
+import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 
 /**
@@ -130,7 +131,13 @@ export class UpdateQuery<
 		return this.derive((next) => applyReplace(next, data));
 	}
 
-	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
+	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
+	where(filter: WhereObject<C, O["tables"][T]["schema"]>): this;
+	where(
+		input:
+			| ((tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>)
+			| WhereObject<C, O["tables"][T]["schema"]>,
+	): this {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: resolveSubjectSchema(this[__ctx].orm, this.tb),
@@ -139,7 +146,17 @@ export class UpdateQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		const filter = sanitizeWorkable(cb(tb));
+		const condition =
+			typeof input === "function"
+				? input(tb)
+				: whereFromObject(tb as unknown as Workable<C>, input);
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
+
+		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
 		});

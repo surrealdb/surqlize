@@ -290,7 +290,8 @@ export class GraphType<Tb extends string = string> extends AbstractType<
 
 export type ObjectTypeInner = Record<string, AbstractType>;
 export class ObjectType<
-	T extends ObjectTypeInner = ObjectTypeInner,
+	// biome-ignore lint/suspicious/noExplicitAny: a bare `ObjectType` must also match object types whose inferred value is a class instance (see `table()` linked to a class)
+	T extends ObjectTypeInner = any,
 > extends AbstractType<
 	{
 		[K in keyof T]: T[K]["infer"];
