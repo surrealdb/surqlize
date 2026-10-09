@@ -193,6 +193,7 @@ describe("README: aggregates under groupAll", () => {
 describe("README: chained .where()", () => {
 	const getTestDb = withTestDb({ setup: seedGraph });
 
+	// Chained where() calls are AND-ed: each condition narrows the rows.
 	test("chained where() calls are AND-ed together", async () => {
 		const db = orm(getTestDb().surreal, ...graphSchema);
 
@@ -206,7 +207,7 @@ describe("README: chained .where()", () => {
 		expect(rows.map((u) => u.name)).toEqual(["Alice"]);
 	});
 
-	// `age >= 26` excludes Bob, so AND with an object filter on Bob's name gives nothing.
+	// A fluent where() followed by an object where() is AND-ed too: `age >= 26` excludes Bob.
 	test("a fluent where() followed by an object where() is AND-ed", async () => {
 		const db = orm(getTestDb().surreal, ...graphSchema);
 
@@ -331,6 +332,43 @@ describe("README: compound conditions and object filters", () => {
 	});
 });
 
+describe("README: option functions", () => {
+	const profile = table("profile", {
+		name: t.string(),
+		bio: t.option(t.string()),
+	});
+	const getTestDb = withTestDb({
+		setup: async ({ surreal }: { surreal: Surreal }) => {
+			await surreal.query("DEFINE TABLE IF NOT EXISTS profile;");
+		},
+	});
+
+	test("option map() transforms a set value, and leaves the field out when it is NONE", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, profile);
+		await db
+			.create("profile", "with")
+			.content({ name: "W", bio: "hello" })
+			.execute();
+		await db.create("profile", "without").content({ name: "N" }).execute();
+
+		const rows = await db
+			.select("profile")
+			.return((p) => ({
+				name: p.name,
+				bioUpper: p.bio.map((b) => b.uppercase()),
+				bioLength: p.bio.map((b) => b.len()),
+			}))
+			.execute();
+
+		const byName = Object.fromEntries(rows.map((r) => [r.name, r]));
+		expect(byName.W).toEqual({ name: "W", bioUpper: "HELLO", bioLength: 5 });
+		expect(byName.N?.name).toBe("N");
+		expect(byName.N?.bioUpper).toBeUndefined();
+		expect(byName.N?.bioLength).toBeUndefined();
+	});
+});
+
 describe("README: select().timeout", () => {
 	const getTestDb = withTestDb({ setup: seedGraph });
 
@@ -364,6 +402,8 @@ describe("README: RELATE", () => {
 		expect(edge?.role).toBe("author");
 	});
 
+	// The edge's required fields (created, role) are not written, so the returned
+	// row leaves them out. The row must still parse.
 	test("relate() without content() returns the edge", async () => {
 		const db = orm(getTestDb().surreal, ...graphSchema);
 
@@ -374,6 +414,39 @@ describe("README: RELATE", () => {
 		);
 
 		expect(edges).toHaveLength(1);
+		expect(edges[0]!.in.toString()).toBe("user:bob");
+		expect(edges[0]!.out.toString()).toBe("post:post1");
+		expect("created" in edges[0]!).toBe(false);
+	});
+
+	test("relate().only() without content() returns the edge", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
+
+		const edge = await db
+			.relate(
+				"authored",
+				new RecordId("user", "bob"),
+				new RecordId("post", "post1"),
+			)
+			.only();
+
+		expect(edge.out.toString()).toBe("post:post1");
+	});
+
+	// README: "Using with query results". A select is a record source, so RELATE
+	// takes its rows as the endpoints.
+	test("relate() takes select queries as its endpoints", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
+
+		const userQuery = db.select("user", "carol");
+		const postQuery = db.select("post", "post1");
+		const [edge] = await db
+			.relate("authored", userQuery, postQuery)
+			.content({ created: new Date(), role: "author" });
+
+		expect(edge!.in.toString()).toBe("user:carol");
+		expect(edge!.out.toString()).toBe("post:post1");
+		expect(edge!.role).toBe("author");
 	});
 });
 

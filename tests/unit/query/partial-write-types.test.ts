@@ -240,12 +240,34 @@ async function relateResults() {
 	assertType<Equal<ViaContent["weight"], number>>();
 }
 
-async function unchangedResults() {
-	// DELETE and SELECT still return the full row.
+async function deleteResults() {
+	// DELETE .return("before") returns the stored row, which may be partial: only
+	// the id is guaranteed, as with an UPDATE that wrote nothing.
 	const deleted = await db.delete("member", "a").return("before").execute();
 	type Deleted = (typeof deleted)[number];
-	assertType<Equal<Deleted["email"], string>>();
+	assertType<Equal<Deleted["id"], RecordId<"member">>>();
+	assertType<Equal<Deleted["email"], string | undefined>>();
+	assertType<Equal<Deleted["role"], string | undefined>>();
 
+	const deletedOnly = await db
+		.delete("member", "a")
+		.only()
+		.return("after")
+		.execute();
+	assertType<Equal<typeof deletedOnly.email, string | undefined>>();
+
+	// A projection reads the stored row too, so it sees the same optional fields.
+	const deletedNames = await db
+		.delete("member")
+		.return((m) => ({ name: m.name, email: m.email }))
+		.execute();
+	type DeletedNames = (typeof deletedNames)[number];
+	assertType<Equal<DeletedNames["name"], string | undefined>>();
+	assertType<Equal<DeletedNames["email"], string | undefined>>();
+}
+
+async function unchangedResults() {
+	// SELECT still returns the full row.
 	const selected = await db.select("member").execute();
 	type Selected = (typeof selected)[number];
 	assertType<Equal<Selected["email"], string>>();
@@ -257,5 +279,6 @@ test("partial write result types are checked by the compiler", () => {
 	expect(typeof updateResults).toBe("function");
 	expect(typeof upsertResults).toBe("function");
 	expect(typeof relateResults).toBe("function");
+	expect(typeof deleteResults).toBe("function");
 	expect(typeof unchangedResults).toBe("function");
 });

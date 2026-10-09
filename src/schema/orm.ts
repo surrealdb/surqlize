@@ -13,7 +13,7 @@ import { CreateQuery } from "../query/create";
 import { DeleteQuery } from "../query/delete";
 import { InsertQuery } from "../query/insert";
 import { LiveQuery } from "../query/live";
-import { RelateQuery } from "../query/relate";
+import { type RelateEndpoint, RelateQuery } from "../query/relate";
 import type { SurrealConnection } from "../query/request";
 import { SelectQuery } from "../query/select";
 import type { Transaction } from "../query/transaction";
@@ -533,8 +533,9 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * Build a RELATE query to create a graph edge between records.
 	 *
 	 * @param edge - The edge table name (must be an {@link EdgeSchema}).
-	 * @param from - The source record(s).
-	 * @param to - The target record(s).
+	 * @param from - The source record(s), or a query that yields records, such as
+	 *   `db.select("user")`.
+	 * @param to - The target record(s), or a query that yields records.
 	 * @returns A {@link RelateQuery} that can be further chained or awaited.
 	 * @throws {OrmError} If `edge` does not refer to an {@link EdgeSchema}.
 	 */
@@ -543,35 +544,15 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		Edge extends keyof this["tables"] & string,
 	>(
 		edge: Edge,
-		from:
-			| RecordId
-			| RecordId[]
-			| Workable<C, RecordType>
-			| Workable<C, ArrayType<RecordType>>,
-		to:
-			| RecordId
-			| RecordId[]
-			| Workable<C, RecordType>
-			| Workable<C, ArrayType<RecordType>>,
+		from: RelateEndpoint<C>,
+		to: RelateEndpoint<C>,
 	): RelateQuery<this, C, Edge>;
 
 	// Method
 	relate<
 		C extends WorkableContext<this>,
 		Edge extends keyof this["tables"] & string,
-	>(
-		edge: Edge,
-		from:
-			| RecordId
-			| RecordId[]
-			| Workable<C, RecordType>
-			| Workable<C, ArrayType<RecordType>>,
-		to:
-			| RecordId
-			| RecordId[]
-			| Workable<C, RecordType>
-			| Workable<C, ArrayType<RecordType>>,
-	) {
+	>(edge: Edge, from: RelateEndpoint<C>, to: RelateEndpoint<C>) {
 		const edgeSchema = this.tables[edge];
 
 		// Validate it's an EdgeSchema

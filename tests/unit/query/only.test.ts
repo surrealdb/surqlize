@@ -114,7 +114,16 @@ describe("ONLY queries", () => {
 				age: number | undefined;
 			}
 		> = true;
-		const deletedCheck: Equal<Deleted, User> = true;
+		// A DELETE returns the stored record, which may be partial: like an update
+		// with no data, only the id is guaranteed.
+		const deletedCheck: Equal<
+			Deleted,
+			{
+				id: RecordId<"user">;
+				name: string | undefined;
+				age: number | undefined;
+			}
+		> = true;
 
 		expect(createdCheck).toBe(true);
 		expect(updatedCheck).toBe(true);

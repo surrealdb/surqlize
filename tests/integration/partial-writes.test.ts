@@ -417,6 +417,77 @@ describe("DELETE returns rows as stored", () => {
 
 		expect(row!.email).toBe("gone@example.com");
 	});
+
+	// A partial record (written by set() without `email`) used to be deleted, and
+	// then the strict parse of the deleted row threw after the delete had committed.
+	test("delete().return('before') on a partial record does not throw after deleting", async () => {
+		const db = make();
+		await db.create("member", "del_partial").set({ name: "Gone" }).execute();
+
+		const [row] = await db
+			.delete("member", "del_partial")
+			.return("before")
+			.execute();
+
+		expect(row!.id.toString()).toBe("member:del_partial");
+		expect(row!.name).toBe("Gone");
+		expect(row!.email).toBeUndefined();
+		expect(
+			await stored(getTestDb().surreal, "member:del_partial"),
+		).toBeUndefined();
+	});
+
+	test("delete().return(projection) on a complete record returns the projected values", async () => {
+		const db = make();
+		await db
+			.create("member", "del_proj_full")
+			.content({ name: "Full", email: "full@example.com" })
+			.execute();
+
+		const rows = await db
+			.delete("member", "del_proj_full")
+			.return((m) => ({ name: m.name, email: m.email }))
+			.execute();
+
+		expect(rows).toEqual([{ name: "Full", email: "full@example.com" }]);
+	});
+
+	test("delete().only().return('before') on a partial record returns the row", async () => {
+		const db = make();
+		await db
+			.create("member", "del_only_partial")
+			.set({ name: "One" })
+			.execute();
+
+		const row = await db
+			.delete("member", "del_only_partial")
+			.only()
+			.return("before")
+			.execute();
+
+		expect(row.name).toBe("One");
+		expect(
+			await stored(getTestDb().surreal, "member:del_only_partial"),
+		).toBeUndefined();
+	});
+
+	test("delete().return(projection) on a partial record does not throw after deleting", async () => {
+		const db = make();
+		await db
+			.create("member", "del_proj_partial")
+			.set({ name: "Proj" })
+			.execute();
+
+		const rows = await db
+			.delete("member", "del_proj_partial")
+			.return((m) => ({ name: m.name }))
+			.execute();
+
+		expect(rows).toEqual([{ name: "Proj" }]);
+		expect(
+			await stored(getTestDb().surreal, "member:del_proj_partial"),
+		).toBeUndefined();
+	});
 });
 
 describe("partial RELATE writes do not throw after committing", () => {
@@ -483,14 +554,143 @@ describe("validated() still checks partial writes", () => {
 		expect(await stored(getTestDb().surreal, "member:val_bad")).toBeUndefined();
 	});
 
-	test("set() leaving out a required field is not rejected", async () => {
+	// Validation makes the stored record complete: a new record must be given every
+	// required field, because the read-back parses it strictly.
+	test("set() leaving out a required field is rejected before sending", async () => {
 		const db = make();
-		const [row] = await db
+		const error = await db
 			.create("member", "val_partial")
 			.set({ name: "Valid" })
+			.execute()
+			.then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+
+		expect(error).toBeInstanceOf(ValidationError);
+		expect((error as ValidationError).issues).toEqual([
+			{
+				path: "email",
+				expected: "string",
+				received: undefined,
+				message: "email: required field is not set",
+			},
+		]);
+		expect(
+			await stored(getTestDb().surreal, "member:val_partial"),
+		).toBeUndefined();
+	});
+
+	test("merge() leaving out a required field is rejected before sending", async () => {
+		const db = make();
+		const error = await db
+			.create("member", "val_merge")
+			.merge({ name: "Merged" })
+			.execute()
+			.then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+
+		expect(error).toBeInstanceOf(ValidationError);
+		expect((error as ValidationError).issues.map((i) => i.path)).toEqual([
+			"email",
+		]);
+		expect(
+			await stored(getTestDb().surreal, "member:val_merge"),
+		).toBeUndefined();
+	});
+
+	test("a field passed as undefined counts as not set, and is rejected", async () => {
+		const db = make();
+		const maybeEmail = undefined as unknown as string;
+		await expect(
+			db
+				.create("member", "val_undef")
+				.set({ name: "U", email: maybeEmail })
+				.execute(),
+		).rejects.toThrow(ValidationError);
+		expect(
+			await stored(getTestDb().surreal, "member:val_undef"),
+		).toBeUndefined();
+	});
+
+	test("an empty create() is rejected: it would store no required field", async () => {
+		const db = make();
+		const error = await db
+			.create("member", "val_empty")
+			.execute()
+			.then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+
+		expect(error).toBeInstanceOf(ValidationError);
+		expect((error as ValidationError).issues.map((i) => i.path)).toEqual([
+			"name",
+			"email",
+		]);
+		expect(
+			await stored(getTestDb().surreal, "member:val_empty"),
+		).toBeUndefined();
+	});
+
+	test("set(), merge(), content() and replace() with a wrongly typed value store nothing", async () => {
+		const db = make();
+		const bad = 42 as unknown as string;
+		const writes = {
+			set: () => db.create("member", "wt_set").set({ name: bad, email: "e" }),
+			merge: () =>
+				db.create("member", "wt_merge").merge({ name: bad, email: "e" }),
+			content: () =>
+				db.create("member", "wt_content").content({ name: bad, email: "e" }),
+			replace: () =>
+				db.create("member", "wt_replace").replace({ name: bad, email: "e" }),
+		};
+		for (const [label, write] of Object.entries(writes)) {
+			const error = await write()
+				.execute()
+				.then(
+					() => undefined,
+					(e: unknown) => e,
+				);
+			expect(error, label).toBeInstanceOf(ValidationError);
+		}
+		for (const id of ["wt_set", "wt_merge", "wt_content", "wt_replace"]) {
+			expect(await stored(getTestDb().surreal, `member:${id}`)).toBeUndefined();
+		}
+	});
+
+	test("update().set() and update().merge() keep the stored required fields, so they are not checked", async () => {
+		const db = make();
+		await db
+			.create("member", "upd_kept")
+			.content({ name: "Kept", email: "kept@example.com" })
+			.execute();
+		const [row] = await db
+			.update("member", "upd_kept")
+			.merge({ nickname: "k" })
 			.execute();
 
-		expect(row!.name).toBe("Valid");
+		expect(row!.email).toBe("kept@example.com");
+		expect(row!.nickname).toBe("k");
+	});
+
+	test("update().content() replaces the record, so it must give every required field", async () => {
+		const db = make();
+		await db
+			.create("member", "upd_content_req")
+			.content({ name: "Old", email: "old@example.com" })
+			.execute();
+		await expect(
+			db
+				.update("member", "upd_content_req")
+				.content({ name: "New" } as never)
+				.execute(),
+		).rejects.toThrow(ValidationError);
+		expect(
+			(await stored(getTestDb().surreal, "member:upd_content_req"))?.email,
+		).toBe("old@example.com");
 	});
 
 	test("content() leaving out a required field is still rejected", async () => {
@@ -505,13 +705,59 @@ describe("validated() still checks partial writes", () => {
 
 	test("update().set() with a wrongly typed value is rejected", async () => {
 		const db = make();
-		await db.create("member", "val_upd").set({ name: "V" }).execute();
+		await db
+			.create("member", "val_upd")
+			.content({ name: "V", email: "v@example.com" })
+			.execute();
 		await expect(
 			db
 				.update("member", "val_upd")
 				.set({ nickname: 7 as unknown as string })
 				.execute(),
 		).rejects.toThrow(ValidationError);
+	});
+});
+
+// The limit that validated() exists to remove. Without it, an incomplete write is
+// stored, the write returns, and a later select() of that record throws.
+describe("without validated(), an incomplete write is stored and cannot be read back", () => {
+	const getTestDb = withTestDb({ setup: defineTables });
+	const make = () => orm(getTestDb().surreal, member, knows);
+
+	test("create().set() leaving out a required field stores the record", async () => {
+		const db = make();
+		const [row] = await db
+			.create("member", "off_partial")
+			.set({ name: "Off" })
+			.execute();
+
+		expect(row!.name).toBe("Off");
+		expect(
+			(await stored(getTestDb().surreal, "member:off_partial"))?.name,
+		).toBe("Off");
+	});
+
+	test("select() of that record then throws, because it is incomplete", async () => {
+		const db = make();
+		await db.create("member", "off_read").set({ name: "Off" }).execute();
+
+		await expect(db.select("member", "off_read").execute()).rejects.toThrow(
+			TypeParseError,
+		);
+	});
+
+	test("validated(false) on a query stores the incomplete record too", async () => {
+		const db = orm(getTestDb().surreal, member, knows).validated();
+		const [row] = await db
+			.create("member", "off_opt_out")
+			.set({ name: "Opted" })
+			.validated(false)
+			.execute();
+
+		expect(row!.name).toBe("Opted");
+		await expect(
+			make().select("member", "off_opt_out").execute(),
+		).rejects.toThrow(TypeParseError);
 	});
 });
 

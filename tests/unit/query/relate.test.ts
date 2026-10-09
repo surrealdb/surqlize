@@ -302,3 +302,48 @@ describe("RELATE content typing", () => {
 		expect(true).toBe(true);
 	});
 });
+
+describe("RELATE endpoints from queries", () => {
+	const user = table("user", { name: t.string() });
+	const post = table("post", { title: t.string() });
+	const authored = edge("user", "authored", "post", { created: t.date() });
+	const db = orm(new Surreal(), user, post, authored);
+
+	test("a select of rows, or a single row, is an endpoint", () => {
+		// Type-level: these compile. The function is never called.
+		const _usersToPost = () =>
+			db.relate("authored", db.select("user"), db.select("post", "p1"));
+		const _singleToSingle = () =>
+			db.relate(
+				"authored",
+				db.select("user", "alice").only(),
+				db.select("post").only(),
+			);
+		const _projectedId = () =>
+			db.relate(
+				"authored",
+				db.select("user").return((u) => ({ id: u.id })),
+				db.select("post"),
+			);
+		expect(typeof _usersToPost).toBe("function");
+		expect(typeof _singleToSingle).toBe("function");
+		expect(typeof _projectedId).toBe("function");
+	});
+
+	test("renders the query as a subquery on each side", () => {
+		const sql = db
+			.relate("authored", db.select("user", "alice"), db.select("post", "p1"))
+			[__display](displayContext());
+
+		expect(sql).toContain("RELATE (SELECT * FROM");
+		expect(sql).toContain(")->");
+		expect(sql).toContain("->(SELECT * FROM");
+	});
+
+	test("a query whose rows have no id is rejected", () => {
+		const nameOnly = db.select("user").return((u) => ({ name: u.name }));
+		// @ts-expect-error a row without an id is not a record, so it cannot be an endpoint
+		db.relate("authored", nameOnly, db.select("post"));
+		expect(true).toBe(true);
+	});
+});

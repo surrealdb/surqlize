@@ -438,7 +438,9 @@ describe("DELETE return projections", () => {
 
 		expect(result).toContain("DELETE");
 		expect(result).toContain("RETURN VALUE");
-		expect(result).toContain("$this.name");
+		// The deleted record is `$before`: `$this` is NONE in a DELETE's RETURN.
+		expect(result).toContain("$before.name");
+		expect(result).not.toContain("$this");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {

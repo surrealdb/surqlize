@@ -208,7 +208,7 @@ describe(".only() integration tests", () => {
 
 			expect(Array.isArray(deleted)).toBe(false);
 			expect(deleted.id.id).toBe("bob");
-			expect(deleted.name.first).toBe("Bob");
+			expect(deleted.name?.first).toBe("Bob");
 
 			const stored = await surreal.select(new RecordId("user", "bob"));
 			expect(stored).toBeFalsy();
