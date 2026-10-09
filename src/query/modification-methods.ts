@@ -1,6 +1,7 @@
 import { OrmError } from "../error.ts";
-import type { ObjectType } from "../types";
+import type { AbstractType, HasDefault, ObjectType } from "../types";
 import type { DisplayContext } from "../utils/display.ts";
+import { renderData } from "./defaults.ts";
 import {
 	escapeIdiomPath,
 	generateSetAssignments,
@@ -12,6 +13,31 @@ import {
 export type SetData<T extends ObjectType> = {
 	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
 };
+
+/** A field that may be left out on create: it has a default or accepts `NONE`. */
+type OptionalOnCreate<F extends AbstractType> = F extends HasDefault
+	? true
+	: undefined extends F["infer"]
+		? true
+		: false;
+
+/**
+ * Input for creating a record: every field except `id`. Fields that carry a
+ * `.default()` (or are `option<…>`) are optional.
+ */
+export type CreateInput<T extends ObjectType> = {
+	[K in Exclude<keyof T["schema"], "id"> as OptionalOnCreate<
+		T["schema"][K]
+	> extends true
+		? never
+		: K]: T["schema"][K]["infer"];
+} & {
+	[K in Exclude<keyof T["schema"], "id"> as OptionalOnCreate<
+		T["schema"][K]
+	> extends true
+		? K
+		: never]?: T["schema"][K]["infer"];
+} & {};
 
 export type JsonPatchOp =
 	| { op: "add"; path: string; value: unknown }
@@ -170,10 +196,10 @@ export function displayModificationClause(
 	ctx: DisplayContext,
 ): string {
 	if (state._content) {
-		return /* surql */ ` CONTENT ${ctx.var(state._content)}`;
+		return /* surql */ ` CONTENT ${renderData(state._content, ctx)}`;
 	}
 	if (state._merge) {
-		return /* surql */ ` MERGE ${ctx.var(state._merge)}`;
+		return /* surql */ ` MERGE ${renderData(state._merge, ctx)}`;
 	}
 	if (state._patch) {
 		return /* surql */ ` PATCH ${ctx.var(state._patch)}`;
