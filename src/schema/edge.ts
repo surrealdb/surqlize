@@ -60,27 +60,39 @@ export class EdgeSchema<
 		public readonly _fields: Fd,
 	) {}
 
+	// An edge is immutable, so what it derives from its fields is built once.
+	private _fieldsCache?: Fd & {
+		id: RecordType<Tb>;
+		in: RecordType<From>;
+		out: RecordType<To>;
+	} & {};
+	private _schemaCache?: GetEdgeSchemaType<From, Tb, To, Fd>;
+
 	get fields(): Fd & {
 		id: RecordType<Tb>;
 		in: RecordType<From>;
 		out: RecordType<To>;
 	} & {} {
-		return {
-			...this._fields,
-			id: t.record(this.tb),
-			in: t.record(this.from),
-			out: t.record(this.to),
-		} as Fd & {
-			id: RecordType<Tb>;
-			in: RecordType<From>;
-			out: RecordType<To>;
-		} & {};
+		if (!this._fieldsCache) {
+			this._fieldsCache = {
+				...this._fields,
+				id: t.record(this.tb),
+				in: t.record(this.from),
+				out: t.record(this.to),
+			} as Fd & {
+				id: RecordType<Tb>;
+				in: RecordType<From>;
+				out: RecordType<To>;
+			} & {};
+		}
+		return this._fieldsCache;
 	}
 
 	type = undefined as unknown as GetEdgeInferType<From, Tb, To, Fd>;
 
 	get schema(): GetEdgeSchemaType<From, Tb, To, Fd> {
-		return t.object(this.fields);
+		if (!this._schemaCache) this._schemaCache = t.object(this.fields);
+		return this._schemaCache;
 	}
 
 	/** Type-guard that checks whether a value matches this edge's schema. */

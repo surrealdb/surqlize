@@ -1921,6 +1921,17 @@ Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `awa
 }
 ```
 
+### Connections and pooling
+
+Surqlize does not open, own or pool connections: you hand it a `Surreal` (or a session), and the SurrealDB SDK owns the connection, including reconnecting. A pool is not needed for concurrency, because the SDK multiplexes concurrent queries over a single connection, so queries from many `orm()` calls or request handlers can be in flight at once. Use these instead:
+
+- **One `Surreal` connection per process**, created at start-up and shared by every ORM instance.
+- **A session per tenant or per request** (`newSession()` / `forkSession()`, above) when you need isolated namespace, database, authentication or variables. Sessions share the connection, so they are cheap to create and close.
+- **`db.withSignal(signal)`** for per-request cancellation (see [Cancellation, timeouts and retries](#cancellation-timeouts-and-retries)).
+- **`db.batch()` or a transaction** when several statements must run together.
+
+Reach for several `Surreal` connections only when you want to spread load across servers or isolate failure domains, and manage them in your own code.
+
 ## Comparison with other ORMs
 
 | Feature | Surqlize | SurrealDB.js | Prisma | Drizzle | TypeORM |
@@ -1955,9 +1966,15 @@ This project is in active development. Planned features include:
 - [x] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
 - [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
-- [ ] **Performance optimizations** - Query caching, connection pooling
+- [x] **Performance optimizations** - Faster query construction (see [Performance](#performance)); connection pooling is left to the SDK, with sessions for isolation (see [Connections and pooling](#connections-and-pooling))
 - [ ] **Schema migrations** - Version control for database schemas
 - [ ] **Documentation site** - Comprehensive guides and API reference
+
+## Performance
+
+Queries are built from immutable builders, and building and rendering one costs microseconds: a typical `select` with a `where`, `orderBy`, `fetch` and `return` builds and renders in about 10 µs, far below a network round trip. The library therefore does not cache rendered queries. To skip building altogether, build a query once and reuse it: builders are immutable, so a prebuilt query is safe to share and to execute repeatedly.
+
+The benchmarks in `benchmarks/` need no database. Run them with `bun run bench` (optionally a name filter, e.g. `bun run bench select`, and `--json file` to save the results).
 
 ## Development
 
@@ -1975,6 +1992,7 @@ bun run examples/demo.ts
 bun run test:unit          # Unit tests
 bun run test:integration   # Integration tests (requires SurrealDB)
 bun run type-check         # TypeScript type checking
+bun run bench              # Query construction benchmarks
 
 # Lint and format
 bun run qc   # Check for issues
