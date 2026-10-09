@@ -93,6 +93,9 @@ jobs:
       - name: Run unit tests
         run: bun run test:unit
 
+      - name: Check README examples
+        run: bun run test:readme
+
   integration-tests:
     name: Integration Tests (SurrealDB ${{ matrix.surrealdb_version }})
     runs-on: ubuntu-latest
