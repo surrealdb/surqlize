@@ -10,7 +10,12 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
-import { addSignal, applyRequestOptions, type RequestOptions } from "./request";
+import {
+	addSignal,
+	applyRequestOptions,
+	type RequestOptions,
+	withSdkDiagnosis,
+} from "./request";
 
 export type QueryResult<
 	E extends AbstractType,
@@ -226,9 +231,12 @@ export abstract class Query<
 	async execute() {
 		const ctx = displayContext();
 		const query = this[__display](ctx);
-		const [result] = await applyRequestOptions(
-			this[__ctx].orm.surreal.query<[this["type"]]>(query, ctx.variables),
-			this._request,
+		const { surreal } = this[__ctx].orm;
+		const [result] = await withSdkDiagnosis(surreal, () =>
+			applyRequestOptions(
+				surreal.query<[this["type"]]>(query, ctx.variables),
+				this._request,
+			),
 		);
 		return this.parseResult(result);
 	}

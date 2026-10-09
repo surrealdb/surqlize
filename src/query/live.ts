@@ -27,6 +27,7 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import type { JsonPatchOp } from "./modification-methods.ts";
+import { withSdkDiagnosis } from "./request.ts";
 import {
 	type FetchedSchema,
 	type FetchPaths,
@@ -400,9 +401,10 @@ export class LiveQuery<
 	/** Start the live query and resolve to a typed {@link LiveSubscription}. */
 	async execute(): Promise<LiveSubscription<V>> {
 		const resource = this.managedResource;
-		const inner = resource
-			? await this.registerManaged(resource)
-			: await this.registerUnmanaged();
+		const { surreal } = this[__ctx].orm;
+		const inner = await withSdkDiagnosis(surreal, () =>
+			resource ? this.registerManaged(resource) : this.registerUnmanaged(),
+		);
 
 		const type = this.entry;
 		const diff = this._diff;

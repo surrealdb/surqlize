@@ -1,8 +1,9 @@
-import type {
-	RetryValue,
+import {
+	type RetryValue,
 	SurrealRequestScope,
 	SurrealSession,
 } from "surrealdb";
+import { DuplicateSurrealError } from "../error";
 
 /**
  * The SDK handle an {@link Orm} sends its queries through: a session (`Surreal`
@@ -76,4 +77,53 @@ export function bindSignals(
 		bound = bound.withSignal(signal);
 	}
 	return bound;
+}
+
+/**
+ * What the server says when a subject was encoded as an empty object, which is
+ * what the SDK does with a `Table` it does not recognise.
+ */
+const EMPTY_SUBJECT = /Cannot execute \w+ statement using value:\s*\{\s*\}/;
+
+/**
+ * Whether `connection` is not made from the `surrealdb` package Surqlize
+ * imports, which means two copies are installed.
+ */
+function isForeignConnection(connection: unknown): boolean {
+	return !(
+		connection instanceof SurrealSession ||
+		connection instanceof SurrealRequestScope
+	);
+}
+
+/**
+ * Turn the failure a duplicated `surrealdb` install causes into a
+ * {@link DuplicateSurrealError} that names the cause. Any other error comes
+ * back as it was. The server's message alone is not enough to blame
+ * duplication, so it is paired with the connection not being ours.
+ */
+export function diagnoseSdkError(
+	connection: SurrealConnection,
+	error: unknown,
+): unknown {
+	if (
+		error instanceof Error &&
+		EMPTY_SUBJECT.test(error.message) &&
+		isForeignConnection(connection)
+	) {
+		return new DuplicateSurrealError({ cause: error });
+	}
+	return error;
+}
+
+/** Await `run`, translating a duplicate-install failure with {@link diagnoseSdkError}. */
+export async function withSdkDiagnosis<T>(
+	connection: SurrealConnection,
+	run: () => PromiseLike<T>,
+): Promise<T> {
+	try {
+		return await run();
+	} catch (error) {
+		throw diagnoseSdkError(connection, error);
+	}
 }

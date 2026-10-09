@@ -67,6 +67,22 @@ npm install surqlize
   versioned independently: the 2.x SDK is what connects to a 3.x server.)
 - **TypeScript 5 or 6** for full type inference.
 
+### One copy of `surrealdb`
+
+The connection you pass to surqlize and surqlize itself must resolve the **same
+copy** of the `surrealdb` package. The SDK encodes values with `instanceof`, so
+with two copies it fails to recognise the `Table` that surqlize binds as a
+query subject and sends an empty object, and the server answers with
+`Cannot execute CREATE statement using value: {  }`. surqlize detects this and
+throws a `DuplicateSurrealError` instead, which points back here.
+
+To fix it, check `npm ls surrealdb` (or `bun pm ls --all`), dedupe so a single
+version is installed (an `overrides` / `resolutions` entry helps), and avoid
+`file:` dependencies, which copy the package along with its own
+`node_modules`. In a symlinked setup where TypeScript reports `Property
+'#private' in type 'Surreal' refers to a different member`, set
+`preserveSymlinks: true`.
+
 ## Quick start
 
 ```typescript
