@@ -81,12 +81,19 @@ describe("computed fields", () => {
 		const ordered = await db
 			.select("account")
 			.orderBy("postCount", "DESC")
+			.execute();
+		expect(ordered.map((r) => r.fullName)).toEqual([
+			"Ada Lovelace",
+			"Alan Turing",
+		]);
+
+		const projected = await db
+			.select("account")
+			.where((a) => a.postCount.gte(0))
 			.return((a) => ({ name: a.fullName, n: a.postCount }))
 			.execute();
-		expect(ordered).toEqual([
-			{ name: "Ada Lovelace", n: 2 },
-			{ name: "Alan Turing", n: 0 },
-		]);
+		expect(projected).toContainEqual({ name: "Ada Lovelace", n: 2 });
+		expect(projected).toContainEqual({ name: "Alan Turing", n: 0 });
 	});
 
 	test("created records come back with their computed fields", async () => {

@@ -14,6 +14,13 @@ export * from "./query/create";
 export * from "./query/delete";
 export * from "./query/insert";
 export * from "./query/live";
+export type {
+	FieldCondition,
+	OperatorFilter,
+	OrderByObject,
+	OrderDirection,
+	WhereObject,
+} from "./query/object-filter";
 export * from "./query/relate";
 export type { SurrealConnection } from "./query/request";
 export * from "./query/select";

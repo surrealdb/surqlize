@@ -1,11 +1,6 @@
 import { escapeIdent, toSurqlString } from "surrealdb";
 import { OrmError } from "../error";
-import {
-	type AbstractType,
-	type ObjectType,
-	type RecordType,
-	t,
-} from "../types";
+import { type AbstractType, ObjectType, type RecordType, t } from "../types";
 import {
 	__ctx,
 	__display,
@@ -15,7 +10,10 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+import { type ModelClass, registerModelClass } from "../utils/model";
 import type { Orm } from "./orm";
+
+export type { ModelClass } from "../utils/model";
 
 /**
  * Marks a field type as a computed (read-only) field. The brand exists only at
@@ -58,14 +56,44 @@ type ComputedDefinition = {
 /** A record mapping field names (excluding `id`) to their type definitions. */
 export type TableFields = Record<Exclude<string, "id">, AbstractType>;
 
-type GetSchemaType<Tb extends string, Fd extends TableFields> = ObjectType<
-	Fd & { id: RecordType<Tb> }
->;
+/**
+ * The object type of a table linked to a class: rows parse into instances of
+ * the class, and the inferred type is the row fields plus the class instance.
+ */
+export class ModelType<
+	Fd extends Record<string, AbstractType> = Record<string, AbstractType>,
+	I = unknown,
+> extends ObjectType<Fd> {
+	declare infer: ObjectType<Fd>["infer"] & I;
+	declare accept: ObjectType<Fd>["accept"] & I;
 
-type GetInferType<Tb extends string, Fd extends TableFields> = GetSchemaType<
-	Tb,
-	Fd
->["infer"];
+	constructor(
+		fields: Fd,
+		readonly model: ModelClass,
+	) {
+		super(fields);
+	}
+
+	/** Parse a row, then hydrate it into an instance of the linked class. */
+	parse(value: unknown): this["infer"] {
+		const row = super.parse(value);
+		return Object.assign(Object.create(this.model.prototype), row);
+	}
+}
+
+type GetSchemaType<
+	Tb extends string,
+	Fd extends TableFields,
+	I = unknown,
+> = unknown extends I
+	? ObjectType<Fd & { id: RecordType<Tb> }>
+	: ModelType<Fd & { id: RecordType<Tb> }, I>;
+
+type GetInferType<
+	Tb extends string,
+	Fd extends TableFields,
+	I = unknown,
+> = GetSchemaType<Tb, Fd, I>["infer"];
 
 /**
  * Schema definition for a SurrealDB table. Automatically includes a typed `id`
@@ -74,18 +102,25 @@ type GetInferType<Tb extends string, Fd extends TableFields> = GetSchemaType<
  *
  * @typeParam Tb - The table name literal type.
  * @typeParam Fd - The user-defined fields for the table.
+ * @typeParam I - The instance type of the class linked to the table, if any.
  */
 export class TableSchema<
 	Tb extends string = string,
-	Fd extends TableFields = TableFields,
+	// biome-ignore lint/suspicious/noExplicitAny: widest default so any table is assignable to a bare `TableSchema`
+	Fd extends TableFields = any,
+	// biome-ignore lint/suspicious/noExplicitAny: ditto
+	I = any,
 > {
 	constructor(
 		public readonly tb: Tb,
 		public readonly _fields: Fd,
+		public readonly model?: ModelClass,
 		private readonly _computed: Readonly<
 			Record<string, ComputedDefinition>
 		> = {},
-	) {}
+	) {
+		if (model) registerModelClass(model);
+	}
 
 	/**
 	 * Add a computed field: a read-only field whose value SurrealDB derives from
@@ -121,7 +156,7 @@ export class TableSchema<
 		name: N extends "id" | keyof Fd ? never : N,
 		type: T,
 		expression: ComputedExpression<Tb, Fd, T>,
-	): TableSchema<Tb, Fd & { [K in N]: Computed<T> }> {
+	): TableSchema<Tb, Fd & { [K in N]: Computed<T> }, I> {
 		if (name === "id" || name in this._fields || name in this._computed) {
 			throw new OrmError(
 				`Field "${name}" is already defined on table "${this.tb}"`,
@@ -133,6 +168,7 @@ export class TableSchema<
 			{ ...this._fields, [name]: type } as unknown as Fd & {
 				[K in N]: Computed<T>;
 			},
+			this.model,
 			{
 				...this._computed,
 				[name]: { type, expression } as ComputedDefinition,
@@ -179,14 +215,16 @@ export class TableSchema<
 		} as Fd & { id: RecordType<Tb> } & {};
 	}
 
-	type = undefined as unknown as GetInferType<Tb, Fd>;
+	type = undefined as unknown as GetInferType<Tb, Fd, I>;
 
-	get schema(): GetSchemaType<Tb, Fd> {
-		return t.object(this.fields);
+	get schema(): GetSchemaType<Tb, Fd, I> {
+		return (this.model
+			? new ModelType(this.fields, this.model)
+			: t.object(this.fields)) as unknown as GetSchemaType<Tb, Fd, I>;
 	}
 
 	/** Type-guard that checks whether a value matches this table's schema. */
-	validate(value: unknown): value is GetInferType<Tb, Fd> {
+	validate(value: unknown): value is GetInferType<Tb, Fd, I> {
 		return this.schema.validate(value);
 	}
 }
@@ -197,6 +235,10 @@ export class TableSchema<
  *
  * @param tb - The table name.
  * @param fields - A record of field names to type definitions.
+ * @param model - Optionally, a class to link to the table. Rows read from the
+ *   table are then instances of the class (so its methods and getters are
+ *   available), and instances of it are accepted as record content. The class
+ *   constructor is not run when hydrating a row.
  * @returns A {@link TableSchema} instance.
  *
  * @example
@@ -211,6 +253,11 @@ export class TableSchema<
 export function table<
 	Tb extends string,
 	Fd extends Record<Exclude<string, "id">, AbstractType>,
->(tb: Tb extends string ? Tb : never, fields: Fd) {
-	return new TableSchema(tb, fields);
+	M extends ModelClass = never,
+>(
+	tb: Tb extends string ? Tb : never,
+	fields: Fd,
+	model?: M,
+): TableSchema<Tb, Fd, [M] extends [never] ? unknown : InstanceType<M>> {
+	return new TableSchema(tb, fields, model);
 }
