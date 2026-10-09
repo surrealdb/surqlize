@@ -1,6 +1,6 @@
 import { t } from "../../types";
 import type { Workable, WorkableContext } from "../../utils";
-import { standaloneFn } from "./internal";
+import { type ContextSource, standaloneFn } from "./internal";
 
 export const vector = {
 	add<C extends WorkableContext>(a: Workable<C>, b: Workable<C>) {
@@ -35,6 +35,14 @@ export const vector = {
 	},
 
 	// Distance functions
+
+	/**
+	 * The distance the KNN operator computed for the row in the same query
+	 * (`vector::distance::knn()`). Valid only in a query with a `knn()` predicate.
+	 */
+	distanceKnn<C extends WorkableContext>(source: ContextSource<C>) {
+		return standaloneFn(source, t.number(), "vector::distance::knn");
+	},
 
 	distanceChebyshev<C extends WorkableContext>(a: Workable<C>, b: Workable<C>) {
 		return standaloneFn(a, t.number(), "vector::distance::chebyshev", a, b);

@@ -466,6 +466,10 @@ const multiSort = db.select("user")
 const nestedSort = db.select("user")
   .orderBy(user => user.name.last, "ASC");
 
+// Order by an expression: any function or operator built from the typed builders
+const longestEmail = db.select("user")
+  .orderBy(user => user.email.len(), "DESC");
+
 // Numeric sorting
 const numericSort = db.select("user")
   .orderByNumeric("age", "DESC");
@@ -478,6 +482,10 @@ const collateSort = db.select("user")
 const objectSort = db.select("user")
   .orderBy({ age: "desc", name: { last: "asc" } });
 ```
+
+SurrealQL only sorts by a field path, so a callback that returns anything else (a function call, an operator, a standalone function) is sorted through an alias. The query selects `*` plus the expression as `__order_N` and drops it again with `OMIT`, so the rows come back with exactly the fields you expect. Field-path callbacks and field names render as plain `ORDER BY` terms, as before.
+
+An expression sort cannot be combined with `.return()`: a returned object would have to carry the sort key, so that combination throws an `OrmError` when the query is built. Compute the value in `.return()` and sort the results in your code, or sort by a field.
 
 #### Grouping with GROUP BY
 
@@ -1617,6 +1625,38 @@ export default {
   },
 };
 ```
+
+### Vector search (KNN)
+
+Fields declared as `t.array(t.number())` are vectors, and expose `.knn()`, which renders SurrealQL's KNN operator `<|k,…|>`. It composes with `.where()` like any other condition:
+
+```typescript
+import { vector } from "surqlize";
+
+const doc = table("doc", {
+  title: t.string(),
+  embedding: t.array(t.number()),
+});
+
+// Brute force over a metric: the k nearest rows, nearest first
+const nearest = db.select("doc")
+  .where(d => d.embedding.knn(query, 5, { metric: "COSINE" }))
+  .orderBy(d => vector.distanceKnn(d), "ASC");
+
+// Through an HNSW index (or DiskANN with its L value): the search width ef
+const approx = db.select("doc")
+  .where(d => d.embedding.knn(query, 5, { ef: 40 }));
+```
+
+- `query` is a `number[]` or any expression of the same type. It is sent as a bound parameter.
+- `k` must be a positive integer. The metric is one of `"EUCLIDEAN"`, `"COSINE"`, `"MANHATTAN"` or `"CHEBYSHEV"`; `ef` must be a positive integer. Anything else throws an `OrmError` before the query is sent, since these values are written into the query text.
+- A metric and an `ef` are both required: SurrealQL has no bare `<|k|>` form (SurrealDB 3.2 rejects it).
+- `knn()` exists only on `array<number>` fields. Calling it on another type is a compile-time error.
+- The HNSW form needs an index on the field, for example `DEFINE INDEX doc_embedding ON doc FIELDS embedding HNSW DIMENSION 3 DIST EUCLIDEAN`. Define it yourself; the library does not create indexes.
+- The distance the operator computed is available as `vector.distanceKnn(row)`, which renders `vector::distance::knn()`. It is only meaningful in a query that has a `knn()` predicate, and it can be used in `.return()` and in `.orderBy()`.
+- `knn()` is a predicate. Using it as a value in `.return()` is not supported.
+
+Other conditions combine with it through `and()`, as usual. SurrealDB decides how they interact with the `k` nearest rows, so do not assume exactly `k` rows come back when a second condition is present.
 
 ### Operators
 
