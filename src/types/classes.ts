@@ -54,11 +54,12 @@ export abstract class AbstractType<T = unknown> {
 	/** The default applied on create when the field is absent. See {@link default}. */
 
 	/**
-	 * Give this field a default, applied by CREATE/INSERT when the field is
-	 * omitted (or `undefined`). The field becomes optional in create input while
-	 * its output type is unchanged. Accepts a static value, a function (e.g.
-	 * `() => new Date()`, evaluated per query), or an {@link expr} SurrealQL
-	 * expression evaluated by the database.
+	 * Give this field a default, applied by CREATE, INSERT and RELATE when the
+	 * field is omitted. `.content()`, `.merge()` and INSERT also apply it when the
+	 * key is `undefined`; `.set()` does not, because the key was supplied. The
+	 * field becomes optional in create input while its output type is unchanged.
+	 * Accepts a static value, a function (e.g. `() => new Date()`, evaluated per
+	 * query), or an {@link expr} SurrealQL expression evaluated by the database.
 	 *
 	 * Returns a copy; the original type is left untouched.
 	 */
@@ -126,6 +127,33 @@ export class NumberType extends AbstractType<number> {
 
 	validate(value: unknown): value is this["infer"] {
 		return typeof value === "number";
+	}
+}
+
+/**
+ * An integer too large for a JS `number` to hold exactly, such as the
+ * nanoseconds `time::nano()` returns. The SDK decodes those as `bigint`.
+ */
+export class BigIntType extends AbstractType<bigint> {
+	name = "bigint" as const;
+	expected = "bigint";
+
+	validate(value: unknown): value is this["infer"] {
+		return typeof value === "bigint";
+	}
+
+	/**
+	 * Return `value` as a `bigint`. A safe integer the SDK decoded as a `number`
+	 * (a small value, such as a date near the epoch) is converted, so the result
+	 * always has the declared type.
+	 *
+	 * @throws {TypeParseError} If `value` is neither a `bigint` nor a safe integer.
+	 */
+	parse(value: unknown): this["infer"] {
+		if (typeof value === "number" && Number.isSafeInteger(value)) {
+			return BigInt(value);
+		}
+		return super.parse(value);
 	}
 }
 

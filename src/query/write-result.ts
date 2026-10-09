@@ -44,18 +44,28 @@ export type FullWrite = {
  * `undefined`. A key that is optional, or may be `undefined`, may be absent from
  * the record.
  */
-type Definite<D> = {
-	// biome-ignore lint/complexity/noBannedTypes: `{}` here means any object type with no required keys, which is the point of the check
-	[K in keyof D]-?: {} extends Pick<D, K>
-		? never
-		: undefined extends D[K]
+type Definite<D> = Exclude<
+	{
+		// biome-ignore lint/complexity/noBannedTypes: `{}` here means any object type with no required keys, which is the point of the check
+		[K in keyof D]-?: {} extends Pick<D, K>
 			? never
-			: K;
-}[keyof D] &
-	string;
+			: undefined extends D[K]
+				? never
+				: K;
+	}[keyof D] &
+		string,
+	`${string}.${string}`
+>;
+
+/**
+ * The top-level field a dotted key (`"name.first"`) writes into. Setting only
+ * part of a nested object leaves the rest as it was, so the field itself is
+ * only a maybe.
+ */
+type RootOf<K extends string> = K extends `${infer Root}.${string}` ? Root : K;
 
 /** The keys of `D` that may be absent from the record: see {@link Definite}. */
-type Maybe<D> = Exclude<keyof D & string, Definite<D>>;
+type Maybe<D> = RootOf<Exclude<keyof D & string, Definite<D>>>;
 
 /**
  * The shape after `D` is written with `mode`, keeping what was written before.
@@ -107,7 +117,9 @@ type Guaranteed<
 	| (W["mode"] extends "set"
 			? K extends "update"
 				? never
-				: OptionKeys<S> | (K extends "create" ? DefaultKeys<S, W> : never)
+				:
+						| OptionKeys<S>
+						| (K extends "create" | "relate" ? DefaultKeys<S, W> : never)
 			: never)
 	| (W["mode"] extends "replace"
 			? K extends "update"

@@ -15,9 +15,7 @@ import { withTestDb } from "./setup";
 
 /**
  * Executes the README examples that query SurrealDB, so the prose and the code
- * agree at runtime. The type-level half is in tests/readme. Examples that hit a
- * tracked library bug are `knownBug` (`test.failing`): they fail today, and they
- * start to fail, so the marker gets removed, once the bug is fixed.
+ * agree at runtime. The type-level half is in tests/readme.
  */
 
 const user = table("user", {
@@ -52,9 +50,6 @@ const seedGraph = async ({ surreal }: { surreal: Surreal }) => {
 
 /** The table a record id belongs to, as its name. */
 const tableOf = (id: RecordId) => id.table.name;
-
-/** `test.failing` runs in Bun, but the bundled `bun-types` do not declare it yet. */
-const knownBug = (test as unknown as { failing: typeof test }).failing;
 
 describe("README: graph traversal", () => {
 	const getTestDb = withTestDb({ setup: seedGraph });
@@ -171,43 +166,34 @@ describe("README: aggregates under groupAll", () => {
 		expect(result).toEqual([{ total: 3 }]);
 	});
 
-	// Known bug: a field inside a GROUP ALL projection is rendered as `$this.field`,
-	// which SurrealDB rejects ("$this ... group by select statement"). Remove `.failing`
-	// when the README's aggregates run.
-	knownBug(
-		"math.mean, math.sum, math.max and count with a condition under groupAll",
-		async () => {
-			const db = orm(getTestDb().surreal, ...graphSchema);
+	test("math.mean, math.sum, math.max and count with a condition under groupAll", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
 
-			const result = await db
-				.select("user")
-				.groupAll()
-				.return((user) => ({
-					total: count(user),
-					adults: count(user, user.age.gte(18)),
-					avgAge: math.mean(user.age),
-					totalAge: math.sum(user.age),
-					maxAge: math.max(user.age),
-				}))
-				.execute();
+		const result = await db
+			.select("user")
+			.groupAll()
+			.return((user) => ({
+				total: count(user),
+				adults: count(user, user.age.gte(18)),
+				avgAge: math.mean(user.age),
+				totalAge: math.sum(user.age),
+				maxAge: math.max(user.age),
+			}))
+			.execute();
 
-			const [agg] = result;
-			expect(agg?.total).toBe(3);
-			expect(agg?.adults).toBe(3);
-			expect(agg?.avgAge).toBeCloseTo(95 / 3);
-			expect(agg?.totalAge).toBe(95);
-			expect(agg?.maxAge).toBe(40);
-		},
-	);
+		const [agg] = result;
+		expect(agg?.total).toBe(3);
+		expect(agg?.adults).toBe(3);
+		expect(agg?.avgAge).toBeCloseTo(95 / 3);
+		expect(agg?.totalAge).toBe(95);
+		expect(agg?.maxAge).toBe(40);
+	});
 });
 
 describe("README: chained .where()", () => {
 	const getTestDb = withTestDb({ setup: seedGraph });
 
-	// Known gap: a second where() replaces the first (`_filter` is overwritten), so
-	// the first condition is silently dropped. The README does not promise either
-	// behaviour; this asserts AND, and needs a decision (AND, or documented replace).
-	knownBug("chained where() calls are AND-ed together", async () => {
+	test("chained where() calls are AND-ed together", async () => {
 		const db = orm(getTestDb().surreal, ...graphSchema);
 
 		const rows = await db
@@ -220,21 +206,18 @@ describe("README: chained .where()", () => {
 		expect(rows.map((u) => u.name)).toEqual(["Alice"]);
 	});
 
-	// Same known gap as above, with an object filter: `age >= 26` excludes Bob, so AND gives nothing.
-	knownBug(
-		"a fluent where() followed by an object where() is AND-ed",
-		async () => {
-			const db = orm(getTestDb().surreal, ...graphSchema);
+	// `age >= 26` excludes Bob, so AND with an object filter on Bob's name gives nothing.
+	test("a fluent where() followed by an object where() is AND-ed", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
 
-			const rows = await db
-				.select("user")
-				.where((u) => u.age.gte(26))
-				.where({ name: "Bob" })
-				.execute();
+		const rows = await db
+			.select("user")
+			.where((u) => u.age.gte(26))
+			.where({ name: "Bob" })
+			.execute();
 
-			expect(rows).toEqual([]);
-		},
-	);
+		expect(rows).toEqual([]);
+	});
 });
 
 describe("README: compound conditions and object filters", () => {
@@ -351,21 +334,17 @@ describe("README: compound conditions and object filters", () => {
 describe("README: select().timeout", () => {
 	const getTestDb = withTestDb({ setup: seedGraph });
 
-	// Known bug: `.timeout()` on a select does not run. Remove `.failing` when it does.
-	knownBug(
-		"select().where().timeout('5s') returns the matching rows",
-		async () => {
-			const db = orm(getTestDb().surreal, ...graphSchema);
+	test("select().where().timeout('5s') returns the matching rows", async () => {
+		const db = orm(getTestDb().surreal, ...graphSchema);
 
-			const rows = await db
-				.select("user")
-				.where((u) => u.age.gt(18))
-				.timeout("5s")
-				.execute();
+		const rows = await db
+			.select("user")
+			.where((u) => u.age.gt(18))
+			.timeout("5s")
+			.execute();
 
-			expect(rows).toHaveLength(3);
-		},
-	);
+		expect(rows).toHaveLength(3);
+	});
 });
 
 describe("README: RELATE", () => {
@@ -385,9 +364,7 @@ describe("README: RELATE", () => {
 		expect(edge?.role).toBe("author");
 	});
 
-	// Known bug: relate() without content() returns the edge, but its required fields
-	// (created) are missing from the row, so reading it back fails to parse.
-	knownBug("relate() without content() returns the edge", async () => {
+	test("relate() without content() returns the edge", async () => {
 		const db = orm(getTestDb().surreal, ...graphSchema);
 
 		const edges = await db.relate(
@@ -792,5 +769,54 @@ describe("README: per-query validation opt-out", () => {
 			new RecordId("user", "unchecked"),
 		);
 		expect(stored).toMatchObject({ name: 42 });
+	});
+});
+
+describe("README: insert with an id, then ON DUPLICATE KEY UPDATE", () => {
+	const getTestDb = withTestDb({ perTest: true });
+
+	test("a RecordId id inserts, and a second insert updates on conflict", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, user).validated();
+
+		await db.insert("user", {
+			id: new RecordId("user", "alice"),
+			name: "Alice",
+			email: "alice@example.com",
+			age: 30,
+		});
+		await db
+			.insert("user", {
+				id: new RecordId("user", "alice"),
+				name: "Alice",
+				email: "alice@example.com",
+				age: 30,
+			})
+			.onDuplicate({ age: { "+=": 1 } });
+
+		const stored = await surreal.select<{ age: number }>(
+			new RecordId("user", "alice"),
+		);
+		expect(stored).toMatchObject({ age: 31 });
+	});
+
+	test("a string id is rejected by validation, since an id is a RecordId", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, user).validated();
+
+		const error = await db
+			.insert("user", {
+				// A string is not a RecordId, so the id is rejected at runtime.
+				id: "alice",
+				name: "Alice",
+				email: "alice@example.com",
+				age: 30,
+			})
+			.then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+
+		expect(error).toBeInstanceOf(ValidationError);
 	});
 });

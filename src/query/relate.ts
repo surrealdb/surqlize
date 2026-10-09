@@ -24,6 +24,7 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query, type QueryResult } from "./abstract.ts";
+import { schemaDefaults, withDefaults } from "./defaults.ts";
 import {
 	applyContent,
 	applyMerge,
@@ -187,16 +188,9 @@ export class RelateQuery<
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
-	return(
-		cb: (record: Actionable<C, WriteRow<E, W, "relate">>) => Inheritable<C>,
-	): RelateQuery<
-		O,
-		C,
-		Edge,
-		InheritableIntoType<C, ReturnType<typeof cb>>,
-		Only,
-		FullWrite
-	>;
+	return<P extends Inheritable<C>>(
+		cb: (record: Actionable<C, WriteRow<E, W, "relate">>) => P,
+	): RelateQuery<O, C, Edge, InheritableIntoType<C, P>, Only, FullWrite>;
 	return(
 		value:
 			| "none"
@@ -270,7 +264,12 @@ export class RelateQuery<
 
 		let query = /* surql */ `RELATE ${this._only ? "ONLY " : ""}${fromStr}->${edgeTable}->${toStr}`;
 
-		query += displayModificationClause(this, ctx);
+		// Like CREATE, RELATE applies the edge's declared defaults, so the stored
+		// edge has every defaulted field its result type promises.
+		query += displayModificationClause(
+			withDefaults(this, schemaDefaults(this.schema)),
+			ctx,
+		);
 
 		if (this._return) {
 			if (typeof this._return === "string") {

@@ -42,7 +42,8 @@ describe("ORDER BY an expression", () => {
 	test("field-path callbacks still render as plain idioms and are not hoisted", () => {
 		const { sql } = render(db.select("doc").orderBy((d) => d.name.last, "ASC"));
 
-		expect(sql).toContain("ORDER BY $this.name.last ASC");
+		expect(sql).toContain("ORDER BY name.last ASC");
+		expect(sql).not.toContain("$this");
 		expect(sql).not.toContain("__order_");
 		expect(sql).toContain("SELECT * FROM");
 	});

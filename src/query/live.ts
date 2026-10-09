@@ -319,11 +319,32 @@ export class LiveQuery<
 		}) as unknown as LiveQuery<O, C, T, E, JsonPatchOp[]>;
 	}
 
+	/** Whether the subject is a single record rather than a table. */
+	private get isRecordSubject(): boolean {
+		return typeof this.subject !== "string";
+	}
+
+	/**
+	 * The table a live query reads. SurrealDB rejects `LIVE SELECT ... FROM
+	 * user:n1` ("Cannot execute LIVE statement using value"), so a record subject
+	 * selects its table and is filtered by id instead (see {@link recordFilter}).
+	 */
 	private displaySubject(ctx: DisplayContext): string {
 		if (typeof this.subject === "string")
 			return ctx.var(new Table(this.subject));
+		if (this.isRecordSubject && typeof this.tb === "string")
+			return ctx.var(new Table(this.tb));
 		if (isWorkable(this.subject)) return this.subject[__display](ctx);
 		return ctx.var(this.subject);
+	}
+
+	/** The `id = …` condition that selects a record subject, if there is one. */
+	private recordFilter(ctx: DisplayContext): string | undefined {
+		if (!this.isRecordSubject || typeof this.tb !== "string") return undefined;
+		const id = isWorkable(this.subject)
+			? this.subject[__display](ctx)
+			: ctx.var(this.subject);
+		return `id = ${id}`;
 	}
 
 	[__display](inp: DisplayContext): string {
@@ -333,6 +354,7 @@ export class LiveQuery<
 		});
 
 		const thing = this.displaySubject(ctx);
+		const recordFilter = this.recordFilter(ctx);
 
 		const projection = this._diff
 			? "DIFF"
@@ -342,7 +364,10 @@ export class LiveQuery<
 
 		let query = /* surql */ `LIVE SELECT ${projection} FROM ${thing}`;
 
-		if (this._filter)
+		if (recordFilter && this._filter)
+			query += /* surql */ ` WHERE ${recordFilter} AND (${this._filter[__display](ctx)})`;
+		else if (recordFilter) query += /* surql */ ` WHERE ${recordFilter}`;
+		else if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
 		if (this._fetch && this._fetch.length > 0)

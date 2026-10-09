@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	LiveSubscriptionError,
 	NotFoundError,
+	RecordId,
 	Surreal,
 	type SurrealSession,
 	Table,
@@ -34,6 +35,25 @@ describe("LIVE SELECT queries", () => {
 
 		expect(result).toContain("LIVE SELECT * FROM");
 		expect(Object.values(ctx.variables)).toContainEqual(new Table("user"));
+	});
+
+	test("a record subject selects its table and filters by id", () => {
+		const query = db.live(new RecordId("user", "n1"));
+		const ctx = displayContext();
+		const sql = query[__display](ctx);
+
+		expect(sql).toMatch(/^LIVE SELECT \* FROM \$\w+ WHERE id = \$\w+$/);
+		expect(Object.values(ctx.variables)).toContainEqual(new Table("user"));
+		expect(Object.values(ctx.variables)).toContainEqual(
+			new RecordId("user", "n1"),
+		);
+	});
+
+	test("a record subject combined with a where() keeps both conditions", () => {
+		const query = db.live("user", "n1").where(($this) => $this.age.gt(18));
+		const sql = query[__display](displayContext());
+
+		expect(sql).toMatch(/WHERE id = \$\w+ AND \(\$this\.age > \$\w+\)$/);
 	});
 
 	test("generates LIVE SELECT with WHERE", () => {

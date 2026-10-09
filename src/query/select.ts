@@ -639,7 +639,12 @@ export class SelectQuery<
 				hoisted.push({ alias, sql: spec.field[__display](ctx) });
 				part = alias;
 			} else {
-				part = spec.field[__display](ctx);
+				// A field path is a bare idiom here: SurrealQL rejects `$this.field`
+				// in ORDER BY, so the row is named by its fields alone.
+				part = spec.field[__display]({
+					...ctx,
+					bareRowsOf: this[__ctx].id,
+				});
 			}
 
 			if (spec.collate) part += " COLLATE";
