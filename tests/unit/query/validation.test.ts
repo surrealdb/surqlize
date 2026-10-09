@@ -239,7 +239,7 @@ describe("opt-in validation of writes", () => {
 		).not.toThrow();
 	});
 
-	test("merge and upsert content are partial", () => {
+	test("update and upsert merge are partial; content replaces the record and must be complete", () => {
 		expect(() => db.update("user").merge({ age: 1 }).prepare()).not.toThrow();
 		expect(() =>
 			db
@@ -247,8 +247,44 @@ describe("opt-in validation of writes", () => {
 				.merge({ age: "1" } as never)
 				.prepare(),
 		).toThrow(ValidationError);
-		expect(() =>
+		// CONTENT replaces the whole record, and an upsert does not fill defaults,
+		// so every required field and defaulted field it leaves out is an issue.
+		const issues = issuesOf(() =>
 			db.upsert("user", 1).content({ age: 1 }).prepare(),
+		);
+		expect(issues.map((i) => i.path)).toEqual([
+			"name",
+			"role",
+			"address",
+			"tags",
+			"born",
+		]);
+		expect(() =>
+			db
+				.upsert("user", 1)
+				.content({ ...valid, role: "member", born: new Date() })
+				.prepare(),
+		).not.toThrow();
+	});
+
+	test("a new record's SET or MERGE must give every required field", () => {
+		const issues = issuesOf(() =>
+			db.create("user").set({ name: "Ada" }).prepare(),
+		);
+		expect(issues.map((i) => i.path)).toEqual(["age", "address", "tags"]);
+		expect(issues.map((i) => i.message)).toContain(
+			"age: required field is not set",
+		);
+		expect(() =>
+			db
+				.create("user")
+				.set({
+					name: "Ada",
+					age: 1,
+					address: { city: "x", zip: undefined },
+					tags: [],
+				})
+				.prepare(),
 		).not.toThrow();
 	});
 
@@ -277,8 +313,14 @@ describe("opt-in validation of writes", () => {
 				.content({ since: "x" })
 				.prepare(),
 		).toThrow(ValidationError);
-		expect(() =>
+		// RELATE does not fill defaults, so `note` must be given, or the stored edge
+		// could not be read back.
+		const issues = issuesOf(() =>
 			db.relate("knows", a, b).content({ since: 1 }).prepare(),
+		);
+		expect(issues.map((i) => i.path)).toEqual(["note"]);
+		expect(() =>
+			db.relate("knows", a, b).content({ since: 1, note: "" }).prepare(),
 		).not.toThrow();
 	});
 

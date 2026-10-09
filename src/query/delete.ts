@@ -21,6 +21,14 @@ import { Query, type QueryResult } from "./abstract.ts";
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 import { andWhere } from "./utils.ts";
+import type { NoWrite, WriteRow } from "./write-result.ts";
+
+/**
+ * The rows a DELETE returns from the stored record. A record can be partial (a
+ * write may leave out required fields, see `WriteRow`), and the delete has
+ * already committed by the time the row is read. So only the id is guaranteed.
+ */
+type StoredRow<E extends AbstractType> = WriteRow<E, NoWrite, "update">;
 
 /**
  * A fluent DELETE query builder. Supports WHERE, RETURN, and TIMEOUT clauses.
@@ -46,6 +54,9 @@ export class DeleteQuery<
 			orm,
 			id: Symbol(),
 		} as C;
+		// The rows a DELETE returns are read after the delete has committed, so
+		// they are parsed leniently, as the other write queries are.
+		this._lenient = true;
 
 		this.subject = subject;
 
@@ -113,27 +124,35 @@ export class DeleteQuery<
 		});
 	}
 
-	return(mode: "none" | "before" | "after" | "diff"): this;
+	/** Return the deleted rows, typed as the stored records (see `StoredRow`). */
+	return(mode: "before" | "after"): DeleteQuery<O, C, T, StoredRow<E>, Only>;
+	return(mode: "none" | "diff"): this;
+	/** A mode chosen at run time: the rows are typed as the broadest of the modes. */
+	return(
+		mode: "none" | "before" | "after" | "diff",
+	): DeleteQuery<O, C, T, StoredRow<E>, Only>;
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): DeleteQuery<O, C, T, R, Only>;
+	>(cb: (tb: Actionable<C, StoredRow<E>>) => P): DeleteQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
 			| "before"
 			| "after"
 			| "diff"
-			| ((tb: Actionable<C, E>) => Inheritable<C>),
-	): this {
+			| ((tb: Actionable<C, StoredRow<E>>) => Inheritable<C>),
+	): unknown {
 		if (typeof value === "function") {
+			// In a DELETE's RETURN VALUE `$this` is NONE, so the deleted record is
+			// read as `$before`.
 			const tb = actionable({
 				[__ctx]: this[__ctx],
 				[__type]: this.schema,
 				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$this" : "$parent";
+					return contextId === this[__ctx].id ? "$before" : "$parent";
 				},
-			}) as Actionable<C, E>;
+			}) as Actionable<C, StoredRow<E>>;
 
 			const predicable = value(tb);
 			const workable = inheritableIntoWorkable<C, typeof predicable>(

@@ -647,7 +647,7 @@ Use `.content()` when you want the compiler to enforce required fields. With [ru
 
 #### What a partial write returns
 
-A write that does not supply the whole record still succeeds, and returns only the fields it knows are present. The record is stored as written, so a required field left unset stays unset, and the query does not throw after the write has committed. The result type follows what was written:
+A write that does not supply the whole record still succeeds, and returns only the fields it knows are present. The record is stored as written, so a required field left unset stays unset, and the query does not throw after the write has committed. With [runtime validation](#runtime-validation) on (`validated()`), a new record must still supply its required fields, and the write is rejected before it is sent. The result type follows what was written:
 
 | Write | Fields the returned row is typed with |
 | --- | --- |
@@ -661,13 +661,16 @@ A write that does not supply the whole record still succeeds, and returns only t
 | `update()` / `upsert()` `.set()` / `.merge()` | `id` and the fields written. The other fields may already be stored, so they are optional |
 | `update()` / `upsert()` `.content()` / `.replace()` | `id` and the fields written. The record is replaced, so no other field remains |
 | `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
-| `delete()` and `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
+| `delete()` with `RETURN BEFORE` / `AFTER` or a projection | `id`; every other field is optional. The record may have been stored partially, and it is deleted before the row is read |
+| `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
 
 A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied.
 
 `.unset()` removes the unset fields from the result type. A `.return((row) => …)` projection only sees the fields the row is typed with, so it cannot read a field the write did not set. Inserts with `.onDuplicate()` return rows that may have been updated rather than inserted, so only `id` is required for those.
 
 ```typescript
+import { t, table } from "surqlize";
+
 const user = table("user", {
   name: t.string(),
   email: t.string(),
@@ -939,7 +942,8 @@ const deleted = await db
   .delete("user", "alice")
   .only()
   .return("before");
-// deleted: User  (not User[])
+// deleted: one row, typed as described in "What a partial write returns" (not an array).
+// Only `id` is guaranteed: the stored record may be partial.
 ```
 
 ## Runtime validation
@@ -964,22 +968,30 @@ await db.create("user").content({ name: 42, address: { city: 1 }, tags: ["a", 2]
 
 A single query can opt in or out with `.validated()` / `.validated(false)`. Validation also applies in batches, inside transactions, to `.prepare()`, and survives `withSignal()`.
 
+**`validated()` is needed to stop incomplete records being stored.** Without it, `db.create("user").set({ name: "Ada" })` on a table with a required `email` stores the record without `email`, and the write returns. A later `db.select("user")` of that record throws `TypeParseError`, because the record cannot be parsed. With `validated()`, the same write throws `ValidationError` (`email: required field is not set`) before anything is sent. The ORM does not check for incomplete records when validation is off.
+
 `ValidationError` extends `OrmError`. It does not stop at the first problem: `error.issues` lists every failing field as `{ path, expected, received, message }`, where `path` looks like `address.city` or `tags[1]` (or `[2].age` for the third row of an `insert`), and `error.table` names the table.
 
 ### What is checked
 
 | Data | Checked as |
 | --- | --- |
-| `create().content()`, `insert()` rows, `relate().content()` | the full input: every field must be present and valid, except `option<...>` fields, fields with a `.default()`, and `id` (and `in` / `out` on edges) |
-| `update` / `upsert` `.content()`, `.merge()`, `.replace()` | a partial record: only the fields present are checked |
-| `.set()`, `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
+| `create().content()`, `create().set()`, `create().merge()`, `insert()` rows | the new record: every required field must be present and valid. `option<...>` fields, fields with a `.default()` (CREATE and INSERT fill them), and `id` are not required |
+| `create().replace()` | the new record: every required field must be present. REPLACE does not fill defaults, so fields with a `.default()` are required too |
+| `relate().content()`, `.set()`, `.merge()`, `.replace()` | the new edge: every required field must be present, including fields with a `.default()`, since RELATE does not fill defaults. `id`, `in` and `out` are not required |
+| `update` / `upsert` `.content()`, `.replace()` | the whole record, which replaces the stored one: every required field must be present, including fields with a `.default()`, since neither fills defaults |
+| `update` / `upsert` `.set()`, `.merge()` | each supplied field, including dotted paths such as `"address.city"` for `.set()`. The stored fields are kept, so a missing field is not an error |
+| `.set()` and `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
+| `.patch()` | not checked |
+
+A required field is one the schema does not mark `option<...>` and that the write does not supply. A field passed as `undefined` counts as not supplied.
 
 - Nested objects, arrays, tuples, unions, record links (including the linked table) and tables linked to a class are all checked.
 - **Computed fields are read-only**: supplying a value for one is an issue.
 - Fields the schema does not declare are ignored, and so are `.patch()` operations.
 - Values SurrealDB evaluates itself, such as `expr(...)` defaults and subquery expressions, are not checked client-side.
 - Validation never changes your data: what is checked is what is sent. Defaults are still filled in by the query as before.
-- A partial write (`.set()`, `.merge()`, `.replace()` or `.patch()` on `create`, and the partial writes of `update`, `upsert` and `relate`) is not required to supply every field. Its result is typed to match, as described in [What a partial write returns](#what-a-partial-write-returns), so the missing required fields are not reported as an error. A value that is supplied is still checked.
+- The result of a partial write is typed to match what was written, as described in [What a partial write returns](#what-a-partial-write-returns). Under validation, a new record (`create`, `relate`) must still be given every required field, as the table above says, so `create().set({ name })` on a table with a required `email` is rejected even though its result type leaves `email` out. A value that is supplied is always checked.
 
 ### Validating data yourself
 
@@ -1482,7 +1494,7 @@ Additional date functions include `week`, `micros`, `nano`, and rounding functio
 
 When working with optional values (created with `t.option()`), you can use `map()` to transform the value if it exists:
 
-```typescript known-bug
+```typescript
 import { t, table } from "surqlize";
 const user = table("user", {
   name: t.string(),

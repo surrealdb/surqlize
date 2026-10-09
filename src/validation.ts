@@ -34,6 +34,13 @@ export type CheckOptions = {
 	implicit?: readonly string[];
 	/** Read-only fields: supplying a value for one is an issue. */
 	computed?: readonly string[];
+	/**
+	 * Whether the write fills the `.default()` of a field it leaves out. CREATE
+	 * does (for SET, MERGE, CONTENT and an empty create); REPLACE, RELATE and
+	 * UPDATE do not. Defaults the write does not fill are required. Defaults to
+	 * `true`, which is what a plain CREATE or INSERT does.
+	 */
+	fills?: boolean;
 };
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -104,7 +111,7 @@ function mayBeMissing(
 	if (options?.mode === "update") return true;
 	if (options?.mode === "create" && options.implicit?.includes(key))
 		return true;
-	return hasDefault(field);
+	return hasDefault(field) && (options?.fills ?? true);
 }
 
 function collectObject(
@@ -249,6 +256,43 @@ export function checkSet(
 		} else if (raw !== undefined || !hasDefault(type)) {
 			collect(type, raw, key, issues);
 		}
+	}
+	return issues;
+}
+
+/**
+ * The required fields a new record is missing. `written` is the set of
+ * top-level fields the write sets. A field is not required if it accepts
+ * `undefined`, is implicit or computed, or has a `.default()` that the write
+ * fills (see {@link CheckOptions.fills}).
+ */
+export function checkRequired(
+	schema: ObjectType,
+	written: ReadonlySet<string>,
+	options: {
+		implicit?: readonly string[];
+		computed?: readonly string[];
+		fills: boolean;
+	},
+): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	const fields = schema.schema as Record<string, AbstractType>;
+	for (const key in fields) {
+		const field = fields[key] as AbstractType;
+		if (
+			written.has(key) ||
+			options.implicit?.includes(key) ||
+			options.computed?.includes(key) ||
+			(options.fills && hasDefault(field)) ||
+			field.validate(undefined)
+		)
+			continue;
+		issues.push({
+			path: key,
+			expected: expectedOf(field),
+			received: undefined,
+			message: `${key}: required field is not set`,
+		});
 	}
 	return issues;
 }

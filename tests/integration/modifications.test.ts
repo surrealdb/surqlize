@@ -265,7 +265,7 @@ describe("Modification methods integration tests", () => {
 				.return("before")
 				.execute();
 
-			expect(result[0]!.name.first).toBe("Delete");
+			expect(result[0]!.name?.first).toBe("Delete");
 		});
 	});
 
