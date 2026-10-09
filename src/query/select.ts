@@ -31,6 +31,12 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import { Query, type QueryResult } from "./abstract.ts";
+import {
+	type OrderByObject,
+	orderFromObject,
+	type WhereObject,
+	whereFromObject,
+} from "./object-filter.ts";
 import { type ResolveEntry, resolveSubjectSchema } from "./subject.ts";
 import { escapeIdiomPath } from "./utils.ts";
 
@@ -293,18 +299,43 @@ export class SelectQuery<
 		}) as unknown as SelectQuery<O, C, T, R, Only>;
 	}
 
+	/**
+	 * Filter rows. Takes either a callback building the condition from the row,
+	 * or a plain filter object (`{ name: "x", age: { gt: 18 } }`) that compiles to
+	 * the same condition — see {@link WhereObject}.
+	 */
 	where(
 		cb: (
 			tb: Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
 				RowTraversal<C, T>,
 		) => Workable<C>,
-	) {
+	): this;
+	where(filter: WhereObject<C, ResolveEntry<O["tables"][T]["schema"]>>): this;
+	where(
+		input:
+			| ((
+					tb: Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
+						RowTraversal<C, T>,
+			  ) => Workable<C>)
+			| WhereObject<C, ResolveEntry<O["tables"][T]["schema"]>>,
+	): this {
 		const tb = this.rowActionable(
 			resolveSubjectSchema(this[__ctx].orm, this.tb),
 		) as Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
 			RowTraversal<C, T>;
 
-		const filter = sanitizeWorkable(cb(tb));
+		const condition =
+			typeof input === "function"
+				? input(tb)
+				: whereFromObject(tb as unknown as Workable<C>, input);
+		// An object filter that imposes no condition leaves the query unfiltered.
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
+
+		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
 		});
@@ -352,6 +383,12 @@ export class SelectQuery<
 		});
 	}
 
+	/**
+	 * Sort rows by a field name, a callback returning a field, or an object of
+	 * `{ field: "asc" | "desc" }` pairs (nested objects sort by nested fields) —
+	 * see {@link OrderByObject}. Calls accumulate, so object and fluent forms can
+	 * be chained.
+	 */
 	orderBy(
 		field:
 			| FieldKeys<O, T>
@@ -359,7 +396,26 @@ export class SelectQuery<
 					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
 			  ) => Workable<C>),
 		direction?: "ASC" | "DESC",
+	): this;
+	orderBy(sort: OrderByObject<C, ResolveEntry<E>>): this;
+	orderBy(
+		field:
+			| FieldKeys<O, T>
+			| ((
+					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
+			  ) => Workable<C>)
+			| OrderByObject<C, ResolveEntry<E>>,
+		direction?: "ASC" | "DESC",
 	): this {
+		if (typeof field === "object" && field !== null) {
+			const specs = orderFromObject(
+				this.rowActionable(this.entry) as unknown as Workable<C>,
+				field,
+			);
+			return this.derive((next) => {
+				next._orderBy = [...(next._orderBy ?? []), ...specs];
+			});
+		}
 		return this._addOrderBy(field, direction);
 	}
 

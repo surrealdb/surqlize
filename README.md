@@ -342,6 +342,10 @@ const numericSort = db.select("user")
 // Collation sorting
 const collateSort = db.select("user")
   .orderByCollate("name", "ASC");
+
+// Object form: field -> "asc" | "desc" (see "Object-based filters and sorting")
+const objectSort = db.select("user")
+  .orderBy({ age: "desc", name: { last: "asc" } });
 ```
 
 #### Grouping with GROUP BY
@@ -1041,6 +1045,44 @@ db.select("user").where((user) =>
 ```
 
 Both `and()` and `or()` require at least two conditions and accept any number of additional conditions. Nesting them produces correctly parenthesized output, so precedence is always explicit.
+
+### Object-based filters and sorting
+
+`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks, and the two styles can be mixed freely. The objects are fully type-checked against your schema.
+
+```typescript
+const rows = await db.select("user")
+  .where({
+    name: { first: "Ada" },            // nested object field: name.first = "Ada"
+    email: { endsWith: "@example.com" },
+    age: { gte: 18, lt: 65 },          // several operators on a field are AND-ed
+    role: "admin",                     // a bare value is shorthand for { eq: value }
+  })
+  .orderBy({ age: "desc", name: { last: "asc" } })
+  .limit(20);
+```
+
+Keys at the same level are AND-ed together. Combine groups with `and`, `or` and `not`:
+
+```typescript
+db.select("user").where({
+  or: [{ role: "admin" }, { age: { gt: 65 } }],
+  not: { status: "banned" },
+});
+// WHERE ((role = "admin" OR age > 65) AND !(status = "banned"))
+```
+
+Available operators mirror the fluent methods: `eq`, `ne`, `ex`, `gt`, `gte`, `lt`, `lte`, `inside`, `notInside` on every field; `startsWith`, `endsWith`, `contains`, `search` on strings; and `contains`, `containsNot`, `containsAll`, `containsAny`, `containsNone`, `allInside`, `anyInside`, `noneInside` on arrays.
+
+Fields of an object, and fields of a record link, can be filtered or sorted by in place (`author: { age: { gt: 30 } }`, `orderBy({ author: { name: "asc" } })`).
+
+Notes:
+
+- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) produces no `WHERE` clause, so optional parameters can be passed straight through.
+- A key that names a field always wins over an operator or combinator of the same name.
+- Unknown fields, unsupported operators and invalid directions throw an `OrmError` (and are rejected by the type checker).
+- Directions are `"asc"` / `"desc"` (upper case also works) and are applied in key order. `orderByNumeric` and `orderByCollate` remain fluent-only and chain after an object `orderBy`.
+- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries.
 
 ## Type-specific functions
 
