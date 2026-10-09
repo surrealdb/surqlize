@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { count, math, orm, t, table } from "../../src";
+import { count, math, orm, t, table, type_ } from "../../src";
 import { seedTestData } from "../helpers/db";
 import { withTestDb } from "./setup";
 
@@ -163,6 +163,20 @@ describe("GROUP BY, GROUP ALL and SPLIT with return()", () => {
 				.execute();
 
 			expect(rows.map((r) => r.tag).sort()).toEqual(["x", "y", "z"]);
+		});
+
+		test("orders split rows by an expression, sorting through a hoisted alias that is dropped from the rows", async () => {
+			const { surreal } = getTestDb();
+			const articles = orm(surreal, article, user);
+			const rows = await articles
+				.select("article")
+				.split("tags")
+				.orderBy((a) => type_.float(a.rating), "ASC")
+				.execute();
+
+			// Ratings are 4, 4, 2 and 5 across the split rows: B first, then A twice, then C.
+			expect(rows.map((r) => r.title)).toEqual(["B", "A", "A", "C"]);
+			expect(rows.every((r) => !("__order_0" in r))).toBe(true);
 		});
 	});
 });

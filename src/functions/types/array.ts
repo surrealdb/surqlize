@@ -1,9 +1,10 @@
+import { OrmError } from "../../error";
 import {
 	type AbstractType,
 	type ArrayType,
 	type BoolType,
 	type LiteralType,
-	type NumberType,
+	NumberType,
 	OptionType,
 	type StringType,
 	t,
@@ -33,6 +34,109 @@ function elementType(arr: ArrayType): AbstractType {
 	const schema = arr.schema;
 	return Array.isArray(schema) ? new UnionType(schema) : schema;
 }
+
+/**
+ * The distance metrics `knn()` accepts. SurrealQL takes them bare inside
+ * `<|k,METRIC|>`, so they are whitelisted rather than interpolated as given.
+ */
+export const KNN_METRICS = [
+	"EUCLIDEAN",
+	"COSINE",
+	"MANHATTAN",
+	"CHEBYSHEV",
+] as const;
+
+export type KnnMetric = (typeof KNN_METRICS)[number];
+
+/**
+ * How `knn()` searches: brute force over a metric (`{ metric }`), or through an
+ * index with a search width (`{ ef }`, HNSW `ef` or DiskANN `L`). SurrealQL has
+ * no form without one of the two.
+ */
+export type KnnOptions =
+	| { metric: KnnMetric; ef?: never }
+	| { ef: number; metric?: never };
+
+function positiveInteger(name: string, value: unknown): number {
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+		throw new OrmError(
+			`knn() ${name} must be a positive integer, got ${String(value)}`,
+		);
+	}
+	return value;
+}
+
+/** The row prefix a field access renders with. */
+const ROW_PREFIX = "$this.";
+
+/** The `<|k,…|>` operator: a boolean predicate over a vector field. */
+function knnFilter<C extends WorkableContext>(
+	field: Workable<C>,
+	query: Workable<C>,
+	operator: string,
+): Actionable<C, BoolType> {
+	return actionable({
+		[__ctx]: field[__ctx],
+		[__type]: t.bool(),
+		[__display](ctx) {
+			// SurrealQL's KNN operator needs a plain field idiom on its left: with the
+			// `$this.` row prefix a field access renders, the search matches nothing.
+			const column = field[__display](ctx);
+			if (!column.startsWith(ROW_PREFIX)) {
+				throw new OrmError(
+					"knn() must be called on a field of the queried row",
+				);
+			}
+			const idiom = column.slice(ROW_PREFIX.length);
+			return `(${idiom} ${operator} ${query[__display](ctx)})`;
+		},
+	});
+}
+
+/**
+ * Functions only a vector field has: an `array<number>`. They are typed through
+ * `GetFunctions`, so they do not appear on other arrays, and the runtime check
+ * covers arrays reached through untyped code.
+ */
+export const vectorFunctions = {
+	knn<C extends WorkableContext>(
+		this: Workable<C, ArrayType<NumberType>>,
+		query: IntoWorkable<C, ArrayType<NumberType>>,
+		k: number,
+		options: KnnOptions,
+	) {
+		if (!(this[__type].schema instanceof NumberType)) {
+			throw new OrmError(
+				"knn() can only be called on an array<number> field (a vector)",
+			);
+		}
+		const limit = positiveInteger("k", k);
+		let operator: string;
+		if (options.metric !== undefined) {
+			if (!(KNN_METRICS as readonly string[]).includes(options.metric)) {
+				throw new OrmError(
+					`knn() metric must be one of ${KNN_METRICS.join(", ")}, got ${String(options.metric)}`,
+				);
+			}
+			operator = `<|${limit},${options.metric}|>`;
+		} else if (options.ef !== undefined) {
+			operator = `<|${limit},${positiveInteger("ef", options.ef)}|>`;
+		} else {
+			throw new OrmError("knn() needs a metric or an ef");
+		}
+		const vector = intoWorkable(this[__ctx], t.array(t.number()), query);
+		return knnFilter(this, vector, operator);
+	},
+} satisfies VectorFunctions;
+
+export type VectorFunctions = {
+	knn<C extends WorkableContext>(
+		this: Workable<C, ArrayType<NumberType>>,
+		query: IntoWorkable<C, ArrayType<NumberType>>,
+		k: number,
+		options: KnnOptions,
+	): Actionable<C, BoolType>;
+};
 
 export const functions = {
 	// Contains

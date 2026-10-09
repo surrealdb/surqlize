@@ -28,6 +28,7 @@ import {
 	__display,
 	__fields,
 	__type,
+	isFieldPath,
 	isWorkable,
 	sanitizeWorkable,
 	type Workable,
@@ -182,6 +183,19 @@ export type FetchedSchema<
 				}>
 			: E;
 
+/** A sort expression computed in the projection under `alias`. */
+type HoistedSort = { alias: string; sql: string };
+
+/** One ORDER BY term. `hoist` marks an expression rather than a field path. */
+type OrderSpec<C extends WorkableContext> = {
+	field: Workable<C> | string;
+	direction?: "ASC" | "DESC";
+	collate?: boolean;
+	numeric?: boolean;
+	/** An expression rather than a field path: sorted through a projected alias. */
+	hoist?: boolean;
+};
+
 /**
  * The shape of a row after `SPLIT` on the given array fields: each split field
  * holds one element of its array rather than the whole array.
@@ -238,12 +252,7 @@ export class SelectQuery<
 	private _entry?: Workable<C, E>;
 	/** The fields of an object `.return()` projection, when it is one. */
 	private _entryFields?: [string, Workable<C>][];
-	private _orderBy?: Array<{
-		field: Workable<C> | string;
-		direction?: "ASC" | "DESC";
-		collate?: boolean;
-		numeric?: boolean;
-	}>;
+	private _orderBy?: OrderSpec<C>[];
 	private _groupBy?: string[] | "ALL";
 	private _split?: string[];
 	private _fetch?: string[];
@@ -439,22 +448,21 @@ export class SelectQuery<
 		direction?: "ASC" | "DESC",
 		opts?: { collate?: boolean; numeric?: boolean },
 	): this {
-		const entry =
-			typeof field === "string"
-				? { field, direction, ...opts }
-				: {
-						field: sanitizeWorkable(
-							field(
-								this.rowActionable(this.entry) as Actionable<
-									C,
-									ResolveEntry<E>
-								> &
-									RowTraversal<C, T>,
-							),
-						),
-						direction,
-						...opts,
-					};
+		let entry: OrderSpec<C>;
+		if (typeof field === "string") {
+			entry = { field, direction, ...opts };
+		} else {
+			const workable = field(
+				this.rowActionable(this.entry) as Actionable<C, ResolveEntry<E>> &
+					RowTraversal<C, T>,
+			);
+			entry = {
+				field: sanitizeWorkable(workable),
+				direction,
+				...opts,
+				hoist: !isFieldPath(workable),
+			};
+		}
 		return this.derive((next) => {
 			next._orderBy = [...(next._orderBy ?? []), entry];
 		});
@@ -614,14 +622,25 @@ export class SelectQuery<
 		return ctx.var(this.subject as RecordId<T>);
 	}
 
-	private displayOrderBy(ctx: DisplayContext): string {
+	/**
+	 * The ORDER BY clause. SurrealQL only sorts by field idioms, so an expression
+	 * term orders by an alias instead, and its SurrealQL is collected into
+	 * `hoisted` for the projection to compute under that alias.
+	 */
+	private displayOrderBy(ctx: DisplayContext, hoisted: HoistedSort[]): string {
 		if (!this._orderBy || this._orderBy.length === 0) return "";
 
 		const orderParts = this._orderBy.map((spec) => {
-			let part =
-				typeof spec.field === "string"
-					? escapeIdiomPath(spec.field)
-					: spec.field[__display](ctx);
+			let part: string;
+			if (typeof spec.field === "string") {
+				part = escapeIdiomPath(spec.field);
+			} else if (spec.hoist) {
+				const alias = `__order_${hoisted.length}`;
+				hoisted.push({ alias, sql: spec.field[__display](ctx) });
+				part = alias;
+			} else {
+				part = spec.field[__display](ctx);
+			}
 
 			if (spec.collate) part += " COLLATE";
 			if (spec.numeric) part += " NUMERIC";
@@ -634,21 +653,24 @@ export class SelectQuery<
 	}
 
 	/**
-	 * The projection after `SELECT`. A grouped or split query has to name its
-	 * keys as selected fields, which an object `VALUE { … }` cannot do, so its
-	 * object projection is a field list (`email AS writer, count(true) AS posts`).
-	 * SurrealDB rejects a grouped query with no projection, and one that does not
-	 * select each of its keys, so both are reported here as an {@link OrmError}.
+	 * The projection after `SELECT`. An expression sort is computed beside `*`
+	 * under its alias and dropped again with OMIT, so it cannot be combined with a
+	 * return() projection (a VALUE projection has no OMIT to drop the alias from) or
+	 * with a grouped query (SurrealDB needs the sort key to be a selected field).
+	 *
+	 * A grouped or split query has to name its keys as selected fields, which an
+	 * object `VALUE { … }` cannot do, so its object projection is a field list
+	 * (`email AS writer, count(true) AS posts`). SurrealDB rejects a grouped query
+	 * with no projection, and one that does not select each of its keys, so both
+	 * are reported here as an {@link OrmError}.
 	 */
-	private displayProjection(ctx: DisplayContext, bare: boolean): string {
-		if (!this._entry) {
-			if (this._groupBy !== undefined) {
-				throw new OrmError(
-					"groupBy() and groupAll() need a return() projection of aggregates: SurrealDB cannot group SELECT *",
-				);
-			}
-			return "*";
-		}
+	private displayProjection(
+		ctx: DisplayContext,
+		bare: boolean,
+		hoisted: HoistedSort[],
+	): string {
+		this.assertHoistedSortAllowed(hoisted);
+		if (!this._entry) return this.displayUnprojected(hoisted);
 		const fields = this._entryFields;
 		if (!bare) return /* surql */ `VALUE ${this._entry[__display](ctx)}`;
 
@@ -671,6 +693,34 @@ export class SelectQuery<
 		return fields
 			.map(([alias], i) => `${exprs[i]} AS ${escapeIdent(alias)}`)
 			.join(", ");
+	}
+
+	/** An expression sort is hoisted into a `*` projection, so it cannot be combined with a return() or a grouped query. */
+	private assertHoistedSortAllowed(hoisted: HoistedSort[]): void {
+		if (hoisted.length === 0) return;
+		if (this._groupBy !== undefined) {
+			throw new OrmError(
+				"orderBy() with an expression cannot be combined with groupBy() or groupAll(): the sort key must be a selected field. Sort by a field, or by a name the return() projection selects.",
+			);
+		}
+		if (this._entry) {
+			throw new OrmError(
+				"orderBy() with an expression cannot be combined with return(): the sort key would be returned with each row. Sort by a field, or return the value and sort in your code.",
+			);
+		}
+	}
+
+	/** The projection of a query with no return(): `*`, with any hoisted sort keys beside it. */
+	private displayUnprojected(hoisted: HoistedSort[]): string {
+		if (this._groupBy !== undefined) {
+			throw new OrmError(
+				"groupBy() and groupAll() need a return() projection of aggregates: SurrealDB cannot group SELECT *",
+			);
+		}
+		if (hoisted.length === 0) return "*";
+		const sorts = hoisted.map((h) => `${h.sql} AS ${h.alias}`).join(", ");
+		const aliases = hoisted.map((h) => h.alias).join(", ");
+		return `*, ${sorts} OMIT ${aliases}`;
 	}
 
 	/** The SPLIT and GROUP clauses, which come after WHERE and before ORDER BY. */
@@ -701,14 +751,17 @@ export class SelectQuery<
 		const start = this._start !== undefined ? ctx.var(this._start) : undefined;
 		const limit = this._limit !== undefined ? ctx.var(this._limit) : undefined;
 
-		const predicates = this.displayProjection(ctx, grouped || split);
+		const hoisted: HoistedSort[] = [];
+		const orderBy = this.displayOrderBy(ctx, hoisted);
+
+		const predicates = this.displayProjection(ctx, grouped || split, hoisted);
 		let query = /* surql */ `SELECT ${predicates} FROM ${this._only ? "ONLY " : ""}${thing}`;
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
 		query += this.displayGrouping();
-		query += this.displayOrderBy(ctx);
+		query += orderBy;
 
 		if (limit) query += /* surql */ ` LIMIT ${limit}`;
 		if (start) query += /* surql */ ` START ${start}`;

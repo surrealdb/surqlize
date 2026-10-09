@@ -21,6 +21,12 @@ export const __ctx: unique symbol = Symbol("ctx");
  * as a single object.
  */
 export const __fields: unique symbol = Symbol("fields");
+/**
+ * Marks a workable produced by property access (`row.a.b`): a plain field path
+ * that SurrealQL can sort by directly. Any other workable (a function call, an
+ * operator, a literal) is an expression, and `orderBy` hoists it.
+ */
+export const __path: unique symbol = Symbol("path");
 
 export type Workable<
 	C extends WorkableContext = WorkableContext,
@@ -151,6 +157,7 @@ export function workableGet(workable: Workable, key: string | number) {
 			return `${parent}${path}`;
 		},
 		[__type]: type,
+		[__path]: true,
 	};
 }
 
@@ -164,6 +171,11 @@ export function sanitizeWorkable<
 		[__display]: display,
 		[__type]: workable[__type],
 	};
+}
+
+/** Whether a workable is a plain field path (see {@link __path}). */
+export function isFieldPath(workable: Workable): boolean {
+	return (workable as Workable & { [__path]?: boolean })[__path] === true;
 }
 
 export function isWorkable<C extends WorkableContext>(
