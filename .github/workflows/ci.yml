@@ -198,7 +198,7 @@ jobs:
 
       - name: Smoke test - TypeScript declarations
         working-directory: /tmp/smoke-test
-        run: npx tsc --noEmit --skipLibCheck --module nodenext --moduleResolution nodenext type-check.mts
+        run: npx tsc --noEmit --skipLibCheck false --lib esnext,dom --module nodenext --moduleResolution nodenext type-check.mts
 
       - name: Smoke test - Node.js ESM
         run: node /tmp/smoke-test/node-esm.mjs
