@@ -925,7 +925,7 @@ user.safeParse(patch, { mode: "update" });      // a partial write
 user.safeParse(row, { mode: "row" });           // a whole stored record, id and computed fields included
 ```
 
-`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
+`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. On a table linked to a class, `"row"` mode returns an instance of the class, as selects do (the other modes return the data as given). The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
 
 ## Batch
 

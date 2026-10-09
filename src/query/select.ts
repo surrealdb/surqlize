@@ -1,6 +1,6 @@
 import { type RecordId, Table } from "surrealdb";
+import { ModelType } from "../schema/model-type.ts";
 import type { Orm } from "../schema/orm.ts";
-import { ModelType } from "../schema/table.ts";
 import type { RowTraversal } from "../schema/traversal.ts";
 import {
 	type AbstractType,

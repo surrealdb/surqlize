@@ -1,4 +1,4 @@
-import { orm, t, table } from "surqlize";
+import { orm, type TableFields, type TableSchema, t, table } from "surqlize";
 import { type RecordId, Surreal } from "surrealdb";
 
 // Strict, invariant type-equality check (not mere assignability), so the
@@ -30,4 +30,23 @@ type _AssertUser = Expect<
 	Equal<UserRecord, { id: RecordId<"user">; name: string; age: number }>
 >;
 
-void (null as _AssertQuery | _AssertUser | null);
+// A table linked to a class: `ModelType` is not exported, but the declarations
+// that mention it must still be valid and infer the instance type.
+class Account {
+	name!: string;
+	shout() {
+		return this.name.toUpperCase();
+	}
+}
+const account = table("account", { name: t.string() }, Account);
+type _AssertModel = Expect<
+	Equal<ReturnType<(typeof account)["type"]["shout"]>, string>
+>;
+
+// A specific table is assignable to the wider table types.
+const _bare: TableSchema = user;
+const _wide: TableSchema<string, TableFields> = user;
+const _linked: TableSchema = account;
+void [_bare, _wide, _linked];
+
+void (null as _AssertQuery | _AssertUser | _AssertModel | null);

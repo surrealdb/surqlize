@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { RecordId, Surreal } from "surrealdb";
 import { __display, displayContext, edge, orm, t, table } from "../../../src";
 
+type Equal<A, B> =
+	(<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2
+		? true
+		: false;
+
 describe("RELATE queries", () => {
 	const user = table("user", {
 		name: t.string(),
@@ -259,5 +264,41 @@ describe("RELATE queries", () => {
 			)
 			.merge({ created: new Date() });
 		expect(() => query.replace({ created: new Date() })).toThrow();
+	});
+});
+
+describe("RELATE content typing", () => {
+	const user = table("user", { name: t.string() });
+	const knows = edge("user", "knows", "user", {
+		since: t.number(),
+		note: t.string().default(""),
+		tag: t.option(t.string()),
+	});
+	const db = orm(new Surreal(), user, knows);
+	const a = new RecordId("user", 1);
+	const b = new RecordId("user", 2);
+
+	test("follows the optionality rules of create().content()", () => {
+		const q = db.relate("knows", a, b);
+		type Content = Parameters<typeof q.content>[0];
+		// `in`, `out` and `id` are supplied by RELATE; defaults and options are optional.
+		const _shape: Equal<
+			{ [K in keyof Content]: Content[K] },
+			{ since: number; note?: string; tag?: string | undefined }
+		> = true;
+		expect(_shape).toBe(true);
+
+		const ctx = displayContext();
+		const sql = db.relate("knows", a, b).content({ since: 1 })[__display](ctx);
+		expect(sql).toContain("CONTENT");
+		db.relate("knows", a, b).content({ since: 1, note: "hi", tag: "x" });
+	});
+
+	test("still requires fields without a default", () => {
+		// @ts-expect-error `since` is required
+		db.relate("knows", a, b).content({ note: "hi" });
+		// @ts-expect-error `in` and `out` are supplied by RELATE
+		db.relate("knows", a, b).content({ since: 1, in: a });
+		expect(true).toBe(true);
 	});
 });

@@ -30,6 +30,7 @@ import {
 	applyPatch,
 	applyReplace,
 	applySet,
+	type CreateInput,
 	displayModificationClause,
 	type JsonPatchOp,
 	type ModificationMode,
@@ -111,7 +112,7 @@ export class RelateQuery<
 
 	content(
 		data: E extends ObjectType
-			? Omit<WriteData<E>, "id" | "in" | "out">
+			? Omit<CreateInput<E>, "in" | "out">
 			: E["infer"],
 	): this {
 		return this.derive((next) => applyContent(next, data));

@@ -273,14 +273,12 @@ describe("opt-in validation of writes", () => {
 		expect(() =>
 			db
 				.relate("knows", a, b)
-				.content({ since: "x" } as never)
+				// @ts-expect-error `since` is a number
+				.content({ since: "x" })
 				.prepare(),
 		).toThrow(ValidationError);
 		expect(() =>
-			db
-				.relate("knows", a, b)
-				.content({ since: 1 } as never)
-				.prepare(),
+			db.relate("knows", a, b).content({ since: 1 }).prepare(),
 		).not.toThrow();
 	});
 
