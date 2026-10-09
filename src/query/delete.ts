@@ -144,11 +144,13 @@ export class DeleteQuery<
 			| ((tb: Actionable<C, StoredRow<E>>) => Inheritable<C>),
 	): unknown {
 		if (typeof value === "function") {
+			// In a DELETE's RETURN VALUE `$this` is NONE, so the deleted record is
+			// read as `$before`.
 			const tb = actionable({
 				[__ctx]: this[__ctx],
 				[__type]: this.schema,
 				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$this" : "$parent";
+					return contextId === this[__ctx].id ? "$before" : "$parent";
 				},
 			}) as Actionable<C, StoredRow<E>>;
 

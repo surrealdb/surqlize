@@ -241,7 +241,7 @@ export class RelateQuery<
 	}
 
 	protected override validateInput(): void {
-		validateWrite(this[__ctx].orm, this.edge, this.schema, this, "create");
+		validateWrite(this[__ctx].orm, this.edge, this.schema, this, "relate");
 	}
 
 	[__display](inp: DisplayContext) {
