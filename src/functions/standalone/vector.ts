@@ -7,7 +7,7 @@ import {
 	type WorkableContext,
 } from "../../utils";
 import type { Actionable } from "../../utils/actionable";
-import { standaloneFn } from "./internal";
+import { type ContextSource, standaloneFn } from "./internal";
 
 /**
  * A vector operand: a workable expression, or a plain array of numbers, which is
@@ -83,6 +83,14 @@ export const vector = {
 	},
 
 	// Distance functions
+
+	/**
+	 * The distance the KNN operator computed for the row in the same query
+	 * (`vector::distance::knn()`). Valid only in a query with a `knn()` predicate.
+	 */
+	distanceKnn<C extends WorkableContext>(source: ContextSource<C>) {
+		return standaloneFn(source, t.number(), "vector::distance::knn");
+	},
 
 	distanceChebyshev<C extends WorkableContext>(...args: VectorPair<C>) {
 		return vectorFn(t.number(), "vector::distance::chebyshev", ...args);
