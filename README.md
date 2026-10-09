@@ -67,6 +67,22 @@ npm install surqlize
   versioned independently: the 2.x SDK is what connects to a 3.x server.)
 - **TypeScript 5 or 6** for full type inference.
 
+### One copy of `surrealdb`
+
+The connection you pass to surqlize and surqlize itself must resolve the **same
+copy** of the `surrealdb` package. The SDK encodes values with `instanceof`, so
+with two copies it fails to recognise the `Table` that surqlize binds as a
+query subject and sends an empty object, and the server answers with
+`Cannot execute CREATE statement using value: {  }`. surqlize detects this and
+throws a `DuplicateSurrealError` instead, which points back here.
+
+To fix it, check `npm ls surrealdb` (or `bun pm ls --all`), dedupe so a single
+version is installed (an `overrides` / `resolutions` entry helps), and avoid
+`file:` dependencies, which copy the package along with its own
+`node_modules`. In a symlinked setup where TypeScript reports `Property
+'#private' in type 'Surreal' refers to a different member`, set
+`preserveSymlinks: true`.
+
 ## Quick start
 
 ```typescript
@@ -171,6 +187,92 @@ await db.create("user").content({ name: "Ada" }); // isVerified, createdAt and s
 Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) whenever the field is omitted or `undefined`; an explicit value always wins. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `UPSERT`, `UPDATE`, `RELATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
 
 `expr()` text is inserted into the query verbatim: only pass trusted, hard-coded SurrealQL, never user input.
+
+### Computed fields
+
+A computed field is read-only: SurrealDB derives its value from an expression each time the record is read (`DEFINE FIELD … COMPUTED`, which needs **SurrealDB ≥ 3.0**). Add one with `.computed(name, type, expression)`. The expression receives the row (rendered as `$this`) and the ORM, so it can run subqueries:
+
+```typescript
+import { type Orm, table, t } from "surqlize";
+
+const post = table("post", { title: t.string(), author: t.record("user") });
+
+const user = table("user", { first: t.string(), last: t.string() })
+  .computed("fullName", t.string(), (row) => row.first.concat(" ", row.last))
+  .computed("postCount", t.number(), (row, db: Orm<[typeof post]>) =>
+    db
+      .select("post")
+      .where((p) => p.author.eq(row.id))
+      .return((p) => p.id)
+      .wrap()
+      .len(),
+  );
+```
+
+Computed fields are part of the row type of selects, and can be used in `where`, `orderBy` and `return` like any other field. They are left out of the input types of `create`, `update`, `upsert`, `insert` and `relate`, so writing one is a compile-time error:
+
+```typescript
+const [u] = await db.select("user").where((u) => u.postCount.gt(0)); // u.fullName: string
+await db.create("user").set({ first: "Ada", last: "Lovelace" });
+await db.create("user").set({ fullName: "x" }); // type error
+```
+
+The field must exist in the database before it can be read. Create it with `db.defineComputed()` (all tables, or pass table names), or put the statements from `user.computedStatements(db)` into a migration:
+
+```typescript
+await db.defineComputed();
+// DEFINE FIELD OVERWRITE fullName ON TABLE user COMPUTED (string::concat($this.first, " ", $this.last))
+```
+
+Notes:
+
+- The `db` passed to the expression is untyped, because the tables are registered after they are defined. Annotate the parameter (`db: Orm<[typeof post]>`) to type the tables it queries.
+- Tables read by an expression must exist when a record is read, and the expression is inlined into the `DEFINE` statement, so it cannot use query parameters.
+
+### Linking a class to a table
+
+Pass a class as the third argument of `table()` to give rows methods and
+computed properties. Rows selected from (or returned by a write to) the table
+are instances of the class, and instances of the class are accepted as record
+content:
+
+```typescript
+class User {
+  given_name!: string;
+  family_name!: string;
+
+  get fullName() {
+    return `${this.given_name} ${this.family_name}`;
+  }
+}
+
+const user = table(
+  "user",
+  { given_name: t.string(), family_name: t.string() },
+  User,
+);
+
+const db = orm(surreal, user);
+
+const [ada] = await db.select("user", "ada");
+ada instanceof User; // true
+ada.fullName; // "Ada Lovelace" (typed as string)
+
+const input = Object.assign(new User(), { given_name: "Grace", family_name: "Hopper" });
+await db.create("user").content(input);
+```
+
+Type inference is unchanged and needs no code generation: the row type is the
+fields declared in the table plus the instance type of the class. Notes:
+
+- Rows are hydrated without running the class constructor, so declare fields
+  with `!` rather than initializers. Instances passed as content are sent as
+  their own enumerable properties; getters and methods are not stored.
+- Hydration also applies to rows resolved by `.fetch()`, each with its own class.
+  Queries with a `.return()` projection return plain objects.
+- Helpers that issue queries themselves (such as `this.update()` or static
+  `findByEmail()` methods) are not provided: write them against your `db`
+  instance, e.g. `db.select("user").where(...)`.
 
 ### Edges and graph relations
 
@@ -364,6 +466,10 @@ const numericSort = db.select("user")
 // Collation sorting
 const collateSort = db.select("user")
   .orderByCollate("name", "ASC");
+
+// Object form: field -> "asc" | "desc" (see "Object-based filters and sorting")
+const objectSort = db.select("user")
+  .orderBy({ age: "desc", name: { last: "asc" } });
 ```
 
 #### Grouping with GROUP BY
@@ -1063,6 +1169,44 @@ db.select("user").where((user) =>
 ```
 
 Both `and()` and `or()` require at least two conditions and accept any number of additional conditions. Nesting them produces correctly parenthesized output, so precedence is always explicit.
+
+### Object-based filters and sorting
+
+`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks, and the two styles can be mixed freely. The objects are fully type-checked against your schema.
+
+```typescript
+const rows = await db.select("user")
+  .where({
+    name: { first: "Ada" },            // nested object field: name.first = "Ada"
+    email: { endsWith: "@example.com" },
+    age: { gte: 18, lt: 65 },          // several operators on a field are AND-ed
+    role: "admin",                     // a bare value is shorthand for { eq: value }
+  })
+  .orderBy({ age: "desc", name: { last: "asc" } })
+  .limit(20);
+```
+
+Keys at the same level are AND-ed together. Combine groups with `and`, `or` and `not`:
+
+```typescript
+db.select("user").where({
+  or: [{ role: "admin" }, { age: { gt: 65 } }],
+  not: { status: "banned" },
+});
+// WHERE ((role = "admin" OR age > 65) AND !(status = "banned"))
+```
+
+Available operators mirror the fluent methods: `eq`, `ne`, `ex`, `gt`, `gte`, `lt`, `lte`, `inside`, `notInside` on every field; `startsWith`, `endsWith`, `contains`, `search` on strings; and `contains`, `containsNot`, `containsAll`, `containsAny`, `containsNone`, `allInside`, `anyInside`, `noneInside` on arrays.
+
+Fields of an object, and fields of a record link, can be filtered or sorted by in place (`author: { age: { gt: 30 } }`, `orderBy({ author: { name: "asc" } })`).
+
+Notes:
+
+- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) produces no `WHERE` clause, so optional parameters can be passed straight through.
+- A key that names a field always wins over an operator or combinator of the same name.
+- Unknown fields, unsupported operators and invalid directions throw an `OrmError` (and are rejected by the type checker).
+- Directions are `"asc"` / `"desc"` (upper case also works) and are applied in key order. `orderByNumeric` and `orderByCollate` remain fluent-only and chain after an object `orderBy`.
+- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries.
 
 ## Type-specific functions
 

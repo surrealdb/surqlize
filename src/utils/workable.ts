@@ -88,7 +88,7 @@ function linkedSchema(orm: Orm, tb: RecordType["tb"]): ObjectType | undefined {
  * unregistered or unknown target table falls back to the type's own `get`,
  * which yields `NoneType` — matching the pre-existing graph behaviour.
  */
-function resolveAccessType(
+export function resolveAccessType(
 	orm: Orm,
 	type: AbstractType,
 ): { target: AbstractType; rewrap: (field: AbstractType) => AbstractType } {

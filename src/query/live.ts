@@ -27,6 +27,8 @@ import {
 	type WorkableContext,
 } from "../utils/workable.ts";
 import type { JsonPatchOp } from "./modification-methods.ts";
+import { type WhereObject, whereFromObject } from "./object-filter.ts";
+import { withSdkDiagnosis } from "./request.ts";
 import {
 	type FetchedSchema,
 	type FetchPaths,
@@ -241,8 +243,12 @@ export class LiveQuery<
 		}) as unknown as LiveQuery<O, C, T, R, R["infer"]>;
 	}
 
+	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
+	where(filter: WhereObject<C, O["tables"][T]["schema"]>): this;
 	where(
-		cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>,
+		input:
+			| ((tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>)
+			| WhereObject<C, O["tables"][T]["schema"]>,
 	): this {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
@@ -252,7 +258,17 @@ export class LiveQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		const filter = sanitizeWorkable(cb(tb));
+		const condition =
+			typeof input === "function"
+				? input(tb)
+				: whereFromObject(tb as unknown as Workable<C>, input);
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
+
+		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
 		});
@@ -400,9 +416,10 @@ export class LiveQuery<
 	/** Start the live query and resolve to a typed {@link LiveSubscription}. */
 	async execute(): Promise<LiveSubscription<V>> {
 		const resource = this.managedResource;
-		const inner = resource
-			? await this.registerManaged(resource)
-			: await this.registerUnmanaged();
+		const { surreal } = this[__ctx].orm;
+		const inner = await withSdkDiagnosis(surreal, () =>
+			resource ? this.registerManaged(resource) : this.registerUnmanaged(),
+		);
 
 		const type = this.entry;
 		const diff = this._diff;

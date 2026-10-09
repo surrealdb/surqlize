@@ -1,4 +1,5 @@
 import { OrmError } from "../error.ts";
+import type { ComputedKeys } from "../schema/table.ts";
 import type { AbstractType, HasDefault, ObjectType } from "../types";
 import type { DisplayContext } from "../utils/display.ts";
 import { renderData } from "./defaults.ts";
@@ -10,8 +11,11 @@ import {
 } from "./utils.ts";
 
 // Shared types
+/** The fields a write may set: every field except the computed (read-only) ones. */
 export type SetData<T extends ObjectType> = {
-	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
+	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
+		T["schema"][K]
+	>;
 };
 
 /** A field that may be left out on create: it has a default or accepts `NONE`. */
@@ -26,18 +30,25 @@ type OptionalOnCreate<F extends AbstractType> = F extends HasDefault
  * `.default()` (or are `option<…>`) are optional.
  */
 export type CreateInput<T extends ObjectType> = {
-	[K in Exclude<keyof T["schema"], "id"> as OptionalOnCreate<
-		T["schema"][K]
-	> extends true
+	[K in Exclude<
+		keyof T["schema"],
+		"id" | ComputedKeys<T["schema"]>
+	> as OptionalOnCreate<T["schema"][K]> extends true
 		? never
 		: K]: T["schema"][K]["infer"];
 } & {
-	[K in Exclude<keyof T["schema"], "id"> as OptionalOnCreate<
-		T["schema"][K]
-	> extends true
+	[K in Exclude<
+		keyof T["schema"],
+		"id" | ComputedKeys<T["schema"]>
+	> as OptionalOnCreate<T["schema"][K]> extends true
 		? K
 		: never]?: T["schema"][K]["infer"];
 } & {};
+
+/** The record a write may supply: `E["infer"]` without its computed fields. */
+export type WriteData<E extends AbstractType> = E extends ObjectType
+	? Omit<E["infer"], ComputedKeys<E["schema"]>>
+	: E["infer"];
 
 export type JsonPatchOp =
 	| { op: "add"; path: string; value: unknown }

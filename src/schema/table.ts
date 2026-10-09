@@ -1,21 +1,99 @@
+import { escapeIdent, toSurqlString } from "surrealdb";
+import { OrmError } from "../error";
+import { type AbstractType, ObjectType, type RecordType, t } from "../types";
 import {
-	type AbstractType,
-	type ObjectType,
-	type RecordType,
-	t,
-} from "../types";
+	__ctx,
+	__display,
+	__type,
+	displayContext,
+	type Workable,
+	type WorkableContext,
+} from "../utils";
+import { type Actionable, actionable } from "../utils/actionable";
+import { type ModelClass, registerModelClass } from "../utils/model";
+import type { Orm } from "./orm";
+
+export type { ModelClass } from "../utils/model";
+
+/**
+ * Marks a field type as a computed (read-only) field. The brand exists only at
+ * the type level: a computed field is part of the table's row type (and so of
+ * select results), but is left out of every create / update / insert input type.
+ */
+export type Computed<T extends AbstractType> = T & {
+	readonly "~computed": true;
+};
+
+/** The names of the computed fields in a field map. */
+export type ComputedKeys<F> = {
+	[K in keyof F]: F[K] extends { readonly "~computed": true } ? K : never;
+}[keyof F];
+
+/**
+ * The expression of a computed field. It receives the row being computed
+ * (rendered as `$this`) and the ORM, to build subqueries, and returns an
+ * expression whose type matches the field's declared type.
+ */
+export type ComputedExpression<
+	Tb extends string,
+	Fd extends TableFields,
+	T extends AbstractType,
+> = (
+	row: Actionable<WorkableContext, ObjectType<Fd & { id: RecordType<Tb> }>>,
+	// biome-ignore lint/suspicious/noExplicitAny: the expression may query any registered table
+	db: Orm<any>,
+) => Workable<WorkableContext, T>;
+
+/** Render a value as a SurrealQL literal: a `DEFINE` statement takes no parameters. */
+const inlineValue = (value: unknown): string =>
+	typeof value === "string" ? JSON.stringify(value) : toSurqlString(value);
+
+type ComputedDefinition = {
+	readonly type: AbstractType;
+	readonly expression: (row: never, db: never) => Workable;
+};
 
 /** A record mapping field names (excluding `id`) to their type definitions. */
 export type TableFields = Record<Exclude<string, "id">, AbstractType>;
 
-type GetSchemaType<Tb extends string, Fd extends TableFields> = ObjectType<
-	Fd & { id: RecordType<Tb> }
->;
+/**
+ * The object type of a table linked to a class: rows parse into instances of
+ * the class, and the inferred type is the row fields plus the class instance.
+ */
+export class ModelType<
+	Fd extends Record<string, AbstractType> = Record<string, AbstractType>,
+	I = unknown,
+> extends ObjectType<Fd> {
+	declare infer: ObjectType<Fd>["infer"] & I;
+	declare accept: ObjectType<Fd>["accept"] & I;
 
-type GetInferType<Tb extends string, Fd extends TableFields> = GetSchemaType<
-	Tb,
-	Fd
->["infer"];
+	constructor(
+		fields: Fd,
+		readonly model: ModelClass,
+	) {
+		super(fields);
+	}
+
+	/** Parse a row, then hydrate it into an instance of the linked class. */
+	parse(value: unknown): this["infer"] {
+		const row = super.parse(value);
+		return Object.assign(Object.create(this.model.prototype), row);
+	}
+}
+
+type GetSchemaType<
+	Tb extends string,
+	Fd extends TableFields,
+	I = unknown,
+> = unknown extends I
+	? ObjectType<Fd & { id: RecordType<Tb> }>
+	: ModelType<Fd & { id: RecordType<Tb> }, I>;
+
+type GetInferType<
+	Tb extends string,
+	Fd extends TableFields,
+	I = unknown,
+> = GetSchemaType<Tb, Fd, I>["infer"];
 
 /**
  * Schema definition for a SurrealDB table. Automatically includes a typed `id`
@@ -24,15 +102,111 @@ type GetInferType<Tb extends string, Fd extends TableFields> = GetSchemaType<
  *
  * @typeParam Tb - The table name literal type.
  * @typeParam Fd - The user-defined fields for the table.
+ * @typeParam I - The instance type of the class linked to the table, if any.
  */
 export class TableSchema<
 	Tb extends string = string,
-	Fd extends TableFields = TableFields,
+	// biome-ignore lint/suspicious/noExplicitAny: widest default so any table is assignable to a bare `TableSchema`
+	Fd extends TableFields = any,
+	// biome-ignore lint/suspicious/noExplicitAny: ditto
+	I = any,
 > {
 	constructor(
 		public readonly tb: Tb,
 		public readonly _fields: Fd,
-	) {}
+		public readonly model?: ModelClass,
+		private readonly _computed: Readonly<
+			Record<string, ComputedDefinition>
+		> = {},
+	) {
+		if (model) registerModelClass(model);
+	}
+
+	/**
+	 * Add a computed field: a read-only field whose value SurrealDB derives from
+	 * an expression each time the record is read (`DEFINE FIELD … COMPUTED`,
+	 * SurrealDB 3.0+). It is part of the row type returned by selects, but cannot
+	 * be written: it is left out of the input types of `create`, `update`,
+	 * `upsert`, `insert` and `relate`.
+	 *
+	 * The field must exist in the database before it can be read. Create it with
+	 * {@link Orm.defineComputed}, or run {@link TableSchema.computedStatements}
+	 * in a migration.
+	 *
+	 * @param name - The field name.
+	 * @param type - The type of the computed value.
+	 * @param expression - Builds the expression from the row and the ORM.
+	 *
+	 * @example
+	 * ```ts
+	 * const user = table("user", { name: t.string() }).computed(
+	 *   "postCount",
+	 *   t.number(),
+	 *   (user, db) =>
+	 *     db
+	 *       .select("post")
+	 *       .where((p) => p.author.eq(user.id))
+	 *       .return((p) => p.id)
+	 *       .wrap()
+	 *       .len(),
+	 * );
+	 * ```
+	 */
+	computed<const N extends string, T extends AbstractType>(
+		name: N extends "id" | keyof Fd ? never : N,
+		type: T,
+		expression: ComputedExpression<Tb, Fd, T>,
+	): TableSchema<Tb, Fd & { [K in N]: Computed<T> }, I> {
+		if (name === "id" || name in this._fields || name in this._computed) {
+			throw new OrmError(
+				`Field "${name}" is already defined on table "${this.tb}"`,
+			);
+		}
+
+		return new TableSchema(
+			this.tb,
+			{ ...this._fields, [name]: type } as unknown as Fd & {
+				[K in N]: Computed<T>;
+			},
+			this.model,
+			{
+				...this._computed,
+				[name]: { type, expression } as ComputedDefinition,
+			},
+		);
+	}
+
+	/** The names of this table's computed fields. */
+	get computedFields(): string[] {
+		return Object.keys(this._computed);
+	}
+
+	/**
+	 * Render a `DEFINE FIELD OVERWRITE … COMPUTED …` statement for each computed
+	 * field. Values are inlined, because a `DEFINE` statement cannot take
+	 * parameters.
+	 *
+	 * @param orm - The ORM the expressions are built against.
+	 */
+	// biome-ignore lint/suspicious/noExplicitAny: accepts an ORM over any tables
+	computedStatements(orm: Orm<any>): string[] {
+		return Object.entries(this._computed).map(([name, def]) => {
+			const id = Symbol();
+			const row = actionable({
+				[__ctx]: { orm, id } as WorkableContext,
+				[__type]: this.schema,
+				[__display]: ({ contextId }) =>
+					contextId === id ? "$this" : "$parent",
+			});
+			const expression = (
+				def.expression as (r: unknown, db: unknown) => Workable
+			)(row, orm);
+			const sql = expression[__display](
+				displayContext({ var: inlineValue, variables: {}, contextId: id }),
+			);
+			return `DEFINE FIELD OVERWRITE ${escapeIdent(name)} ON TABLE ${escapeIdent(this.tb)} COMPUTED (${sql})`;
+		});
+	}
 
 	get fields(): Fd & { id: RecordType<Tb> } & {} {
 		return {
@@ -41,14 +215,16 @@ export class TableSchema<
 		} as Fd & { id: RecordType<Tb> } & {};
 	}
 
-	type = undefined as unknown as GetInferType<Tb, Fd>;
+	type = undefined as unknown as GetInferType<Tb, Fd, I>;
 
-	get schema(): GetSchemaType<Tb, Fd> {
-		return t.object(this.fields);
+	get schema(): GetSchemaType<Tb, Fd, I> {
+		return (this.model
+			? new ModelType(this.fields, this.model)
+			: t.object(this.fields)) as unknown as GetSchemaType<Tb, Fd, I>;
 	}
 
 	/** Type-guard that checks whether a value matches this table's schema. */
-	validate(value: unknown): value is GetInferType<Tb, Fd> {
+	validate(value: unknown): value is GetInferType<Tb, Fd, I> {
 		return this.schema.validate(value);
 	}
 }
@@ -59,6 +235,10 @@ export class TableSchema<
  *
  * @param tb - The table name.
  * @param fields - A record of field names to type definitions.
+ * @param model - Optionally, a class to link to the table. Rows read from the
+ *   table are then instances of the class (so its methods and getters are
+ *   available), and instances of it are accepted as record content. The class
+ *   constructor is not run when hydrating a row.
  * @returns A {@link TableSchema} instance.
  *
  * @example
@@ -73,6 +253,11 @@ export class TableSchema<
 export function table<
 	Tb extends string,
 	Fd extends Record<Exclude<string, "id">, AbstractType>,
->(tb: Tb extends string ? Tb : never, fields: Fd) {
-	return new TableSchema(tb, fields);
+	M extends ModelClass = never,
+>(
+	tb: Tb extends string ? Tb : never,
+	fields: Fd,
+	model?: M,
+): TableSchema<Tb, Fd, [M] extends [never] ? unknown : InstanceType<M>> {
+	return new TableSchema(tb, fields, model);
 }

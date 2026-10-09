@@ -1,6 +1,7 @@
 import { escapeIdent, Table } from "surrealdb";
 import { OrmError } from "../error.ts";
 import type { Orm } from "../schema/orm.ts";
+import type { ComputedKeys } from "../schema/table.ts";
 import {
 	type AbstractType,
 	type ArrayType,
@@ -37,7 +38,9 @@ import {
 } from "./utils.ts";
 
 type SetData<T extends ObjectType> = {
-	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
+	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
+		T["schema"][K]
+	>;
 };
 
 /**
@@ -90,7 +93,9 @@ export class InsertQuery<
 	 * @throws {OrmError} If the query was constructed with inline data.
 	 */
 	fields(
-		fields: E extends ObjectType ? (keyof E["schema"])[] : string[],
+		fields: E extends ObjectType
+			? Exclude<keyof E["schema"], ComputedKeys<E["schema"]>>[]
+			: string[],
 	): this {
 		if (this._data) {
 			throw new OrmError("Cannot use fields() with object-style insert");
