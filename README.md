@@ -1814,6 +1814,10 @@ Notes and limits:
 - `shortest` is unbounded. If the target is the start record itself the result
   is `NONE`, even with `inclusive`.
 - `+path` (every walked path) is not exposed yet.
+- On SurrealDB 3.0, a fixed-depth `collect(n, step)` (`{n+collect}`) returned only
+  the nodes first reached at depth `n`, where 3.1 and newer return every node
+  `n` hops away (observed on 3.0.5). Use a range or `recurse(n, step)` if you
+  need the same answer on 3.0.
 
 ### Edge adjacency metadata
 

@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { RecordId } from "surrealdb";
 import { edge, orm, t, table } from "../../src";
+import { atLeast, serverVersion } from "../helpers/db";
 import { withTestDb } from "./setup";
+
+// SurrealDB 3.0 answers a fixed-depth `+collect` (`.{2+collect}`) with only the
+// nodes first reached at that depth; 3.1+ returns every node at that depth.
+const fixedDepthCollect = atLeast(await serverVersion(), 3, 1);
 
 describe("recursive graph traversal integration tests", () => {
 	const person = table("person", { name: t.string() });
@@ -98,7 +103,8 @@ describe("recursive graph traversal integration tests", () => {
 		// c is reachable twice (a->c, a->b->c) but is only returned once
 		expect(ids(row?.all)).toEqual(["b", "c", "d", "e"]);
 		expect(ids(row?.oneHop)).toEqual(["b", "c", "e"]);
-		expect(ids(row?.exact)).toEqual(["c", "d"]);
+		if (fixedDepthCollect) expect(ids(row?.exact)).toEqual(["c", "d"]);
+		else expect(ids(row?.exact)).toEqual(["d"]);
 		expect(ids(row?.withSelf)).toEqual(["a", "b", "c", "e"]);
 	});
 
