@@ -96,10 +96,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The earliest 3.x stable (the supported floor), then the newest patch of
-        # each later minor, then `latest`. 3.1.0 is where transaction conflicts
-        # become a structured error that `.retry()` recognises by default.
-        surrealdb_version: [v3.0.0, v3.0.5, v3.1.6, v3.2.5, latest]
+        # The newest patch of each 3.x minor. Bump an entry when a newer patch
+        # ships, and add one when a new minor does. 3.1.0 is where transaction
+        # conflicts become a structured error that `.retry()` recognises by default.
+        surrealdb_version: [v3.0.5, v3.1.6, v3.2.5, v3.3.0]
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
