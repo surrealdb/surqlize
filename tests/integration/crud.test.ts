@@ -223,6 +223,36 @@ describe("CRUD Integration Tests", () => {
 			expect(result).toBeFalsy();
 		});
 
+		test("delete() without return() resolves to an empty array, and ONLY to nothing", async () => {
+			const { db, surreal } = getTestDb();
+
+			for (const id of ["delete_none", "delete_only"]) {
+				await db
+					.create("user", id)
+					.set({
+						name: { first: "Gone", last: "User" },
+						age: 1,
+						email: `${id}@example.com`,
+						created: new Date(),
+						updated: new Date(),
+					})
+					.execute();
+			}
+
+			// Nothing is returned unless asked for: SurrealDB gives [] (NONE with ONLY).
+			expect(await db.delete("user", "delete_none").execute()).toEqual([]);
+			expect(await db.delete("user", "delete_only").only().execute()).toBe(
+				undefined,
+			);
+
+			expect(
+				await surreal.select(new RecordId("user", "delete_none")),
+			).toBeFalsy();
+			expect(
+				await surreal.select(new RecordId("user", "delete_only")),
+			).toBeFalsy();
+		});
+
 		test("deletes with WHERE clause", async () => {
 			const { db } = getTestDb();
 

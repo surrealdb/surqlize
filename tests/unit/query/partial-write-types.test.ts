@@ -266,6 +266,19 @@ async function deleteResults() {
 	assertType<Equal<DeletedNames["email"], string | undefined>>();
 }
 
+async function deleteWithoutReturnResults() {
+	// DELETE without RETURN returns nothing: SurrealDB gives an empty array, or NONE
+	// for ONLY. The result type says so, rather than claiming the deleted rows.
+	const plain = await db.delete("member", "a").execute();
+	assertType<Equal<typeof plain, never[]>>();
+
+	const plainOnly = await db.delete("member", "a").only().execute();
+	assertType<Equal<typeof plainOnly, undefined>>();
+
+	const none = await db.delete("member").return("none").execute();
+	assertType<Equal<typeof none, never[]>>();
+}
+
 async function unchangedResults() {
 	// SELECT still returns the full row.
 	const selected = await db.select("member").execute();
@@ -280,5 +293,6 @@ test("partial write result types are checked by the compiler", () => {
 	expect(typeof upsertResults).toBe("function");
 	expect(typeof relateResults).toBe("function");
 	expect(typeof deleteResults).toBe("function");
+	expect(typeof deleteWithoutReturnResults).toBe("function");
 	expect(typeof unchangedResults).toBe("function");
 });
