@@ -79,3 +79,56 @@ describe("relate().return(cb) result types", () => {
 		expect(sql).toContain("RETURN VALUE");
 	});
 });
+
+/** What a query resolves to, whether or not it is `.only()`. */
+type ResultOf<Q> = Q extends { execute(): Promise<infer R> } ? R : never;
+/** The element type of a resolved array. */
+type Elem<R> = R extends (infer E)[] ? E : never;
+
+describe("relate().return(mode) result types", () => {
+	const render = (query: unknown) =>
+		(
+			query as { [__display]: (c: ReturnType<typeof displayContext>) => string }
+		)[__display](displayContext());
+
+	const base = db.relate("follows", from, to).set({ weight: 1, label: "x" });
+
+	const after = base.return("after");
+	const before = base.return("before");
+	const none = base.return("none");
+	const onlyAfter = base.only().return("after");
+	const onlyBefore = base.only().return("before");
+	const onlyNone = base.only().return("none");
+
+	// RETURN AFTER is the edge row.
+	type Row = Elem<ResultOf<typeof after>>;
+
+	test("RETURN AFTER resolves to the edge rows", () => {
+		assertType<Equal<ResultOf<typeof after>, Row[]>>();
+		assertType<Equal<Row["weight"], number>>();
+		assertType<Equal<ResultOf<typeof onlyAfter>, Row>>();
+	});
+
+	// A new edge has no before-state, so RETURN BEFORE gives NONE for each edge.
+	test("RETURN BEFORE resolves to one possibly-absent row per edge", () => {
+		assertType<Equal<ResultOf<typeof before>, (Row | undefined)[]>>();
+		assertType<Equal<ResultOf<typeof onlyBefore>, Row | undefined>>();
+	});
+
+	// RETURN NONE gives no rows at all.
+	test("RETURN NONE resolves to no rows", () => {
+		assertType<Equal<ResultOf<typeof none>, never[]>>();
+		assertType<Equal<ResultOf<typeof onlyNone>, undefined>>();
+	});
+
+	test("a union of modes is typed as the union of their results", () => {
+		const mode = Math.random() > 0.5 ? "none" : "after";
+		const q = base.return(mode);
+		assertType<Equal<ResultOf<typeof q>, never[] | Row[]>>();
+	});
+
+	test("RETURN BEFORE and RETURN NONE still render as their clauses", () => {
+		expect(render(before)).toContain(" RETURN BEFORE");
+		expect(render(none)).toContain(" RETURN NONE");
+	});
+});

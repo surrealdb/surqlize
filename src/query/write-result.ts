@@ -6,7 +6,7 @@ import {
 	ArrayType,
 	type HasDefault,
 	ObjectType,
-	type OptionType,
+	OptionType,
 } from "../types";
 
 /**
@@ -216,6 +216,8 @@ export function parseWritten(type: AbstractType, value: unknown): unknown {
 
 function parseRow(type: AbstractType, value: unknown): unknown {
 	if (value === undefined || value === null) return value;
+	// An optional row (a RETURN BEFORE entry) is parsed as the row it may hold.
+	if (type instanceof OptionType) return parseRow(type.schema, value);
 	if (!(type instanceof ObjectType) || typeof value !== "object") {
 		return type.parse(value);
 	}

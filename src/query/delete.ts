@@ -1,6 +1,13 @@
 import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
-import { type AbstractType, type RecordType, t } from "../types";
+import {
+	type AbstractType,
+	type ArrayType,
+	type NeverType,
+	type OptionType,
+	type RecordType,
+	t,
+} from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
@@ -31,6 +38,27 @@ import type { NoWrite, WriteRow } from "./write-result.ts";
 type StoredRow<E extends AbstractType> = WriteRow<E, NoWrite, "update">;
 
 /**
+ * Whether a DELETE returns rows. Without a `RETURN` (or with `RETURN NONE`) it
+ * returns none: an empty array, or NONE with `.only()`. Any other `RETURN` gives
+ * rows.
+ */
+export type DeleteReturns = "none" | "rows";
+
+/** The result of a DELETE, see {@link DeleteReturns}. */
+type DeleteResult<
+	E extends AbstractType,
+	Only extends boolean,
+	Returns extends DeleteReturns,
+> = Returns extends "none"
+	? Only extends true
+		? OptionType<NeverType>
+		: ArrayType<NeverType>
+	: QueryResult<E, Only>;
+
+/** The `Returns` a `.return()` argument selects: only `none` returns nothing. */
+type DeleteReturnsOf<M extends string> = M extends "none" ? "none" : "rows";
+
+/**
  * A fluent DELETE query builder. Supports WHERE, RETURN, and TIMEOUT clauses.
  */
 export class DeleteQuery<
@@ -39,7 +67,8 @@ export class DeleteQuery<
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
 	Only extends boolean = false,
-> extends Query<C, QueryResult<E, Only>> {
+	Returns extends DeleteReturns = "none",
+> extends Query<C, DeleteResult<E, Only, Returns>> {
 	readonly [__ctx]: C;
 	private _only = false;
 	private _filter?: Workable<C>;
@@ -74,18 +103,22 @@ export class DeleteQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): QueryResult<E, Only> {
-		const schema =
-			this._return && typeof this._return !== "string"
-				? this._return[__type]
-				: this.schema;
-		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+	get [__type](): DeleteResult<E, Only, Returns> {
+		let type: AbstractType;
+		if (this._return === undefined || this._return === "none") {
+			type = this._only ? t.option(t.never()) : t.array(t.never());
+		} else {
+			const schema =
+				typeof this._return !== "string" ? this._return[__type] : this.schema;
+			type = this._only ? schema : t.array(schema);
+		}
+		return type as unknown as DeleteResult<E, Only, Returns>;
 	}
 
-	only(): DeleteQuery<O, C, T, E, true> {
+	only(): DeleteQuery<O, C, T, E, true, Returns> {
 		return this.derive((next) => {
 			next._only = true;
-		}) as DeleteQuery<O, C, T, E, true>;
+		}) as DeleteQuery<O, C, T, E, true, Returns>;
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
@@ -125,16 +158,21 @@ export class DeleteQuery<
 	}
 
 	/** Return the deleted rows, typed as the stored records (see `StoredRow`). */
-	return(mode: "before" | "after"): DeleteQuery<O, C, T, StoredRow<E>, Only>;
-	return(mode: "none" | "diff"): this;
-	/** A mode chosen at run time: the rows are typed as the broadest of the modes. */
 	return(
-		mode: "none" | "before" | "after" | "diff",
-	): DeleteQuery<O, C, T, StoredRow<E>, Only>;
+		mode: "before" | "after",
+	): DeleteQuery<O, C, T, StoredRow<E>, Only, "rows">;
+	return(mode: "none"): DeleteQuery<O, C, T, E, Only, "none">;
+	return(mode: "diff"): DeleteQuery<O, C, T, E, Only, "rows">;
+	/** A mode chosen at run time: the rows are typed as the broadest of the modes. */
+	return<M extends "none" | "before" | "after" | "diff">(
+		mode: M,
+	): DeleteQuery<O, C, T, StoredRow<E>, Only, DeleteReturnsOf<M>>;
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, StoredRow<E>>) => P): DeleteQuery<O, C, T, R, Only>;
+	>(
+		cb: (tb: Actionable<C, StoredRow<E>>) => P,
+	): DeleteQuery<O, C, T, R, Only, "rows">;
 	return(
 		value:
 			| "none"

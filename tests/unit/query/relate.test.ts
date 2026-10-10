@@ -346,4 +346,31 @@ describe("RELATE endpoints from queries", () => {
 		db.relate("authored", nameOnly, db.select("post"));
 		expect(true).toBe(true);
 	});
+
+	describe("RETURN BEFORE result parsing", () => {
+		const from = new RecordId("user", "a");
+		const to = new RecordId("post", "b");
+		const write = () =>
+			db.relate("authored", from, to).set({ created: new Date() });
+
+		test("a NONE entry (a new edge) parses to undefined, without throwing", () => {
+			expect(write().return("before").parseResult([undefined])).toEqual([
+				undefined,
+			]);
+			expect(
+				write().only().return("before").parseResult(undefined),
+			).toBeUndefined();
+		});
+
+		test("an existing edge's before-state parses leniently, as a partial row", () => {
+			// RELATE onto an edge that already exists returns its stored state. The
+			// fields this write did not set may be absent, which is not an error.
+			const id = new RecordId("authored", "x");
+			const before = { id, in: from, out: to };
+			const rows = write().return("before").parseResult([before]) as {
+				id: unknown;
+			}[];
+			expect(rows[0]?.id).toEqual(id);
+		});
+	});
 });

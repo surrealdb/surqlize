@@ -105,11 +105,40 @@ export class LiveSubscription<T> {
 	 * handler (it does not kill the subscription — use {@link kill} for that).
 	 */
 	subscribe(handler: (message: LiveMessage<T>) => void): () => void {
-		return this.inner.subscribe((message) => handler(this.toMessage(message)));
+		// A subscription that is no longer alive has nothing to deliver. Return a
+		// no-op without calling the SDK, whose `subscribe()` starts its loop in an
+		// async IIFE with no `catch`, and that loop rejects on a killed subscription.
+		if (!this.inner.isAlive) return () => {};
+
+		const messages = this[Symbol.asyncIterator]();
+		let stopped = false;
+		(async () => {
+			for await (const message of { [Symbol.asyncIterator]: () => messages }) {
+				if (stopped) return;
+				handler(message);
+			}
+		})().catch((error: unknown) => {
+			// The stream ends with its subscription, and errors from a stream that is
+			// over are expected. An error while it is still alive is a real failure
+			// (a broken stream or a throwing handler), so it is rethrown rather than
+			// dropped, but outside this promise chain.
+			if (stopped || !this.inner.isAlive) return;
+			queueMicrotask(() => {
+				throw error;
+			});
+		});
+
+		return () => {
+			stopped = true;
+			messages.return?.(undefined)?.catch(() => {});
+		};
 	}
 
 	/** Async-iterate notifications: `for await (const msg of sub) { … }`. */
 	async *[Symbol.asyncIterator](): AsyncIterator<LiveMessage<T>> {
+		// Once the subscription is no longer alive nothing more is delivered, so
+		// iteration ends at once, as subscribe() does, rather than the SDK throwing.
+		if (!this.inner.isAlive) return;
 		for await (const message of this.inner) {
 			yield this.toMessage(message);
 		}

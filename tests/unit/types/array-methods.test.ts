@@ -96,4 +96,31 @@ describe("array method result types", () => {
 		expect(sql).toContain("array::boolean_and($this.flags, ");
 		expect(sql).not.toContain("undefined");
 	});
+
+	test("value-taking methods accept a raw element and bind it as a variable", () => {
+		const q = db.select("doc").return((d) => ({
+			appended: d.nums.append(4),
+			inserted: d.nums.insert(9, 0),
+			found: d.nums.findIndex(2),
+			filled: d.nums.fill(7),
+		}));
+		type Row = (typeof q)["entry"]["infer"];
+
+		assertType<Equal<Row["appended"], number[]>>();
+		assertType<Equal<Row["found"], number>>();
+		const sql = render(q);
+		expect(sql).toMatch(/array::append\(\$this\.nums, \$\w+\)/);
+		expect(sql).toMatch(/array::insert\(\$this\.nums, \$\w+, \$\w+\)/);
+		expect(sql).toMatch(/array::find_index\(\$this\.nums, \$\w+\)/);
+		expect(sql).toMatch(/array::fill\(\$this\.nums, \$\w+\)/);
+		expect(sql).not.toContain("undefined");
+	});
+
+	test("a raw element must match the array's element type", () => {
+		const q = db.select("doc").return((d) => ({
+			// @ts-expect-error a string is not an element of a number array
+			bad: d.nums.append("x"),
+		}));
+		expect(render(q)).toContain("array::append($this.nums, ");
+	});
 });
