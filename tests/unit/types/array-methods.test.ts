@@ -115,4 +115,12 @@ describe("array method result types", () => {
 		expect(sql).toMatch(/array::fill\(\$this\.nums, \$\w+\)/);
 		expect(sql).not.toContain("undefined");
 	});
+
+	test("a raw element must match the array's element type", () => {
+		const q = db.select("doc").return((d) => ({
+			// @ts-expect-error a string is not an element of a number array
+			bad: d.nums.append("x"),
+		}));
+		expect(render(q)).toContain("array::append($this.nums, ");
+	});
 });

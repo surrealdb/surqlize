@@ -768,23 +768,23 @@ export type Functions = {
 	// Core mutation functions
 	add<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 	): Actionable<C, ArrayType<T>>;
 	append<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 	): Actionable<C, ArrayType<T>>;
 	prepend<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 	): Actionable<C, ArrayType<T>>;
 	push<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 	): Actionable<C, ArrayType<T>>;
 	insert<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 		pos: IntoWorkable<C, NumberType>,
 	): Actionable<C, ArrayType<T>>;
 	remove<C extends WorkableContext, T extends AbstractType>(
@@ -829,7 +829,7 @@ export type Functions = {
 	): Actionable<C, ArrayType<T>>;
 	fill<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 	): Actionable<C, ArrayType<T>>;
 	swap<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
@@ -914,7 +914,7 @@ export type Functions = {
 	): Actionable<C, T>;
 	findIndex<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
+		v: IntoWorkable<C, T>,
 	): Actionable<C, NumberType>;
 	filterIndex<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
