@@ -35,7 +35,7 @@ import {
 	resolveFetchObject,
 } from "./select.ts";
 import { resolveSubjectSchema } from "./subject.ts";
-import { andWhere, escapeIdiomPath } from "./utils.ts";
+import { escapeIdiomPath } from "./utils.ts";
 
 /**
  * A single live-query notification.
@@ -105,40 +105,11 @@ export class LiveSubscription<T> {
 	 * handler (it does not kill the subscription — use {@link kill} for that).
 	 */
 	subscribe(handler: (message: LiveMessage<T>) => void): () => void {
-		// A subscription that is no longer alive has nothing to deliver. Return a
-		// no-op without calling the SDK, whose `subscribe()` starts its loop in an
-		// async IIFE with no `catch`, and that loop rejects on a killed subscription.
-		if (!this.inner.isAlive) return () => {};
-
-		const messages = this[Symbol.asyncIterator]();
-		let stopped = false;
-		(async () => {
-			for await (const message of { [Symbol.asyncIterator]: () => messages }) {
-				if (stopped) return;
-				handler(message);
-			}
-		})().catch((error: unknown) => {
-			// The stream ends with its subscription, and errors from a stream that is
-			// over are expected. An error while it is still alive is a real failure
-			// (a broken stream or a throwing handler), so it is rethrown rather than
-			// dropped, but outside this promise chain.
-			if (stopped || !this.inner.isAlive) return;
-			queueMicrotask(() => {
-				throw error;
-			});
-		});
-
-		return () => {
-			stopped = true;
-			messages.return?.(undefined)?.catch(() => {});
-		};
+		return this.inner.subscribe((message) => handler(this.toMessage(message)));
 	}
 
 	/** Async-iterate notifications: `for await (const msg of sub) { … }`. */
 	async *[Symbol.asyncIterator](): AsyncIterator<LiveMessage<T>> {
-		// Once the subscription is no longer alive nothing more is delivered, so
-		// iteration ends at once, as subscribe() does, rather than the SDK throwing.
-		if (!this.inner.isAlive) return;
 		for await (const message of this.inner) {
 			yield this.toMessage(message);
 		}
@@ -291,20 +262,15 @@ export class LiveQuery<
 			typeof input === "function"
 				? input(tb)
 				: whereFromObject(tb as unknown as Workable<C>, input);
-		// An object filter that imposes no condition (such as `where({})`) adds
-		// nothing, so the filter already on the query stays.
-		if (!condition) return this;
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
 
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
-			next._filter = andWhere(next._filter, filter);
-		});
-	}
-
-	/** Remove every `.where()` condition set so far. */
-	clearWhere(): this {
-		return this.derive((next) => {
-			next._filter = undefined;
+			next._filter = filter;
 		});
 	}
 
@@ -348,32 +314,11 @@ export class LiveQuery<
 		}) as unknown as LiveQuery<O, C, T, E, JsonPatchOp[]>;
 	}
 
-	/** Whether the subject is a single record rather than a table. */
-	private get isRecordSubject(): boolean {
-		return typeof this.subject !== "string";
-	}
-
-	/**
-	 * The table a live query reads. SurrealDB rejects `LIVE SELECT ... FROM
-	 * user:n1` ("Cannot execute LIVE statement using value"), so a record subject
-	 * selects its table and is filtered by id instead (see {@link recordFilter}).
-	 */
 	private displaySubject(ctx: DisplayContext): string {
 		if (typeof this.subject === "string")
 			return ctx.var(new Table(this.subject));
-		if (this.isRecordSubject && typeof this.tb === "string")
-			return ctx.var(new Table(this.tb));
 		if (isWorkable(this.subject)) return this.subject[__display](ctx);
 		return ctx.var(this.subject);
-	}
-
-	/** The `id = …` condition that selects a record subject, if there is one. */
-	private recordFilter(ctx: DisplayContext): string | undefined {
-		if (!this.isRecordSubject || typeof this.tb !== "string") return undefined;
-		const id = isWorkable(this.subject)
-			? this.subject[__display](ctx)
-			: ctx.var(this.subject);
-		return `id = ${id}`;
 	}
 
 	[__display](inp: DisplayContext): string {
@@ -383,7 +328,6 @@ export class LiveQuery<
 		});
 
 		const thing = this.displaySubject(ctx);
-		const recordFilter = this.recordFilter(ctx);
 
 		const projection = this._diff
 			? "DIFF"
@@ -393,10 +337,7 @@ export class LiveQuery<
 
 		let query = /* surql */ `LIVE SELECT ${projection} FROM ${thing}`;
 
-		if (recordFilter && this._filter)
-			query += /* surql */ ` WHERE ${recordFilter} AND (${this._filter[__display](ctx)})`;
-		else if (recordFilter) query += /* surql */ ` WHERE ${recordFilter}`;
-		else if (this._filter)
+		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
 
 		if (this._fetch && this._fetch.length > 0)

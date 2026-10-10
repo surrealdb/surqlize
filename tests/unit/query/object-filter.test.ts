@@ -105,15 +105,14 @@ describe("object-based where / orderBy", () => {
 		expect(q2.sql).toContain("WHERE $this.email = ");
 	});
 
-	test("an empty object adds no condition, so an earlier filter is kept", () => {
+	test("an empty object replaces an earlier filter with none", () => {
 		const { sql } = render(
 			db
 				.select("user")
 				.where((u) => u.age.gt(1))
 				.where({}),
 		);
-		expect(sql).toContain("WHERE $this.age > ");
-		expect(sql).not.toContain("AND");
+		expect(sql).not.toContain("WHERE");
 	});
 
 	test("unknown keys and unsupported operators throw", () => {

@@ -1,4 +1,3 @@
-import { escapeIdent } from "surrealdb";
 import { mergeSchemas } from "../query/subject.ts";
 import type { Orm } from "../schema";
 import {
@@ -15,18 +14,6 @@ import type { DisplayContext } from "./display";
 export const __display: unique symbol = Symbol("display");
 export const __type: unique symbol = Symbol("type");
 export const __ctx: unique symbol = Symbol("ctx");
-/**
- * On an object projection (`{ a: …, b: … }`), the workable of each field, so a
- * query can select the fields one by one (`SELECT a AS x, b AS y`) rather than
- * as a single object.
- */
-export const __fields: unique symbol = Symbol("fields");
-/**
- * Marks a workable produced by property access (`row.a.b`): a plain field path
- * that SurrealQL can sort by directly. Any other workable (a function call, an
- * operator, a literal) is an expression, and `orderBy` hoists it.
- */
-export const __path: unique symbol = Symbol("path");
 
 export type Workable<
 	C extends WorkableContext = WorkableContext,
@@ -36,10 +23,6 @@ export type Workable<
 	[__type]: T;
 	[__ctx]: C;
 };
-
-/** An object projection's workable, carrying the workable of each field. */
-export type ObjectWorkable<C extends WorkableContext = WorkableContext> =
-	Workable<C> & { [__fields]: Record<string, Workable<C>> };
 
 // biome-ignore lint/suspicious/noExplicitAny: default context must accept any typed ORM instance
 export type WorkableContext<O extends Orm<any> = Orm<any>> = {
@@ -149,15 +132,9 @@ export function workableGet(workable: Workable, key: string | number) {
 		[__ctx]: workable[__ctx],
 		[__display](ctx: DisplayContext) {
 			const parent = workable[__display](ctx);
-			// A row rendered bare (no `$this`, as in a grouped SELECT) has no parent:
-			// its field is the bare identifier, which is quoted if it needs to be.
-			if (parent === "" && typeof key === "string") {
-				return escapeIdent(key);
-			}
 			return `${parent}${path}`;
 		},
 		[__type]: type,
-		[__path]: true,
 	};
 }
 
@@ -171,11 +148,6 @@ export function sanitizeWorkable<
 		[__display]: display,
 		[__type]: workable[__type],
 	};
-}
-
-/** Whether a workable is a plain field path (see {@link __path}). */
-export function isFieldPath(workable: Workable): boolean {
-	return (workable as Workable & { [__path]?: boolean })[__path] === true;
 }
 
 export function isWorkable<C extends WorkableContext>(

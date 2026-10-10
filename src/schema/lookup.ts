@@ -16,7 +16,8 @@ type HasEdgeSchema<T extends readonly (EdgeSchema | TableSchema)[]> =
 type ExtractSchemaInfo<T> =
 	T extends EdgeSchema<infer F, infer V, infer To, EdgeFields>
 		? { type: "edge"; from: F; via: V; to: To }
-		: T extends TableSchema<infer Tb>
+		: // biome-ignore lint/suspicious/noExplicitAny: a table's field map is invariant now that its methods mention it
+			T extends TableSchema<infer Tb, any>
 			? { type: "table"; table: Tb }
 			: never;
 

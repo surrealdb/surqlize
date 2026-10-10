@@ -39,22 +39,11 @@ import {
 } from "./modification-methods.ts";
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
-import { andWhere } from "./utils.ts";
 import { validateWrite } from "./validate-input.ts";
-import type {
-	FullWrite,
-	NoWrite,
-	WriteRow,
-	WriteShape,
-	Written,
-} from "./write-result.ts";
 
 /**
  * A fluent UPDATE query builder. Supports SET, UNSET, CONTENT, MERGE, PATCH,
  * REPLACE, WHERE, RETURN, and TIMEOUT clauses.
- *
- * `W` describes what has been written so far. It sets the type of the rows the
- * query returns: see {@link WriteRow}.
  */
 export class UpdateQuery<
 		O extends Orm,
@@ -62,9 +51,8 @@ export class UpdateQuery<
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
 		Only extends boolean = false,
-		W extends WriteShape = NoWrite,
 	>
-	extends Query<C, QueryResult<WriteRow<E, W, "update">, Only>>
+	extends Query<C, QueryResult<E, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
@@ -88,7 +76,6 @@ export class UpdateQuery<
 			orm,
 			id: Symbol(),
 		} as C;
-		this._lenient = true;
 
 		this.subject = subject;
 
@@ -106,132 +93,44 @@ export class UpdateQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): QueryResult<WriteRow<E, W, "update">, Only> {
+	get [__type](): QueryResult<E, Only> {
 		const schema =
 			this._return && typeof this._return !== "string"
 				? this._return[__type]
 				: this.schema;
-		return (this._only ? schema : t.array(schema)) as QueryResult<
-			WriteRow<E, W, "update">,
-			Only
-		>;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
 	}
 
-	only(): UpdateQuery<O, C, T, E, true, W> {
+	only(): UpdateQuery<O, C, T, E, true> {
 		return this.derive((next) => {
 			next._only = true;
-		}) as UpdateQuery<O, C, T, E, true, W>;
+		}) as UpdateQuery<O, C, T, E, true>;
 	}
 
-	/**
-	 * Set fields. A SET on an existing record leaves its other fields in place,
-	 * so those are typed as optional in the result.
-	 */
-	set<const D extends E extends ObjectType ? Partial<SetData<E>> : never>(
-		data: D,
-	): UpdateQuery<O, C, T, E, Only, Written<W, "set", D>> {
-		return this.derive((next) => {
-			applySet(next, data as Record<string, unknown>);
-		}) as unknown as UpdateQuery<O, C, T, E, Only, Written<W, "set", D>>;
+	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
+		return this.derive((next) =>
+			applySet(next, data as Record<string, unknown>),
+		);
 	}
 
-	/** Remove fields from the record. Removed fields are absent from the result. */
-	unset<
-		const F extends readonly (E extends ObjectType
-			? keyof E["schema"] & string
-			: string)[],
-	>(
-		fields: F,
-	): UpdateQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		{
-			keys: W["keys"];
-			maybe: W["maybe"];
-			gone: W["gone"] | F[number];
-			mode: W["mode"];
-		}
-	> {
-		return this.derive((next) => {
-			applyUnset(next, [...fields]);
-		}) as unknown as UpdateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			{
-				keys: W["keys"];
-				maybe: W["maybe"];
-				gone: W["gone"] | F[number];
-				mode: W["mode"];
-			}
-		>;
+	unset(fields: E extends ObjectType ? (keyof E["schema"])[] : string[]): this {
+		return this.derive((next) => applyUnset(next, fields as string[]));
 	}
 
-	/** Replace the record with the given fields, so the other fields are gone. */
-	content<const D extends Partial<WriteData<E>>>(
-		data: D,
-	): UpdateQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
-		return this.derive((next) => {
-			applyContent(next, data);
-		}) as unknown as UpdateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<NoWrite, "replace", D>
-		>;
+	content(data: Partial<WriteData<E>>): this {
+		return this.derive((next) => applyContent(next, data));
 	}
 
-	merge<const D extends Partial<WriteData<E>>>(
-		data: D,
-	): UpdateQuery<O, C, T, E, Only, Written<W, "set", D>> {
-		return this.derive((next) => {
-			applyMerge(next, data);
-		}) as unknown as UpdateQuery<O, C, T, E, Only, Written<W, "set", D>>;
+	merge(data: Partial<WriteData<E>>): this {
+		return this.derive((next) => applyMerge(next, data));
 	}
 
-	patch(
-		operations: JsonPatchOp[],
-	): UpdateQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		{ keys: never; maybe: never; gone: never; mode: "patch" }
-	> {
-		return this.derive((next) => {
-			applyPatch(next, operations);
-		}) as unknown as UpdateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			{ keys: never; maybe: never; gone: never; mode: "patch" }
-		>;
+	patch(operations: JsonPatchOp[]): this {
+		return this.derive((next) => applyPatch(next, operations));
 	}
 
-	/** Replace the record. The other fields of the record are gone. */
-	replace<const D extends Partial<WriteData<E>>>(
-		data: D,
-	): UpdateQuery<O, C, T, E, Only, Written<NoWrite, "replace", D>> {
-		return this.derive((next) => {
-			applyReplace(next, data);
-		}) as unknown as UpdateQuery<
-			O,
-			C,
-			T,
-			E,
-			Only,
-			Written<NoWrite, "replace", D>
-		>;
+	replace(data: Partial<WriteData<E>>): this {
+		return this.derive((next) => applyReplace(next, data));
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
@@ -253,49 +152,31 @@ export class UpdateQuery<
 			typeof input === "function"
 				? input(tb)
 				: whereFromObject(tb as unknown as Workable<C>, input);
-		// An object filter that imposes no condition (such as `where({})`) adds
-		// nothing, so the filter already on the query stays.
-		if (!condition) return this;
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
 
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
-			next._filter = andWhere(next._filter, filter);
+			next._filter = filter;
 		});
 	}
 
-	/** Remove every `.where()` condition set so far. */
-	clearWhere(): this {
-		return this.derive((next) => {
-			next._filter = undefined;
-		});
-	}
-
-	/** The state before the write may not have the fields it set, so only the id is known. */
-	return(
-		mode: "before",
-	): UpdateQuery<
-		O,
-		C,
-		T,
-		E,
-		Only,
-		{ keys: never; maybe: never; gone: never; mode: "patch" }
-	>;
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(
-		cb: (tb: Actionable<C, WriteRow<E, W, "update">>) => P,
-	): UpdateQuery<O, C, T, R, Only, FullWrite>;
+	>(cb: (tb: Actionable<C, E>) => P): UpdateQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
 			| "before"
 			| "after"
 			| "diff"
-			| ((tb: Actionable<C, WriteRow<E, W, "update">>) => Inheritable<C>),
-	): unknown {
+			| ((tb: Actionable<C, E>) => Inheritable<C>),
+	): this {
 		if (typeof value === "function") {
 			const tb = actionable({
 				[__ctx]: this[__ctx],
@@ -303,7 +184,7 @@ export class UpdateQuery<
 				[__display]: ({ contextId }) => {
 					return contextId === this[__ctx].id ? "$this" : "$parent";
 				},
-			}) as Actionable<C, WriteRow<E, W, "update">>;
+			}) as Actionable<C, E>;
 
 			const predicable = value(tb);
 			const workable = inheritableIntoWorkable<C, typeof predicable>(

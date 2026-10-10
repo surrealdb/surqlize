@@ -13,7 +13,7 @@ import { CreateQuery } from "../query/create";
 import { DeleteQuery } from "../query/delete";
 import { InsertQuery } from "../query/insert";
 import { LiveQuery } from "../query/live";
-import { type RelateEndpoint, RelateQuery } from "../query/relate";
+import { RelateQuery } from "../query/relate";
 import type { SurrealConnection } from "../query/request";
 import { SelectQuery } from "../query/select";
 import type { Transaction } from "../query/transaction";
@@ -45,6 +45,7 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+import { checkArgs, throwIfInvalid } from "../validation.ts";
 import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
 import type { FunctionCallable, InferParams } from "./function";
@@ -533,9 +534,8 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * Build a RELATE query to create a graph edge between records.
 	 *
 	 * @param edge - The edge table name (must be an {@link EdgeSchema}).
-	 * @param from - The source record(s), or a query that yields records, such as
-	 *   `db.select("user")`.
-	 * @param to - The target record(s), or a query that yields records.
+	 * @param from - The source record(s).
+	 * @param to - The target record(s).
 	 * @returns A {@link RelateQuery} that can be further chained or awaited.
 	 * @throws {OrmError} If `edge` does not refer to an {@link EdgeSchema}.
 	 */
@@ -544,15 +544,35 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		Edge extends keyof this["tables"] & string,
 	>(
 		edge: Edge,
-		from: RelateEndpoint<C>,
-		to: RelateEndpoint<C>,
+		from:
+			| RecordId
+			| RecordId[]
+			| Workable<C, RecordType>
+			| Workable<C, ArrayType<RecordType>>,
+		to:
+			| RecordId
+			| RecordId[]
+			| Workable<C, RecordType>
+			| Workable<C, ArrayType<RecordType>>,
 	): RelateQuery<this, C, Edge>;
 
 	// Method
 	relate<
 		C extends WorkableContext<this>,
 		Edge extends keyof this["tables"] & string,
-	>(edge: Edge, from: RelateEndpoint<C>, to: RelateEndpoint<C>) {
+	>(
+		edge: Edge,
+		from:
+			| RecordId
+			| RecordId[]
+			| Workable<C, RecordType>
+			| Workable<C, ArrayType<RecordType>>,
+		to:
+			| RecordId
+			| RecordId[]
+			| Workable<C, RecordType>
+			| Workable<C, ArrayType<RecordType>>,
+	) {
 		const edgeSchema = this.tables[edge];
 
 		// Validate it's an EdgeSchema
@@ -582,6 +602,13 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		args?: InferParams<P>,
 	): Promise<R["infer"]> {
 		const schema = fn.schema;
+		if (this.validation) {
+			throwIfInvalid(
+				checkArgs(schema.params, args ?? []),
+				undefined,
+				`arguments for fn::${schema.name}`,
+			);
+		}
 		const result = await this.surreal.run(
 			`fn::${schema.name}`,
 			args as unknown[] | undefined,
@@ -608,7 +635,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * ```
 	 */
 	api<E extends ApiEndpointSchema[]>(...endpoints: E) {
-		return new ApiClient(this.surreal, endpoints);
+		return new ApiClient(this.surreal, endpoints, this.validation);
 	}
 
 	/**

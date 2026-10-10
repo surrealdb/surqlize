@@ -1,4 +1,4 @@
-import type { AbstractType, ArrayType, NumberType } from "../types";
+import type { AbstractType } from "../types";
 import {
 	__type,
 	type IntoWorkable,
@@ -10,10 +10,7 @@ import * as typeFunctions from "./types";
 
 const functions = {
 	any: typeFunctions.any.functions,
-	array: {
-		...typeFunctions.array.functions,
-		...typeFunctions.array.vectorFunctions,
-	},
+	array: typeFunctions.array.functions,
 	date: typeFunctions.date.functions,
 	graph: typeFunctions.graph.functions,
 	number: typeFunctions.number.functions,
@@ -39,10 +36,6 @@ export type GetFunctions<
 	C extends WorkableContext,
 	T extends AbstractType,
 > = BaseFunctions["any"] &
-	// `knn()` exists only on a vector: an `array<number>`.
-	(T extends ArrayType<NumberType>
-		? typeFunctions.array.VectorFunctions
-		: unknown) &
 	// An `option<T>` exposes only its own `option` functions (`map`, `unwrap`, …).
 	// Field/index access through the option resolves transparently (see
 	// `ActionableProps`); to call a *type-specific* method on the inner value

@@ -7,43 +7,21 @@ import {
 } from "../../types";
 import {
 	__ctx,
-	__display,
-	__type,
 	type IntoWorkable,
 	intoWorkable,
 	type Workable,
 	type WorkableContext,
 } from "../../utils";
-import { type Actionable, actionable } from "../../utils/actionable";
+import type { Actionable } from "../../utils/actionable";
 import { comparingFilter } from "../filters";
-import { databaseFunction, matchRef } from "../utils";
+import { databaseFunction } from "../utils";
 
 export const functions = {
-	/**
-	 * Full-text match: `field @@ value`, or `field @N@ value` when `ref` is given.
-	 *
-	 * `search.score()`, `search.highlight()` and `search.offsets()` read a match
-	 * by its reference, so pass the same N to both. A reference is only valid
-	 * within one statement, and must be a literal integer from 0 to 255.
-	 */
 	search<C extends WorkableContext>(
 		this: Workable<C, StringType>,
 		value: IntoWorkable<C, StringType>,
-		ref?: number,
 	) {
-		if (ref === undefined) {
-			return comparingFilter(this[__ctx], "@@", this, value);
-		}
-		const n = matchRef(ref);
-		const operand = intoWorkable(this[__ctx], t.string(), value);
-		return actionable({
-			[__ctx]: this[__ctx],
-			[__type]: t.bool(),
-			// As for `@@` (see comparingFilter), the field is rendered without its
-			// `$this.` prefix, which the match operator does not accept.
-			[__display]: (ctx) =>
-				`${this[__display](ctx).replace(/^\$this\./, "")} @${n}@ ${operand[__display](ctx)}`,
-		});
+		return comparingFilter(this[__ctx], "@@", this, value);
 	},
 
 	startsWith<C extends WorkableContext>(
@@ -554,7 +532,6 @@ export type Functions = {
 	search<C extends WorkableContext>(
 		this: Workable<C, StringType>,
 		value: IntoWorkable<C, StringType>,
-		ref?: number,
 	): Actionable<C, BoolType>;
 
 	startsWith<C extends WorkableContext>(

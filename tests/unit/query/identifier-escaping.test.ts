@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Surreal } from "surrealdb";
-import { count, orm, t, table } from "../../../src";
+import { orm, t, table } from "../../../src";
 
 /**
  * Field identifiers are interpolated directly into the rendered SurrealQL (only
@@ -30,21 +30,12 @@ describe("identifier escaping", () => {
 	});
 
 	test("GROUP BY and SPLIT quote non-identifier field names", () => {
-		const grouped = db
-			.select("user")
-			.groupBy("first name")
-			.return((u) => ({ "first name": u["first name"], total: count(u) }))
-			.toString();
-		expect(grouped).toContain("GROUP BY ⟨first name⟩");
-		expect(grouped).toContain("⟨first name⟩ AS ⟨first name⟩");
-
-		const split = db
-			.select("user")
-			.split("x; DROP")
-			.return((u) => ({ tag: u["x; DROP"] }))
-			.toString();
-		expect(split).toContain("SPLIT ⟨x; DROP⟩");
-		expect(split).toContain("⟨x; DROP⟩ AS tag");
+		expect(db.select("user").groupBy("first name").toString()).toContain(
+			"GROUP BY ⟨first name⟩",
+		);
+		expect(db.select("user").split("x; DROP").toString()).toContain(
+			"SPLIT ⟨x; DROP⟩",
+		);
 	});
 
 	test("SET assignments quote non-identifier field names", () => {

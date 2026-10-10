@@ -1,13 +1,6 @@
 import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
-import {
-	type AbstractType,
-	type ArrayType,
-	type NeverType,
-	type OptionType,
-	type RecordType,
-	t,
-} from "../types";
+import { type AbstractType, type RecordType, t } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
@@ -27,43 +20,6 @@ import {
 import { Query, type QueryResult } from "./abstract.ts";
 import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
-import { andWhere } from "./utils.ts";
-import type { NoWrite, WriteRow } from "./write-result.ts";
-
-/**
- * The rows a DELETE returns from the stored record. A record can be partial (a
- * write may leave out required fields, see `WriteRow`), and the delete has
- * already committed by the time the row is read. So only the id is guaranteed.
- */
-type StoredRow<E extends AbstractType> = WriteRow<E, NoWrite, "update">;
-
-/**
- * What a DELETE returns. Without a `RETURN` (or with `RETURN NONE`) it returns
- * none: an empty array, or NONE with `.only()`. `RETURN AFTER` returns one NONE
- * per deleted record, since the record is gone when it is read. Any other
- * `RETURN` gives rows.
- */
-export type DeleteReturns = "none" | "rows" | "after";
-
-/** The result of a DELETE, see {@link DeleteReturns}. */
-type DeleteResult<
-	E extends AbstractType,
-	Only extends boolean,
-	Returns extends DeleteReturns,
-> = Returns extends "none"
-	? Only extends true
-		? OptionType<NeverType>
-		: ArrayType<NeverType>
-	: Returns extends "after"
-		? QueryResult<OptionType<NeverType>, Only>
-		: QueryResult<E, Only>;
-
-/** The `Returns` a `.return()` argument selects. */
-type DeleteReturnsOf<M extends string> = M extends "none"
-	? "none"
-	: M extends "after"
-		? "after"
-		: "rows";
 
 /**
  * A fluent DELETE query builder. Supports WHERE, RETURN, and TIMEOUT clauses.
@@ -74,8 +30,7 @@ export class DeleteQuery<
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
 	Only extends boolean = false,
-	Returns extends DeleteReturns = "none",
-> extends Query<C, DeleteResult<E, Only, Returns>> {
+> extends Query<C, QueryResult<E, Only>> {
 	readonly [__ctx]: C;
 	private _only = false;
 	private _filter?: Workable<C>;
@@ -90,9 +45,6 @@ export class DeleteQuery<
 			orm,
 			id: Symbol(),
 		} as C;
-		// The rows a DELETE returns are read after the delete has committed, so
-		// they are parsed leniently, as the other write queries are.
-		this._lenient = true;
 
 		this.subject = subject;
 
@@ -110,26 +62,18 @@ export class DeleteQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): DeleteResult<E, Only, Returns> {
-		let type: AbstractType;
-		if (this._return === undefined || this._return === "none") {
-			type = this._only ? t.option(t.never()) : t.array(t.never());
-		} else if (this._return === "after") {
-			// The record is gone when RETURN AFTER reads it: NONE for each record.
-			const element = t.option(t.never());
-			type = this._only ? element : t.array(element);
-		} else {
-			const schema =
-				typeof this._return !== "string" ? this._return[__type] : this.schema;
-			type = this._only ? schema : t.array(schema);
-		}
-		return type as unknown as DeleteResult<E, Only, Returns>;
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
 	}
 
-	only(): DeleteQuery<O, C, T, E, true, Returns> {
+	only(): DeleteQuery<O, C, T, E, true> {
 		return this.derive((next) => {
 			next._only = true;
-		}) as DeleteQuery<O, C, T, E, true, Returns>;
+		}) as DeleteQuery<O, C, T, E, true>;
 	}
 
 	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
@@ -151,60 +95,39 @@ export class DeleteQuery<
 			typeof input === "function"
 				? input(tb)
 				: whereFromObject(tb as unknown as Workable<C>, input);
-		// An object filter that imposes no condition (such as `where({})`) adds
-		// nothing, so the filter already on the query stays.
-		if (!condition) return this;
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
 
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
-			next._filter = andWhere(next._filter, filter);
+			next._filter = filter;
 		});
 	}
 
-	/** Remove every `.where()` condition set so far. */
-	clearWhere(): this {
-		return this.derive((next) => {
-			next._filter = undefined;
-		});
-	}
-
-	/** Return the deleted rows, typed as the stored records (see `StoredRow`). */
-	return(mode: "before"): DeleteQuery<O, C, T, StoredRow<E>, Only, "rows">;
-	/** The record is gone when RETURN AFTER reads it, so each entry is NONE. */
-	return(mode: "after"): DeleteQuery<O, C, T, E, Only, "after">;
-	return(mode: "none"): DeleteQuery<O, C, T, E, Only, "none">;
-	return(mode: "diff"): DeleteQuery<O, C, T, E, Only, "rows">;
-	/**
-	 * A mode chosen at run time: the result is typed as the union of the modes'
-	 * results, so an `after` in the union gives NONE entries, not rows.
-	 */
-	return<M extends "none" | "before" | "after" | "diff">(
-		mode: M,
-	): DeleteQuery<O, C, T, StoredRow<E>, Only, DeleteReturnsOf<M>>;
+	return(mode: "none" | "before" | "after" | "diff"): this;
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(
-		cb: (tb: Actionable<C, StoredRow<E>>) => P,
-	): DeleteQuery<O, C, T, R, Only, "rows">;
+	>(cb: (tb: Actionable<C, E>) => P): DeleteQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
 			| "before"
 			| "after"
 			| "diff"
-			| ((tb: Actionable<C, StoredRow<E>>) => Inheritable<C>),
-	): unknown {
+			| ((tb: Actionable<C, E>) => Inheritable<C>),
+	): this {
 		if (typeof value === "function") {
-			// In a DELETE's RETURN VALUE `$this` is NONE, so the deleted record is
-			// read as `$before`.
 			const tb = actionable({
 				[__ctx]: this[__ctx],
 				[__type]: this.schema,
 				[__display]: ({ contextId }) => {
-					return contextId === this[__ctx].id ? "$before" : "$parent";
+					return contextId === this[__ctx].id ? "$this" : "$parent";
 				},
-			}) as Actionable<C, StoredRow<E>>;
+			}) as Actionable<C, E>;
 
 			const predicable = value(tb);
 			const workable = inheritableIntoWorkable<C, typeof predicable>(

@@ -34,13 +34,6 @@ export type CheckOptions = {
 	implicit?: readonly string[];
 	/** Read-only fields: supplying a value for one is an issue. */
 	computed?: readonly string[];
-	/**
-	 * Whether the write fills the `.default()` of a field it leaves out. CREATE
-	 * does (for SET, MERGE, CONTENT and an empty create); REPLACE, RELATE and
-	 * UPDATE do not. Defaults the write does not fill are required. Defaults to
-	 * `true`, which is what a plain CREATE or INSERT does.
-	 */
-	fills?: boolean;
 };
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -111,7 +104,7 @@ function mayBeMissing(
 	if (options?.mode === "update") return true;
 	if (options?.mode === "create" && options.implicit?.includes(key))
 		return true;
-	return hasDefault(field) && (options?.fills ?? true);
+	return hasDefault(field);
 }
 
 function collectObject(
@@ -197,6 +190,40 @@ export function checkRecord(
 	return issues;
 }
 
+/**
+ * Validate the arguments of a function call against its parameter types,
+ * recording a path of `[0]`, `[1]`, … for each failing argument. An argument
+ * may be left out only when its parameter is `option<…>`.
+ */
+export function checkArgs(
+	params: readonly AbstractType[],
+	args: readonly unknown[],
+): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	if (args.length > params.length) {
+		report(
+			issues,
+			"",
+			`at most ${params.length} argument${params.length === 1 ? "" : "s"}`,
+			`${args.length} arguments`,
+		);
+	}
+	params.forEach((param, i) => {
+		collect(param, args[i], `[${i}]`, issues);
+	});
+	return issues;
+}
+
+/** Validate a single value (such as a request body) against `type`. */
+export function checkValue(
+	type: AbstractType,
+	value: unknown,
+): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	collect(type, value, "", issues);
+	return issues;
+}
+
 /** The type a (possibly dotted) field path resolves to, if the schema knows it. */
 function resolve(schema: ObjectType, path: string): AbstractType | undefined {
 	let type: AbstractType = schema;
@@ -260,49 +287,13 @@ export function checkSet(
 	return issues;
 }
 
-/**
- * The required fields a new record is missing. `written` is the set of
- * top-level fields the write sets. A field is not required if it accepts
- * `undefined`, is implicit or computed, or has a `.default()` that the write
- * fills (see {@link CheckOptions.fills}).
- */
-export function checkRequired(
-	schema: ObjectType,
-	written: ReadonlySet<string>,
-	options: {
-		implicit?: readonly string[];
-		computed?: readonly string[];
-		fills: boolean;
-	},
-): ValidationIssue[] {
-	const issues: ValidationIssue[] = [];
-	const fields = schema.schema as Record<string, AbstractType>;
-	for (const key in fields) {
-		const field = fields[key] as AbstractType;
-		if (
-			written.has(key) ||
-			options.implicit?.includes(key) ||
-			options.computed?.includes(key) ||
-			(options.fills && hasDefault(field)) ||
-			field.validate(undefined)
-		)
-			continue;
-		issues.push({
-			path: key,
-			expected: expectedOf(field),
-			received: undefined,
-			message: `${key}: required field is not set`,
-		});
-	}
-	return issues;
-}
-
 /** Throw a {@link ValidationError} if `issues` is not empty. */
 export function throwIfInvalid(
 	issues: readonly ValidationIssue[],
 	table?: string,
+	subject?: string,
 ): void {
-	if (issues.length > 0) throw new ValidationError(issues, table);
+	if (issues.length > 0) throw new ValidationError(issues, table, subject);
 }
 
 /**

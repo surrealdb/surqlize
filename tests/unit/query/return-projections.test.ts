@@ -205,11 +205,7 @@ describe("CREATE return projections", () => {
 	test("RETURN VALUE { ... } — object", () => {
 		const query = db
 			.create("user")
-			.set({
-				name: { first: "Test", last: "User" },
-				age: 1,
-				email: "t@example.com",
-			})
+			.set({ name: { first: "Test", last: "User" }, age: 1 })
 			.return((r) => ({ name: r.name, email: r.email }));
 		const ctx = displayContext();
 		const result = query[__display](ctx);
@@ -438,9 +434,7 @@ describe("DELETE return projections", () => {
 
 		expect(result).toContain("DELETE");
 		expect(result).toContain("RETURN VALUE");
-		// The deleted record is `$before`: `$this` is NONE in a DELETE's RETURN.
-		expect(result).toContain("$before.name");
-		expect(result).not.toContain("$this");
+		expect(result).toContain("$this.name");
 	});
 
 	test("RETURN VALUE { ... } — object", () => {
@@ -517,7 +511,6 @@ describe("RELATE return projections", () => {
 	test("RETURN VALUE [ ... ] — array with nested object", () => {
 		const query = db
 			.relate("authored", from, to)
-			.set({ created: new Date() })
 			.return((r) => [r.in, { to: r.out, created: r.created }]);
 		const ctx = displayContext();
 		const result = query[__display](ctx);

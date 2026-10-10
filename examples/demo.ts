@@ -1,5 +1,5 @@
 import { RecordId, Surreal } from "surrealdb";
-import { __display, count, displayContext, edge, orm, t, table } from "../src";
+import { __display, displayContext, edge, orm, t, table } from "../src";
 
 const user = table("user", {
 	name: t.object({
@@ -286,17 +286,11 @@ const orderByNumeric = db.select("user").orderByNumeric("age", "DESC");
 // ORDER BY COLLATE
 const orderByCollate = db.select("user").orderByCollate("email", "ASC");
 
-// GROUP BY: a grouped query selects its keys and aggregates in a return()
-const groupByAuthor = db
-	.select("post")
-	.groupBy("author")
-	.return((post) => ({ author: post.author, posts: count(post) }));
+// GROUP BY
+const groupByAuthor = db.select("post").groupBy("author");
 
-// GROUP ALL: one row of table-wide aggregates
-const groupAll = db
-	.select("user")
-	.groupAll()
-	.return((user) => ({ total: count(user) }));
+// GROUP ALL
+const groupAll = db.select("user").groupAll();
 
 // SPLIT
 const splitTags = db.select("user").split("tags");
@@ -310,12 +304,12 @@ const timedQuery = db
 	.where(($this) => $this.age.gt(18))
 	.timeout("5s");
 
-// Combined: all clauses in correct SurrealQL order (SPLIT and GROUP BY cannot
-// be combined, so this uses SPLIT)
+// Combined: all clauses in correct SurrealQL order
 const complexSelect = db
 	.select("user")
 	.where(($this) => $this.age.gte(18))
 	.split("tags")
+	.groupBy("email")
 	.orderBy("age", "DESC")
 	.start(10)
 	.limit(20)

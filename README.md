@@ -172,8 +172,7 @@ const user = table("user", {
 Call `.default()` on any field type to give it a default. The field becomes optional when creating a record, while the type you read back stays non-optional:
 
 ```typescript
-import { expr, orm, t, table } from "surqlize";
-import { Surreal } from "surrealdb";
+import { expr, t, table } from "surqlize";
 
 const user = table("user", {
   name: t.string(),
@@ -182,13 +181,11 @@ const user = table("user", {
   seenAt: t.date().default(expr("time::now()")),   // SurrealQL expression, evaluated by SurrealDB
 });
 
-const db = orm(new Surreal(), user);
-
 await db.create("user").content({ name: "Ada" }); // isVerified, createdAt and seenAt are optional
 // Result type: { id, name: string, isVerified: boolean, createdAt: Date, seenAt: Date }
 ```
 
-Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) when the field is omitted, and an explicit value always wins. `.content()`, `.merge()` and `INSERT` also apply the default when the key is present but `undefined`. `.set()` does not: a key passed as `undefined` counts as supplied, so the field is stored as absent. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `RELATE` applies an edge's defaults in the same way. `UPSERT`, `UPDATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
+Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) whenever the field is omitted or `undefined`; an explicit value always wins. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `UPSERT`, `UPDATE`, `RELATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
 
 `expr()` text is inserted into the query verbatim: only pass trusted, hard-coded SurrealQL, never user input.
 
@@ -215,7 +212,7 @@ const user = table("user", { first: t.string(), last: t.string() })
 
 Computed fields are part of the row type of selects, and can be used in `where`, `orderBy` and `return` like any other field. They are left out of the input types of `create`, `update`, `upsert`, `insert` and `relate`, so writing one is a compile-time error:
 
-```typescript illustrative
+```typescript
 const [u] = await db.select("user").where((u) => u.postCount.gt(0)); // u.fullName: string
 await db.create("user").set({ first: "Ada", last: "Lovelace" });
 await db.create("user").set({ fullName: "x" }); // type error
@@ -223,7 +220,7 @@ await db.create("user").set({ fullName: "x" }); // type error
 
 The field must exist in the database before it can be read. Create it with `db.defineComputed()` (all tables, or pass table names), or put the statements from `user.computedStatements(db)` into a migration:
 
-```typescript illustrative
+```typescript
 await db.defineComputed();
 // DEFINE FIELD OVERWRITE fullName ON TABLE user COMPUTED (string::concat($this.first, " ", $this.last))
 ```
@@ -241,8 +238,6 @@ are instances of the class, and instances of the class are accepted as record
 content:
 
 ```typescript
-import { orm, t, table } from "surqlize";
-import { Surreal } from "surrealdb";
 class User {
   given_name!: string;
   family_name!: string;
@@ -258,9 +253,9 @@ const user = table(
   User,
 );
 
-const db = orm(new Surreal(), user);
+const db = orm(surreal, user);
 
-const ada = await db.select("user", "ada").only();
+const [ada] = await db.select("user", "ada");
 ada instanceof User; // true
 ada.fullName; // "Ada Lovelace" (typed as string)
 
@@ -285,8 +280,7 @@ fields declared in the table plus the instance type of the class. Notes:
 Define graph edges to model relationships between tables:
 
 ```typescript
-import { edge, orm, table, t } from "surqlize";
-import { Surreal } from "surrealdb";
+import { edge, table, t } from "surqlize";
 
 const user = table("user", {
   name: t.string(),
@@ -318,7 +312,7 @@ Pass your tables and edges to `orm()` to get a type-safe client. Schemas can be
 supplied either as individual arguments or grouped in a single object — both
 produce an identical, fully typed ORM:
 
-```typescript illustrative
+```typescript
 // As individual arguments
 const db = orm(new Surreal(), user, post, authored);
 
@@ -329,7 +323,7 @@ const db = orm(new Surreal(), { user, post, authored });
 The object form pairs nicely with a dedicated schema module, letting you define
 your tables once and reuse them across multiple ORM instances:
 
-```typescript illustrative
+```typescript
 // database/schema.ts
 import { edge, t, table } from "surqlize";
 
@@ -348,7 +342,7 @@ export const authored = edge("user", "authored", "post", {
 });
 ```
 
-```typescript illustrative
+```typescript
 // src/db.ts
 import { Surreal } from "surrealdb";
 import { orm } from "surqlize";
@@ -364,7 +358,7 @@ const db = orm(new Surreal(), schema);
 
 ### SELECT statements
 
-```typescript illustrative
+```typescript
 // Select all records
 const allUsers = db.select("user");
 
@@ -429,7 +423,7 @@ This is different from `.then.val()` which extracts the first element client-sid
 
 When selecting through a record link, omitting `.only()` returns an array per parent record. Use `.only()` when each parent has exactly one related record:
 
-```typescript illustrative
+```typescript
 // Without .only(): post.author.select() returns User[] per post → nested arrays
 const posts = await db.select("post").return((post) => ({
   title: post.title,
@@ -452,7 +446,7 @@ const posts = await db.select("post").return((post) => ({
 
 #### Sorting with ORDER BY
 
-```typescript illustrative
+```typescript
 // Order by single field
 const sorted = db.select("user")
   .orderBy("age", "DESC");
@@ -465,10 +459,6 @@ const multiSort = db.select("user")
 // Order by with callback (for nested fields)
 const nestedSort = db.select("user")
   .orderBy(user => user.name.last, "ASC");
-
-// Order by an expression: any function or operator built from the typed builders
-const longestEmail = db.select("user")
-  .orderBy(user => user.email.len(), "DESC");
 
 // Numeric sorting
 const numericSort = db.select("user")
@@ -483,33 +473,21 @@ const objectSort = db.select("user")
   .orderBy({ age: "desc", name: { last: "asc" } });
 ```
 
-SurrealQL only sorts by a field path, so a callback that returns anything else (a function call, an operator, a standalone function) is sorted through an alias. The query selects `*` plus the expression as `__order_N` and drops it again with `OMIT`, so the rows come back with exactly the fields you expect. Field-path callbacks and field names render as plain `ORDER BY` terms, as before.
-
-An expression sort cannot be combined with `.return()`: a returned object would have to carry the sort key, so that combination throws an `OrmError` when the query is built. Compute the value in `.return()` and sort the results in your code, or sort by a field.
-
 #### Grouping with GROUP BY
 
 ```typescript
-import { count, math } from "surqlize";
+// Group by field(s)
+const grouped = db.select("post")
+  .groupBy("author");
 
-// Group by a field: the return() projection selects the key and the aggregates
-const perAuthor = db.select("post")
-  .groupBy("author")
-  .return((post) => ({ writer: post.author, posts: count(post) }));
-
-// Group all rows into one: the return() projection holds table-wide aggregates
-const totals = db.select("user")
-  .groupAll()
-  .return((user) => ({ total: count(user), avgAge: math.mean(user.age) }));
+// Group all (for table-wide aggregates)
+const totalCount = db.select("user")
+  .groupAll();
 ```
-
-A grouped query needs a `.return()` projection, because SurrealDB cannot group `SELECT *`. The projection must select each `groupBy()` field (here `post.author`, aliased as `writer`), and its other fields are aggregates such as `count()` and `math.mean()`. A single aggregate can also be returned on its own, as in `groupAll().return((user) => count(user))`. `groupBy()` and `groupAll()` throw an `OrmError` when the projection is missing or does not select a grouped field. `groupBy()` and `groupAll()` cannot be combined with `split()`, because SurrealDB does not allow SPLIT and GROUP in one query. Aggregate functions are listed under [Standalone functions](#standalone-functions).
-
-Select only the grouped fields and aggregates in a grouped projection. SurrealDB returns any other field as an array of its values per group (`title: ["A", "B"]`), which does not match the field's declared type, so it fails to parse.
 
 #### Loading relations with FETCH
 
-```typescript illustrative
+```typescript
 // Fetch linked records
 const withAuthor = db.select("post")
   .fetch("author");
@@ -541,9 +519,9 @@ const purchases = await db.select("purchased")
   .fetch("out", "out.author")
   .execute();
 
-purchases[0]!.out.title;        // string  (product fetched)
-purchases[0]!.out.author.name;  // string  (nested author fetched)
-purchases[0]!.in;               // RecordId<"user">  (left as a link)
+purchases[0].out.title;        // string  (product fetched)
+purchases[0].out.author.name;  // string  (nested author fetched)
+purchases[0].in;               // RecordId<"user">  (left as a link)
 ```
 
 Record links wrapped in `option<…>` or `array<…>` are resolved too, so
@@ -560,14 +538,7 @@ const splitTags = db.select("post")
 // Split multiple arrays
 const multiSplit = db.select("post")
   .split("tags", "categories");
-
-// One row per tag. The projection must select the split field, here as `tag`.
-const perTag = db.select("post")
-  .split("tags")
-  .return((post) => ({ tag: post.tags, title: post.title }));
 ```
-
-After `split()`, each split field holds a single element, so it is typed as the element type (`string` for `array<string>`), not the array. A `.where()` after `split()` still filters on the whole array, since SurrealDB applies WHERE before SPLIT. `split()` cannot be combined with `groupBy()` or `groupAll()`, and it must be called before `.return()`, because a projection is typed from the rows before the split (calling it after throws an `OrmError`).
 
 #### Setting query timeout
 
@@ -595,7 +566,7 @@ const complexQuery = db.select("post")
 
 Create a new record with a specific id or a generated id.
 
-```typescript illustrative
+```typescript
 // Create with SET
 const newUser = await db.create("user").set({
   name: "Alice",
@@ -628,7 +599,7 @@ const user = await db
   .create("user", "john")
   .only()
   .set({ name: "John" });
-// user: one row, typed as described in "What a partial write returns" (not an array)
+// user: User  (not User[])
 ```
 
 #### Which write method enforces required fields?
@@ -645,53 +616,11 @@ Only `.content()` requires the full record on `CREATE`: its input type is the ta
 
 Use `.content()` when you want the compiler to enforce required fields. With [runtime validation](#runtime-validation) enabled, `.content()` is checked as a full record, `.set()` field by field, and `.patch()` is not checked.
 
-#### What a partial write returns
-
-A write that does not supply the whole record still succeeds, and returns only the fields it knows are present. The record is stored as written, so a required field left unset stays unset, and the query does not throw after the write has committed. With [runtime validation](#runtime-validation) on (`validated()`), a new record must still supply its required fields, and the write is rejected before it is sent. The result type follows what was written:
-
-| Write | Fields the returned row is typed with |
-| --- | --- |
-| `create().content()` | Every field (required fields are enforced) |
-| `create().set()` / `.merge()` | `id`, the fields written, fields with a `.default()` (CREATE applies them), and `option<…>` fields |
-| `create().replace()` | `id`, the fields written, and `option<…>` fields (REPLACE does not apply defaults) |
-| `create()` with no data | `id`, fields with a `.default()`, and `option<…>` fields |
-| `create().patch()` | `id`; every other field is optional |
-| `relate().content()` | Every field, including `in` and `out` |
-| `relate().set()` / `.merge()` | `id`, `in`, `out`, the fields written, fields with a `.default()` (RELATE applies them, as CREATE does), and `option<…>` fields |
-| `relate().replace()` | `id`, `in`, `out`, the fields written, and `option<…>` fields (REPLACE does not apply defaults) |
-| `update()` / `upsert()` `.set()` / `.merge()` | `id` and the fields written. The other fields may already be stored, so they are optional |
-| `update()` / `upsert()` `.content()` / `.replace()` | `id` and the fields written. The record is replaced, so no other field remains |
-| `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
-| `delete()` with `RETURN BEFORE` or a projection | `id`; every other field is optional. The record may have been stored partially, and it is deleted before the row is read |
-| `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
-
-A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied. A dotted key (`.set({ "name.first": "Ada" })`) writes into the nested object `name`. CREATE and RELATE need that parent object set in full in the same call (`.set({ name: { first, last }, "name.first": "Ada" })`). Without it the call does not type-check, and `.set()` throws an `OrmError` before anything is sent, because the write would store a partial object. UPDATE and UPSERT cannot know whether the object exists on the stored record, so a dotted key into a missing object is accepted there and stores a partial object; reading that record back with the full schema then fails until the missing fields are set. A dotted key into an object that already exists is fine on every write.
-
-`.unset()` removes the unset fields from the result type. A `.return((row) => …)` projection only sees the fields the row is typed with, so it cannot read a field the write did not set. Inserts with `.onDuplicate()` return rows that may have been updated rather than inserted, so only `id` is required for those.
-
-```typescript
-import { t, table } from "surqlize";
-const user = table("user", {
-  name: t.string(),
-  email: t.string(),
-  nickname: t.option(t.string()),
-  role: t.string().default("guest"),
-});
-
-const [ada] = await db.create("user").set({ name: "Ada" }).execute();
-// ada: { id, name: string, nickname: string | undefined, role: string }
-// Stored without an email. db.select("user") throws until one is set.
-```
-
-Class-linked tables still return instances of their class.
-
 ### INSERT statements
 
 Insert one or multiple records with support for bulk operations and conflict handling.
 
-```typescript illustrative
-import { RecordId } from "surrealdb";
-
+```typescript
 // Insert single record (object style)
 await db.insert("user", {
   name: "Alice",
@@ -717,11 +646,10 @@ await db.insert("user")
 // IGNORE duplicates (skip conflicts silently)
 await db.insert("user", userData).ignore();
 
-// ON DUPLICATE KEY UPDATE (update on conflict). An id is a RecordId, not a string.
+// ON DUPLICATE KEY UPDATE (update on conflict)
 await db.insert("user", { 
-  id: new RecordId("user", "alice"), 
+  id: "alice", 
   name: "Alice", 
-  email: "alice@example.com",
   age: 30 
 })
 .onDuplicate({
@@ -778,14 +706,14 @@ const upserted = await db
   .upsert("user", "john")
   .only()
   .set({ name: "John" });
-// upserted: one row, typed as described in "What a partial write returns" (not an array)
+// upserted: User  (not User[])
 ```
 
 ### UPDATE statements
 
 Update a record or multiple records in a table.
 
-```typescript illustrative
+```typescript
 // Update with SET
 await db.update("user", "alice")
   .set({ age: 31 });
@@ -838,17 +766,14 @@ const user = await db
   .update("user", "john")
   .only()
   .set({ name: "Johnny" });
-// user: one row, typed as described in "What a partial write returns" (not an array)
+// user: User  (not User[])
 ```
-
-An update leaves the fields it does not set in place, so the result types them as optional. `.content()` and `.replace()` replace the record, so only the fields given remain. See [What a partial write returns](#what-a-partial-write-returns).
 
 ### RELATE statements
 
 Create graph edges between records using defined edge schemas.
 
-```typescript illustrative
-import { RecordId } from "surrealdb";
+```typescript
 // Single edge between two records
 const edge = await db.relate(
   "authored",
@@ -890,7 +815,7 @@ await db.relate(
   "authored",
   new RecordId("user", "user"),
   new RecordId("post", "post")
-).content({ created: new Date(), role: "author" })
+).content({ created: new Date() })
 .return("after"); // or "before", "none", "diff"
 
 // With return projection
@@ -921,8 +846,8 @@ const relation = await db
 
 ### DELETE statements
 
-```typescript illustrative
-// Delete single record (no RETURN, so it resolves to an empty array)
+```typescript
+// Delete single record (returns array with 0 or 1 item)
 await db.delete("user", "alice");
 
 // Bulk delete with WHERE
@@ -945,8 +870,7 @@ const deleted = await db
   .delete("user", "alice")
   .only()
   .return("before");
-// deleted: one row, typed as described in "What a partial write returns" (not an array).
-// Only `id` is guaranteed: the stored record may be partial.
+// deleted: User  (not User[])
 ```
 
 ## Runtime validation
@@ -957,7 +881,7 @@ TypeScript checks your data at compile time, but data from a form, an API reques
 
 `db.validated()` returns a view of the ORM (sharing the same connection, like `withSignal()`) in which `create`, `insert`, `update`, `upsert` and `relate` check their data first:
 
-```typescript illustrative
+```typescript
 const db = orm(surreal, user).validated();
 
 await db.create("user").content({ name: 42, address: { city: 1 }, tags: ["a", 2] });
@@ -971,36 +895,27 @@ await db.create("user").content({ name: 42, address: { city: 1 }, tags: ["a", 2]
 
 A single query can opt in or out with `.validated()` / `.validated(false)`. Validation also applies in batches, inside transactions, to `.prepare()`, and survives `withSignal()`.
 
-**`validated()` is needed to stop incomplete records being stored.** Without it, `db.create("user").set({ name: "Ada" })` on a table with a required `email` stores the record without `email`, and the write returns. A later `db.select("user")` of that record throws `TypeParseError`, because the record cannot be parsed. With `validated()`, the same write throws `ValidationError` (`email: required field is not set`) before anything is sent. The ORM does not check for incomplete records when validation is off.
-
 `ValidationError` extends `OrmError`. It does not stop at the first problem: `error.issues` lists every failing field as `{ path, expected, received, message }`, where `path` looks like `address.city` or `tags[1]` (or `[2].age` for the third row of an `insert`), and `error.table` names the table.
 
 ### What is checked
 
 | Data | Checked as |
 | --- | --- |
-| `create().content()`, `create().set()`, `create().merge()`, `insert()` rows | the new record: every required field must be present and valid. `option<...>` fields, fields with a `.default()` (CREATE and INSERT fill them), and `id` are not required |
-| `create().replace()` | the new record: every required field must be present. REPLACE does not fill defaults, so fields with a `.default()` are required too |
-| `relate().content()`, `.set()`, `.merge()`, `.replace()` | the new edge: every required field must be present, including fields with a `.default()`, since RELATE does not fill defaults. `id`, `in` and `out` are not required |
-| `update` / `upsert` `.content()`, `.replace()` | the whole record, which replaces the stored one: every required field must be present, including fields with a `.default()`, since neither fills defaults |
-| `update` / `upsert` `.set()`, `.merge()` | each supplied field, including dotted paths such as `"address.city"` for `.set()`. The stored fields are kept, so a missing field is not an error |
-| `.set()` and `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
-| `.patch()` | not checked |
-
-A required field is one the schema does not mark `option<...>` and that the write does not supply. A field passed as `undefined` counts as not supplied.
+| `create().content()`, `insert()` rows, `relate().content()` | the full input: every field must be present and valid, except `option<...>` fields, fields with a `.default()`, and `id` (and `in` / `out` on edges) |
+| `update` / `upsert` `.content()`, `.merge()`, `.replace()` | a partial record: only the fields present are checked |
+| `.set()`, `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
 
 - Nested objects, arrays, tuples, unions, record links (including the linked table) and tables linked to a class are all checked.
 - **Computed fields are read-only**: supplying a value for one is an issue.
 - Fields the schema does not declare are ignored, and so are `.patch()` operations.
 - Values SurrealDB evaluates itself, such as `expr(...)` defaults and subquery expressions, are not checked client-side.
 - Validation never changes your data: what is checked is what is sent. Defaults are still filled in by the query as before.
-- The result of a partial write is typed to match what was written, as described in [What a partial write returns](#what-a-partial-write-returns). Under validation, a new record (`create`, `relate`) must still be given every required field, as the table above says, so `create().set({ name })` on a table with a required `email` is rejected even though its result type leaves `email` out. A value that is supplied is always checked.
 
 ### Validating data yourself
 
 Tables and edges have the same check as a standalone helper, for example at the edge of your API:
 
-```typescript illustrative
+```typescript
 const result = user.safeParse(body);            // mode "create" by default
 if (!result.success) return respond(400, result.error.issues);
 await db.create("user").content(result.data);   // result.data is typed as the create input
@@ -1010,7 +925,39 @@ user.safeParse(patch, { mode: "update" });      // a partial write
 user.safeParse(row, { mode: "row" });           // a whole stored record, id and computed fields included
 ```
 
-`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. On a table linked to a class, `"row"` mode returns an instance of the class, as selects do (the other modes return the data as given). The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
+`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
+
+## Custom functions and API endpoints
+
+Describe a `DEFINE FUNCTION` with `fn(name, params, returns)` and call it with `db.run()`, or call a `DEFINE API` endpoint through a typed client from `db.api()`. Both are typed from the description, and results are parsed against the declared types. Define the function or endpoint in the database first; surqlize only calls it.
+
+```ts
+import { api, fn, orm, t } from "surqlize";
+
+const greet = fn("greet", [t.string()], t.string()); // fn::greet
+const greeting = await db.run(greet, ["world"]);     // string
+
+const echo = api("/echo", {
+  post: {
+    request: t.object({ text: t.string() }),
+    response: t.object({ text: t.string() }),
+  },
+});
+const res = await db.api(echo).post("/echo", { text: "hi" });
+res.body?.text; // string | undefined
+```
+
+A function is also callable inside a query: `db.select("user").return((u) => ({ hi: greet(u, u.name) }))`.
+
+On a [validated](#runtime-validation) ORM (`db.validated()`), `db.run()` checks its arguments against the parameter types, and API calls check the request body against the declared `request` type, before anything is sent. Every failing argument or field is reported in a single `ValidationError`. Arguments passed to a function inside a query are expressions evaluated by the database, so they are not checked.
+
+### Using a schema with the `surrealdb` SDK
+
+Every `t.*` type implements [Standard Schema](https://standardschema.dev), so a definition can validate in any library that accepts one, including the `surrealdb` SDK's `.args()`, `.returns()`, `.request()` and `.response()` call methods (in the first `surrealdb` release that includes them):
+
+```ts
+const sum = await surreal.run("fn::add", [1, 2]).returns(t.number());
+```
 
 ## Batch
 
@@ -1064,14 +1011,14 @@ The callback form automatically commits on success and cancels on error:
 
 ```typescript
 const result = await db.transaction(async (tx) => {
-  const user = await tx.create("user").only().set({
+  const user = await tx.create("user").set({
     name: "Alice",
     age: 30,
   });
 
   // Use intermediate results to make decisions
   if (user.age > 25) {
-    await tx.update(user.id).set({ status: "senior" });
+    await tx.update("user", user.id).set({ status: "senior" });
   }
 
   return user;
@@ -1084,10 +1031,9 @@ const result = await db.transaction(async (tx) => {
 For full control, use the manual form:
 
 ```typescript
-import { RecordId } from "surrealdb";
 const tx = await db.transaction();
 try {
-  const user = await tx.create("user").only().set({ name: "Alice" });
+  const user = await tx.create("user").set({ name: "Alice" });
   await tx.relate("authored", user.id, new RecordId("post", "hello"));
   await tx.commit();
 } catch (e) {
@@ -1125,7 +1071,7 @@ await sub.kill();
 
 The notification `value` is parsed against the table schema, so it is fully typed once you have narrowed to a record change:
 
-```typescript illustrative
+```typescript
 const sub = await db.live("user");
 sub.subscribe((msg) => {
   if (msg.action === "KILLED") return;
@@ -1138,7 +1084,7 @@ sub.subscribe((msg) => {
 
 `KILLED` means the server ended the subscription — for example because its table was removed. It is the last message a subscription emits, and it carries no record, so `recordId` and `value` only exist once you have ruled it out. `LiveMessage` is a union, so the compiler enforces this:
 
-```typescript illustrative
+```typescript
 sub.subscribe((msg) => {
   if (msg.action === "KILLED") {
     // msg.recordId and msg.value are undefined here
@@ -1256,7 +1202,7 @@ const deleted = await db.delete("user", "alice")
 
 All types support these comparison operators:
 
-```typescript illustrative
+```typescript
 db.select("user").where((user) => 
   // Equality
   user.name.eq("John")              // =
@@ -1291,7 +1237,7 @@ db.select("user").where((user) =>
 
 For complex conditions, use the standalone `and()` and `or()` combiners. These make precedence explicit and produce correctly parenthesized SurrealQL:
 
-```typescript illustrative
+```typescript
 import { orm, table, t, and, or } from "surqlize";
 
 // Simple compound: age >= 18 AND email ends with @example.com
@@ -1325,31 +1271,11 @@ db.select("user").where((user) =>
 
 Both `and()` and `or()` require at least two conditions and accept any number of additional conditions. Nesting them produces correctly parenthesized output, so precedence is always explicit.
 
-### Chaining `where()` calls
-
-Chained `.where()` calls AND together: each one narrows the rows the earlier ones kept. Callbacks and [object filters](#object-based-filters-and-sorting) can be mixed freely. This holds for `select`, `update`, `delete`, `live` and `upsert`, and for the edge filter of a traversal segment (`g("authored").where(...).where(...)`, where `clearWhere()` drops the filter).
-
-```typescript
-db.select("user")
-  .where((user) => user.age.gte(18))
-  .where({ email: { endsWith: "@example.com" } });
-// WHERE ($this.age >= 18 AND string::ends_with($this.email, "@example.com"))
-```
-
-An object filter with no condition, such as `where({})`, or one whose values are all `undefined`, adds nothing, so the filter already on the query stays. To remove every condition set so far, call `clearWhere()`:
-
-```typescript
-const adults = db.select("user").where((user) => user.age.gte(18));
-
-adults.where({ name: undefined }); // still WHERE $this.age >= 18
-adults.clearWhere();               // no WHERE clause at all
-```
-
 ### Object-based filters and sorting
 
-`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks. The objects are fully type-checked against your schema.
+`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks, and the two styles can be mixed freely. The objects are fully type-checked against your schema.
 
-```typescript illustrative
+```typescript
 const rows = await db.select("user")
   .where({
     name: { first: "Ada" },            // nested object field: name.first = "Ada"
@@ -1377,17 +1303,17 @@ Fields of an object, and fields of a record link, can be filtered or sorted by i
 
 Notes:
 
-- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) adds no condition, so optional parameters can be passed straight through. A `where()` with no condition leaves the filter from earlier calls in place (see [Chaining `where()` calls](#chaining-where-calls)).
+- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) produces no `WHERE` clause, so optional parameters can be passed straight through.
 - A key that names a field always wins over an operator or combinator of the same name.
 - Unknown fields, unsupported operators and invalid directions throw an `OrmError` (and are rejected by the type checker).
 - Directions are `"asc"` / `"desc"` (upper case also works) and are applied in key order. `orderByNumeric` and `orderByCollate` remain fluent-only and chain after an object `orderBy`.
-- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries (`upsert` takes the callback form only).
+- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries.
 
 ## Type-specific functions
 
 ### String functions
 
-```typescript illustrative
+```typescript
 db.select("user").where((user) =>
   user.bio.search("typescript")
   user.email.startsWith("admin@")
@@ -1414,7 +1340,7 @@ Additional string functions include `capitalize`, `repeat`, `slice`, `matches`, 
 
 ### Array functions
 
-```typescript illustrative
+```typescript
 db.select("user").where((user) =>
   // Single element checks
   user.tags.contains("typescript")          // Array contains element
@@ -1498,7 +1424,6 @@ Additional date functions include `week`, `micros`, `nano`, and rounding functio
 When working with optional values (created with `t.option()`), you can use `map()` to transform the value if it exists:
 
 ```typescript
-import { t, table } from "surqlize";
 const user = table("user", {
   name: t.string(),
   bio: t.option(t.string()),
@@ -1506,8 +1431,8 @@ const user = table("user", {
 
 db.select("user").return((user) => ({
   name: user.name,
-  // Transform bio to uppercase if it exists (NONE otherwise)
-  bioUpper: user.bio.map((b) => b.uppercase()),
+  // Transform bio to uppercase if it exists
+  bioUpper: user.bio.map((b) => b.toUpperCase()),
   // Chain multiple operations
   bioLength: user.bio.map((b) => b.len()),
 }));
@@ -1518,7 +1443,6 @@ db.select("user").return((user) => ({
 When you have a record reference, you can perform nested queries:
 
 ```typescript
-import { t, table } from "surqlize";
 const post = table("post", {
   title: t.string(),
   authorId: t.record("user"),
@@ -1537,7 +1461,7 @@ const query = db.select("post").return((post) => ({
 type Result = t.infer<typeof query>;
 // Result: Array<{
 //   title: string;
-//   author: { name: string; email: string }[];
+//   author: { name: string; email: string } | undefined;
 // }>
 ```
 
@@ -1605,21 +1529,6 @@ db.select("user").return((user) => ({
 
 Available standalone function families: `count`, `math` (aggregation + constants), `time`, `crypto`, `rand`, `duration`, `type_`, `encoding`, `geo`, `http`, `meta`, `object`, `parse`, `search`, `session`, `set_`, `sleep`, `value`, `vector`, `bytes`, `not`.
 
-Two details of the search and vector families:
-
-- **Full-text match references.** `search.score()`, `search.highlight()` and `search.offsets()` read a match by its numbered reference. Pass the same N to `.search(value, N)` in the same query, which renders `@N@`. Without a number, `.search(value)` renders `@@`, and several unnumbered matches in one query cannot be told apart. Use numbers whenever more than one match needs its own score.
-
-  ```typescript
-  db.select("post")
-    .where((post) => post.title.search("hello", 1))
-    .return((post) => ({
-      score: search.score(post.title, 1),
-      marked: search.highlight(post.title, "<b>", "</b>", 1),
-    }));
-  ```
-
-- **Vector literals.** A plain number array can be passed to a `vector` function beside a field or other expression, so `vector.similarityCosine(post.embedding, [1, 0, 0])` needs no `db.value()`. Single-operand functions (`magnitude`, `normalize`), and calls whose operands are all plain arrays, still need `db.value([...])`, because there is no field to take the query context from.
-
 ## Advanced Features
 
 ### Return Clauses
@@ -1650,8 +1559,6 @@ const projection = await db.update("user", "alice")
   .set({ age: 31, email: "new@email.com" })
   .return((u) => ({ name: u.name, age: u.age }));
 ```
-
-For a partial write, the projection can only read the fields the result is typed with (see [What a partial write returns](#what-a-partial-write-returns)).
 
 ### Query Timeouts
 
@@ -1703,7 +1610,7 @@ Only re-send what is safe to replay: a single statement, or a [batch](#batch), w
 
 SurrealDB 3.1.0 and later report a conflict as a structured error, which is what `.retry()` recognises. For earlier servers, give it a predicate:
 
-```typescript illustrative
+```typescript
 .retry({
   retryable: (error) =>
     error instanceof Error && /conflict|can be retried/i.test(error.message),
@@ -1714,7 +1621,7 @@ SurrealDB 3.1.0 and later report a conflict as a structured error, which is what
 
 In a request handler, `db.withSignal(signal)` returns a view of the ORM in which **every** query is abandoned when the signal aborts, so you don't pass it to each call. It shares the connection and session, so it is cheap to make one per request:
 
-```typescript illustrative
+```typescript
 export default {
   async fetch(request: Request) {
     const scoped = db.withSignal(request.signal);
@@ -1732,38 +1639,6 @@ export default {
   },
 };
 ```
-
-### Vector search (KNN)
-
-Fields declared as `t.array(t.number())` are vectors, and expose `.knn()`, which renders SurrealQL's KNN operator `<|k,…|>`. It composes with `.where()` like any other condition:
-
-```typescript illustrative
-import { vector } from "surqlize";
-
-const doc = table("doc", {
-  title: t.string(),
-  embedding: t.array(t.number()),
-});
-
-// Brute force over a metric: the k nearest rows, nearest first
-const nearest = db.select("doc")
-  .where(d => d.embedding.knn(query, 5, { metric: "COSINE" }))
-  .orderBy(d => vector.distanceKnn(d), "ASC");
-
-// Through an HNSW index (or DiskANN with its L value): the search width ef
-const approx = db.select("doc")
-  .where(d => d.embedding.knn(query, 5, { ef: 40 }));
-```
-
-- `query` is a `number[]` or any expression of the same type. It is sent as a bound parameter.
-- `k` must be a positive integer. The metric is one of `"EUCLIDEAN"`, `"COSINE"`, `"MANHATTAN"` or `"CHEBYSHEV"`; `ef` must be a positive integer. Anything else throws an `OrmError` before the query is sent, since these values are written into the query text.
-- A metric and an `ef` are both required: SurrealQL has no bare `<|k|>` form (SurrealDB 3.2 rejects it).
-- `knn()` exists only on `array<number>` fields. Calling it on another type is a compile-time error.
-- The HNSW form needs an index on the field, for example `DEFINE INDEX doc_embedding ON doc FIELDS embedding HNSW DIMENSION 3 DIST EUCLIDEAN`. Define it yourself; the library does not create indexes.
-- The distance the operator computed is available as `vector.distanceKnn(row)`, which renders `vector::distance::knn()`. It is only meaningful in a query that has a `knn()` predicate, and it can be used in `.return()` and in `.orderBy()`.
-- `knn()` is a predicate. Using it as a value in `.return()` is not supported.
-
-Other conditions combine with it through `and()`, as usual. SurrealDB decides how they interact with the `k` nearest rows, so do not assume exactly `k` rows come back when a second condition is present.
 
 ### Operators
 
@@ -1788,7 +1663,6 @@ db.update("post", "post1").set({
 Extract TypeScript types from your queries using `t.infer<>`:
 
 ```typescript
-import { t, table } from "surqlize";
 // Infer query result type
 const query = db.select("user").return((user) => ({
   name: user.name,
@@ -1832,18 +1706,14 @@ console.log(ctx.variables); // Parameterized values
 ## Graph traversal
 
 Traverse graph edges directly inside queries. Call `.out()` on a select row to
-follow an edge (`->edge`), or `.in()` to follow it in reverse (`<-edge`). A step
-lands on the edge records, so reach the record at the far end with a second step:
-`.out("edge").out("target")` (`->edge->target`), or `.in("edge").in("source")`
-(`<-edge<-source`). TypeScript only permits edges that actually connect to the
-current table, and the result type is inferred automatically.
+follow an edge to the far table (`->edge->target`), or `.in()` to follow it in
+reverse (`<-edge<-source`). TypeScript only permits edges that actually connect
+to the current table, and the result type is inferred automatically.
 
 You can traverse from the row itself (`user.out("authored")`, rooted at the
 row's `id`) or from any record-link field (`post.author.out(...)`).
 
 ```typescript
-import { edge, orm, t, table } from "surqlize";
-import { Surreal } from "surrealdb";
 const user = table("user", { name: t.string() });
 const post = table("post", { title: t.string() });
 const tag = table("tag", { label: t.string() });
@@ -1865,8 +1735,7 @@ traversal compiles to a subquery:
 const usersWithPosts = db.select("user").return((user) => ({
   name: user.name,
   posts: user
-    .out("authored")              // -> the authored edge records
-    .out("post")                  // -> post
+    .out("authored")              // ->authored->post
     .select()
     .return((post) => ({ title: post.title })),
 }));
@@ -1879,9 +1748,8 @@ Used directly in a projection, a traversal yields an array of record links —
 exactly like raw SurrealQL `->authored->post`:
 
 ```typescript
-import { t } from "surqlize";
 const query = db.select("user").return((user) => ({
-  postIds: user.out("authored").out("post"),
+  postIds: user.out("authored"),
 }));
 
 type Result = t.infer<typeof query>;
@@ -1895,10 +1763,8 @@ Steps chain, with every hop re-typed against the table it lands on:
 ```typescript
 db.select("user").return((user) => ({
   tags: user
-    .out("authored")   // -> the authored edge records
-    .out("post")       // -> post
-    .out("tagged")     // -> the tagged edge records
-    .out("tag")        // -> tag
+    .out("authored")   // -> post
+    .out("tagged")     // -> tag
     .select()
     .return((tag) => ({ label: tag.label })),
 }));
@@ -1911,8 +1777,7 @@ db.select("user").return((user) => ({
 // Who authored this post?
 db.select("post").return((post) => ({
   authors: post
-    .in("authored")               // <- the authored edge records
-    .in("user")                   // <- user
+    .in("authored")               // <-authored<-user
     .select()
     .return((user) => ({ name: user.name })),
 }));
@@ -1937,15 +1802,13 @@ db.select("authored").return((e) => ({
 
 Filter on the edge mid-traversal by passing a callback to `.out()` / `.in()`.
 It receives a segment factory `g` bound to the current step: build the edge
-segment and add a `.where()` whose callback receives the edge's fields. The step
-compiles to `->(edge WHERE …)`, and the following step reaches the target
-(`->(edge WHERE …)->target`):
+segment and add a `.where()` whose callback receives the edge's fields. This
+compiles to `->(edge WHERE …)->target`:
 
 ```typescript
 db.select("user").return((user) => ({
   posts: user
     .out((g) => g("authored").where((e) => e.role.eq("author")))
-    .out("post")
     .select()
     .return((post) => ({ title: post.title })),
 }));
@@ -1976,12 +1839,12 @@ iteration is typed against one record type. They work on a select row
 (`person.recurse(…)`, rooted at its `id`) or on any record link.
 
 ```typescript
-import { edge, orm, t, table } from "surqlize";
-import { Surreal } from "surrealdb";
 const person = table("person", { name: t.string() });
 const knows = edge("person", "knows", "person", { since: t.number() });
 const db = orm(new Surreal(), person, knows);
 
+// In the examples below, `step` stands for the callback
+// `(n) => n.out("knows").out("person")`. Write it inline so `n` is typed.
 ```
 
 #### Depth ranges: `recurse(depth, step)`
@@ -1992,14 +1855,10 @@ returns the nodes at the deepest level reached.
 
 ```typescript
 db.select("person").return((p) => ({
-  // .{2}(->knows->person)
-  friendsOfFriends: p.recurse(2, (n) => n.out("knows").out("person")),
-  // .{2..4}(…)
-  between: p.recurse({ min: 2, max: 4 }, (n) => n.out("knows").out("person")),
-  // .{2..}(…)
-  atLeast: p.recurse({ min: 2 }, (n) => n.out("knows").out("person")),
-  // .{..3}(…)
-  atMost: p.recurse({ max: 3 }, (n) => n.out("knows").out("person")),
+  friendsOfFriends: p.recurse(2, step),                 // .{2}(->knows->person)
+  between: p.recurse({ min: 2, max: 4 }, step),         // .{2..4}(…)
+  atLeast: p.recurse({ min: 2 }, step),                 // .{2..}(…)
+  atMost: p.recurse({ max: 3 }, step),                  // .{..3}(…)
 }));
 // each field: RecordId<"person">[]
 ```
@@ -2015,16 +1874,11 @@ adds the starting record (`+inclusive`).
 
 ```typescript
 db.select("person").return((p) => ({
-  // .{..+collect}(…)
-  network: p.collect((n) => n.out("knows").out("person")),
-  // .{..2+collect}(…)
-  nearby: p.collect({ max: 2 }, (n) => n.out("knows").out("person")),
-  nearbyAndMe: p.collect({ max: 2 }, (n) => n.out("knows").out("person"), { inclusive: true }),
+  network: p.collect(step),                        // .{..+collect}(…)
+  nearby: p.collect({ max: 2 }, step),             // .{..2+collect}(…)
+  nearbyAndMe: p.collect({ max: 2 }, step, { inclusive: true }),
   // Materialise the nodes like any other traversal:
-  names: p
-    .collect({ max: 2 }, (n) => n.out("knows").out("person"))
-    .select()
-    .return((f) => ({ name: f.name })),
+  names: p.collect({ max: 2 }, step).select().return((f) => ({ name: f.name })),
 }));
 ```
 
@@ -2036,14 +1890,12 @@ parameter. When there is no path, SurrealDB returns `NONE`, so the result is
 typed `RecordId<"person">[] | undefined`. Use `.unwrap()` to materialise it:
 
 ```typescript
-import { RecordId } from "surrealdb";
 const route = await db
   .select("person", "alice")
   .return((p) => ({
-    // RecordId[] | undefined
-    path: p.shortest(new RecordId("person", "dave"), (n) => n.out("knows").out("person")),
+    path: p.shortest(new RecordId("person", "dave"), step), // RecordId[] | undefined
     pathNames: p
-      .shortest(new RecordId("person", "dave"), (n) => n.out("knows").out("person"))
+      .shortest(new RecordId("person", "dave"), step)
       .unwrap()
       .select()
       .return((n) => ({ name: n.name })),
@@ -2060,9 +1912,8 @@ Notes and limits:
 
 - Recursive paths need SurrealDB 2.1 or newer; the CI matrix (3.0.5 to 3.3.0) is
   covered by the integration tests.
-- `shortest` is unbounded. If the target is the start record itself, the result
-  is `NONE` unless a cycle leads back to it, in which case the result is the walk
-  around that cycle.
+- `shortest` is unbounded. If the target is the start record itself the result
+  is `NONE`, even with `inclusive`.
 - `+path` (every walked path) is not exposed yet.
 - On SurrealDB 3.0, a fixed-depth `collect(n, step)` (`{n+collect}`) returned only
   the nodes first reached at depth `n`, where 3.1 and newer return every node
@@ -2083,8 +1934,6 @@ db.lookup.from; // { post: ["authored"], tag: ["tagged"], user: [], ... }
 Here's a complete example showcasing multiple features:
 
 ```typescript
-import { edge, orm, t, table } from "surqlize";
-import { Surreal } from "surrealdb";
 const user = table("user", {
   name: t.object({
     first: t.string(),
@@ -2176,7 +2025,7 @@ await dbB.create("user").set({ name: "Bob", age: 25 });
 
 Use `forkSession()` to clone an existing session (inheriting its namespace, database, auth, and variables) and then diverge:
 
-```typescript illustrative
+```typescript
 const surreal = new Surreal();
 await surreal.connect("ws://localhost:8000");
 await surreal.signin({ username: "root", password: "root" });
@@ -2197,7 +2046,7 @@ await session.closeSession();
 
 Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `await using` for automatic cleanup:
 
-```typescript illustrative
+```typescript
 {
   await using session = await surreal.forkSession();
   await session.authenticate(userToken);
@@ -2277,7 +2126,6 @@ bun run examples/demo.ts
 
 # Run tests
 bun run test:unit          # Unit tests
-bun run test:readme        # Type-check the TypeScript examples in this README
 bun run test:integration   # Integration tests (requires SurrealDB)
 bun run type-check         # TypeScript type checking
 bun run bench              # Query construction benchmarks
@@ -2287,11 +2135,6 @@ bun run qc   # Check for issues
 bun run qa   # Auto-fix issues
 bun run qau  # Auto-fix with unsafe changes
 ```
-
-`test:readme` type-checks the TypeScript blocks in this README against the source.
-A block marked `typescript illustrative` is a fragment and is not compiled. A block
-marked `typescript known-bug` must fail to compile: once it compiles, the test fails
-so that the marker is removed.
 
 ## Contributing
 

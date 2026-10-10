@@ -1,8 +1,8 @@
+import { installStandardSchema } from "../standard-schema";
 import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
 	ArrayType,
-	BigIntType,
 	BoolType,
 	DateType,
 	DurationType,
@@ -19,6 +19,8 @@ import {
 	UnionType,
 	UuidType,
 } from "./classes";
+
+installStandardSchema();
 
 /** Create a string type. */
 export function string() {
@@ -59,11 +61,6 @@ export function date() {
 /** Create a duration type. */
 export function duration() {
 	return new DurationType();
-}
-
-/** Create a bigint type, for integers too large for a JS `number`. */
-export function bigint() {
-	return new BigIntType();
 }
 
 /** Create a native SurrealDB point type. */

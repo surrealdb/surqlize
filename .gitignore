@@ -13,9 +13,6 @@ dist/
 # npm pack output
 *.tgz
 
-# README harness output (written and removed by `bun run test:readme`)
-tests/readme/.generated/
-
 # Coverage
 coverage/
 *.lcov

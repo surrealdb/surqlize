@@ -30,6 +30,11 @@ export * from "./query/update";
 export * from "./query/upsert";
 // Schema builders (orm, table, edge, fn, api) and their types
 export * from "./schema";
+export type {
+	StandardIssue,
+	StandardSchemaProps,
+	StandardSchemaV1,
+} from "./standard-schema";
 // Type system: the `t.*` builders and the `*Type` classes
 export * from "./types";
 export type {

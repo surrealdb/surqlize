@@ -1,8 +1,6 @@
 import {
-	type BigIntType,
 	type BoolType,
 	type DateType,
-	type DurationType,
 	type NumberType,
 	type StringType,
 	t,
@@ -58,30 +56,29 @@ export const functions = {
 		return databaseFunction(this[__ctx], t.number(), "time::micros", this);
 	},
 	nano<C extends WorkableContext>(this: Workable<C, DateType>) {
-		// Nanoseconds since the epoch exceed 2^53, so a JS number cannot hold them.
-		return databaseFunction(this[__ctx], t.bigint(), "time::nano", this);
+		return databaseFunction(this[__ctx], t.number(), "time::nano", this);
 	},
 
-	// Rounding. The server takes a duration, not a string.
+	// Rounding
 	timeCeil<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-		duration: IntoWorkable<C, DurationType>,
+		duration: IntoWorkable<C, StringType>,
 	) {
-		const val = intoWorkable(this[__ctx], t.duration(), duration);
+		const val = intoWorkable(this[__ctx], t.string(), duration);
 		return databaseFunction(this[__ctx], t.date(), "time::ceil", this, val);
 	},
 	timeFloor<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-		duration: IntoWorkable<C, DurationType>,
+		duration: IntoWorkable<C, StringType>,
 	) {
-		const val = intoWorkable(this[__ctx], t.duration(), duration);
+		const val = intoWorkable(this[__ctx], t.string(), duration);
 		return databaseFunction(this[__ctx], t.date(), "time::floor", this, val);
 	},
 	timeRound<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-		duration: IntoWorkable<C, DurationType>,
+		duration: IntoWorkable<C, StringType>,
 	) {
-		const val = intoWorkable(this[__ctx], t.duration(), duration);
+		const val = intoWorkable(this[__ctx], t.string(), duration);
 		return databaseFunction(this[__ctx], t.date(), "time::round", this, val);
 	},
 
@@ -147,20 +144,20 @@ export type Functions = {
 	): Actionable<C, NumberType>;
 	nano<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-	): Actionable<C, BigIntType>;
+	): Actionable<C, NumberType>;
 
 	// Rounding
 	timeCeil<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-		duration: IntoWorkable<C, DurationType>,
+		duration: IntoWorkable<C, StringType>,
 	): Actionable<C, DateType>;
 	timeFloor<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-		duration: IntoWorkable<C, DurationType>,
+		duration: IntoWorkable<C, StringType>,
 	): Actionable<C, DateType>;
 	timeRound<C extends WorkableContext>(
 		this: Workable<C, DateType>,
-		duration: IntoWorkable<C, DurationType>,
+		duration: IntoWorkable<C, StringType>,
 	): Actionable<C, DateType>;
 
 	// Other
