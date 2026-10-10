@@ -953,7 +953,7 @@ On a [validated](#runtime-validation) ORM (`db.validated()`), `db.run()` checks 
 
 ### Using a schema with the `surrealdb` SDK
 
-Every `t.*` type implements [Standard Schema](https://standardschema.dev), so a definition can validate in any library that accepts one, including the `surrealdb` SDK's `.args()`, `.returns()`, `.request()` and `.response()` call methods (SDK 2.2 and later):
+Every `t.*` type implements [Standard Schema](https://standardschema.dev), so a definition can validate in any library that accepts one, including the `surrealdb` SDK's `.args()`, `.returns()`, `.request()` and `.response()` call methods (in the first `surrealdb` release that includes them):
 
 ```ts
 const sum = await surreal.run("fn::add", [1, 2]).returns(t.number());
