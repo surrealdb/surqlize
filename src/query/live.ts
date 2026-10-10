@@ -136,6 +136,9 @@ export class LiveSubscription<T> {
 
 	/** Async-iterate notifications: `for await (const msg of sub) { … }`. */
 	async *[Symbol.asyncIterator](): AsyncIterator<LiveMessage<T>> {
+		// Once the subscription is no longer alive nothing more is delivered, so
+		// iteration ends at once, as subscribe() does, rather than the SDK throwing.
+		if (!this.inner.isAlive) return;
 		for await (const message of this.inner) {
 			yield this.toMessage(message);
 		}

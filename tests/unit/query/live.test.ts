@@ -3,11 +3,19 @@ import {
 	LiveSubscriptionError,
 	NotFoundError,
 	RecordId,
+	type LiveSubscription as SdkLiveSubscription,
 	Surreal,
 	type SurrealSession,
 	Table,
 } from "surrealdb";
-import { __display, displayContext, orm, t, table } from "../../../src";
+import {
+	__display,
+	displayContext,
+	LiveSubscription,
+	orm,
+	t,
+	table,
+} from "../../../src";
 
 describe("LIVE SELECT queries", () => {
 	const user = table("user", {
@@ -176,6 +184,101 @@ describe("LIVE SELECT registration", () => {
 			expect(unhandled).toEqual([]);
 		} finally {
 			process.off("unhandledRejection", onUnhandled);
+		}
+	});
+
+	/**
+	 * A killed SDK subscription. Its `subscribe()` is the SDK's: an async loop with
+	 * no `catch`, which rejects because iterating a killed subscription throws.
+	 */
+	function killedSdkSubscription() {
+		return {
+			id: undefined,
+			isAlive: false,
+			isManaged: true,
+			kill: () => Promise.resolve(),
+			subscribe(this: unknown, handler: (message: unknown) => void) {
+				void (async () => {
+					for await (const message of this as AsyncIterable<unknown>) {
+						handler(message);
+					}
+				})();
+				return () => {};
+			},
+			[Symbol.asyncIterator]() {
+				throw new LiveSubscriptionError("Subscription has been killed");
+			},
+		};
+	}
+
+	test("subscribe() on a killed subscription raises no unhandled rejection", async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on("unhandledRejection", onUnhandled);
+		try {
+			const sub = new LiveSubscription(
+				killedSdkSubscription() as unknown as SdkLiveSubscription<unknown>,
+				(value) => value,
+			);
+			sub.subscribe(() => {})();
+			await new Promise((resolve) => setTimeout(resolve, 25));
+
+			expect(unhandled).toEqual([]);
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+	});
+
+	test("iterating a killed subscription ends at once, without throwing", async () => {
+		const sub = new LiveSubscription(
+			killedSdkSubscription() as unknown as SdkLiveSubscription<unknown>,
+			(value) => value,
+		);
+		const seen: unknown[] = [];
+		for await (const message of sub) seen.push(message);
+
+		expect(seen).toEqual([]);
+	});
+
+	test("an error from a live stream is rethrown, not dropped", async () => {
+		// Only a stream that ends or is killed is expected to fail quietly. A failure
+		// while the subscription is alive is a real error, so it is rethrown as an
+		// uncaught exception, as an EventEmitter 'error' is with no listener.
+		const error = new Error("stream broke");
+		const alive = {
+			id: undefined,
+			isAlive: true,
+			isManaged: true,
+			kill: () => Promise.resolve(),
+			subscribe: () => () => {},
+			[Symbol.asyncIterator]: () => ({
+				next: () => Promise.reject(error),
+			}),
+		};
+		// The rethrow is scheduled with queueMicrotask. Capture it, rather than letting
+		// it fail this test as an uncaught exception, and check what it throws.
+		const scheduled: (() => void)[] = [];
+		const original = globalThis.queueMicrotask;
+		globalThis.queueMicrotask = (callback) => {
+			scheduled.push(callback);
+		};
+		try {
+			new LiveSubscription(
+				alive as unknown as SdkLiveSubscription<unknown>,
+				(value) => value,
+			).subscribe(() => {});
+			await new Promise((resolve) => setTimeout(resolve, 25));
+
+			expect(scheduled).toHaveLength(1);
+			let thrown: unknown;
+			try {
+				scheduled[0]!();
+			} catch (caught) {
+				thrown = caught;
+			}
+			expect(thrown).toBe(error);
+		} finally {
+			globalThis.queueMicrotask = original;
 		}
 	});
 });
