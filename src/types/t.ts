@@ -1,3 +1,4 @@
+import { installStandardSchema } from "../standard-schema";
 import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
@@ -18,6 +19,8 @@ import {
 	UnionType,
 	UuidType,
 } from "./classes";
+
+installStandardSchema();
 
 /** Create a string type. */
 export function string() {

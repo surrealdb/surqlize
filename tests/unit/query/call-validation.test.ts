@@ -110,3 +110,24 @@ describe("db.api() request validation", () => {
 		expect(sent).toHaveLength(2);
 	});
 });
+
+describe("Standard Schema", () => {
+	test("every type validates through ~standard, reporting each issue with a path", () => {
+		const schema = t.object({
+			name: t.string(),
+			tags: t.array(t.number()),
+		});
+		const ok = schema["~standard"].validate({ name: "a", tags: [1] });
+		expect(ok.issues).toBeUndefined();
+
+		const bad = schema["~standard"].validate({ name: 1, tags: [1, "x"] });
+		expect(bad.issues?.map((i) => i.path)).toEqual([["name"], ["tags", 1]]);
+		expect(bad.issues?.[0]?.message).toBe("expected string, received 1");
+		expect(schema["~standard"].vendor).toBe("surqlize");
+	});
+
+	test("a bare value reports an empty path", () => {
+		const bad = t.number()["~standard"].validate("x");
+		expect(bad.issues?.[0]?.path).toEqual([]);
+	});
+});

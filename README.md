@@ -951,6 +951,14 @@ A function is also callable inside a query: `db.select("user").return((u) => ({ 
 
 On a [validated](#runtime-validation) ORM (`db.validated()`), `db.run()` checks its arguments against the parameter types, and API calls check the request body against the declared `request` type, before anything is sent. Every failing argument or field is reported in a single `ValidationError`. Arguments passed to a function inside a query are expressions evaluated by the database, so they are not checked.
 
+### Using a schema with the `surrealdb` SDK
+
+Every `t.*` type implements [Standard Schema](https://standardschema.dev), so a definition can validate in any library that accepts one, including the `surrealdb` SDK's `.args()`, `.returns()`, `.request()` and `.response()` call methods (SDK 2.2 and later):
+
+```ts
+const sum = await surreal.run("fn::add", [1, 2]).returns(t.number());
+```
+
 ## Batch
 
 Execute multiple queries as a single atomic operation in one round-trip. No intermediate results are available — all queries succeed or all fail together.
