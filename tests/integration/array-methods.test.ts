@@ -214,4 +214,88 @@ describe("array methods against a live server", () => {
 			});
 		});
 	});
+
+	describe("value-taking methods accept raw values", () => {
+		// These methods took a bare workable at runtime while their signatures took
+		// any IntoWorkable, so a raw scalar type-checked and then threw a TypeError.
+		test("append(), prepend(), push() and add() with a raw element", async () => {
+			const { surreal } = getTestDb();
+			const db = orm(surreal, doc);
+
+			const row = await first(
+				db.select("doc").return((d) => ({
+					append: d.nums.append(4),
+					prepend: d.nums.prepend(0),
+					push: d.nums.push(5),
+					add: d.nums.add(9),
+					addPresent: d.nums.add(3),
+				})),
+			);
+
+			expect(row).toEqual({
+				append: [1, 2, 3, 4],
+				prepend: [0, 1, 2, 3],
+				push: [1, 2, 3, 5],
+				add: [1, 2, 3, 9],
+				addPresent: [1, 2, 3],
+			});
+		});
+
+		test("insert() with a raw element and position", async () => {
+			const { surreal } = getTestDb();
+			const db = orm(surreal, doc);
+
+			const row = await first(
+				db.select("doc").return((d) => ({
+					inserted: d.nums.insert(9, 0),
+				})),
+			);
+
+			expect(row?.inserted).toEqual([9, 1, 2, 3]);
+		});
+
+		test("fill() and findIndex() with a raw element", async () => {
+			const { surreal } = getTestDb();
+			const db = orm(surreal, doc);
+
+			const row = await first(
+				db.select("doc").return((d) => ({
+					filled: d.nums.fill(7),
+					index: d.nums.findIndex(2),
+				})),
+			);
+
+			expect(row).toEqual({ filled: [7, 7, 7], index: 1 });
+		});
+
+		test("works on string and bool arrays", async () => {
+			const { surreal } = getTestDb();
+			const db = orm(surreal, doc);
+
+			const row = await first(
+				db.select("doc").return((d) => ({
+					words: d.words.append("w"),
+					flags: d.flags.append(false),
+				})),
+			);
+
+			expect(row).toEqual({
+				words: ["x", "y", "z", "w"],
+				flags: [true, false, false],
+			});
+		});
+
+		test("still accepts a workable element", async () => {
+			const { surreal } = getTestDb();
+			const db = orm(surreal, doc);
+
+			const row = await first(
+				db.select("doc").return((d) => ({
+					appended: d.nums.append(d.nums.len()),
+				})),
+			);
+
+			expect(row?.appended).toEqual([1, 2, 3, 3]);
+		});
+	});
 });
