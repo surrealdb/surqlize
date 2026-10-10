@@ -927,6 +927,30 @@ user.safeParse(row, { mode: "row" });           // a whole stored record, id and
 
 `safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
 
+## Custom functions and API endpoints
+
+Describe a `DEFINE FUNCTION` with `fn(name, params, returns)` and call it with `db.run()`, or call a `DEFINE API` endpoint through a typed client from `db.api()`. Both are typed from the description, and results are parsed against the declared types. Define the function or endpoint in the database first; surqlize only calls it.
+
+```ts
+import { api, fn, orm, t } from "surqlize";
+
+const greet = fn("greet", [t.string()], t.string()); // fn::greet
+const greeting = await db.run(greet, ["world"]);     // string
+
+const echo = api("/echo", {
+  post: {
+    request: t.object({ text: t.string() }),
+    response: t.object({ text: t.string() }),
+  },
+});
+const res = await db.api(echo).post("/echo", { text: "hi" });
+res.body?.text; // string | undefined
+```
+
+A function is also callable inside a query: `db.select("user").return((u) => ({ hi: greet(u, u.name) }))`.
+
+On a [validated](#runtime-validation) ORM (`db.validated()`), `db.run()` checks its arguments against the parameter types, and API calls check the request body against the declared `request` type, before anything is sent. Every failing argument or field is reported in a single `ValidationError`. Arguments passed to a function inside a query are expressions evaluated by the database, so they are not checked.
+
 ## Batch
 
 Execute multiple queries as a single atomic operation in one round-trip. No intermediate results are available — all queries succeed or all fail together.

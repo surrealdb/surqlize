@@ -190,6 +190,40 @@ export function checkRecord(
 	return issues;
 }
 
+/**
+ * Validate the arguments of a function call against its parameter types,
+ * recording a path of `[0]`, `[1]`, … for each failing argument. An argument
+ * may be left out only when its parameter is `option<…>`.
+ */
+export function checkArgs(
+	params: readonly AbstractType[],
+	args: readonly unknown[],
+): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	if (args.length > params.length) {
+		report(
+			issues,
+			"",
+			`at most ${params.length} argument${params.length === 1 ? "" : "s"}`,
+			`${args.length} arguments`,
+		);
+	}
+	params.forEach((param, i) => {
+		collect(param, args[i], `[${i}]`, issues);
+	});
+	return issues;
+}
+
+/** Validate a single value (such as a request body) against `type`. */
+export function checkValue(
+	type: AbstractType,
+	value: unknown,
+): ValidationIssue[] {
+	const issues: ValidationIssue[] = [];
+	collect(type, value, "", issues);
+	return issues;
+}
+
 /** The type a (possibly dotted) field path resolves to, if the schema knows it. */
 function resolve(schema: ObjectType, path: string): AbstractType | undefined {
 	let type: AbstractType = schema;
@@ -257,8 +291,9 @@ export function checkSet(
 export function throwIfInvalid(
 	issues: readonly ValidationIssue[],
 	table?: string,
+	subject?: string,
 ): void {
-	if (issues.length > 0) throw new ValidationError(issues, table);
+	if (issues.length > 0) throw new ValidationError(issues, table, subject);
 }
 
 /**

@@ -45,6 +45,7 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+import { checkArgs, throwIfInvalid } from "../validation.ts";
 import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
 import type { FunctionCallable, InferParams } from "./function";
@@ -601,6 +602,13 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		args?: InferParams<P>,
 	): Promise<R["infer"]> {
 		const schema = fn.schema;
+		if (this.validation) {
+			throwIfInvalid(
+				checkArgs(schema.params, args ?? []),
+				undefined,
+				`arguments for fn::${schema.name}`,
+			);
+		}
 		const result = await this.surreal.run(
 			`fn::${schema.name}`,
 			args as unknown[] | undefined,
@@ -627,7 +635,7 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * ```
 	 */
 	api<E extends ApiEndpointSchema[]>(...endpoints: E) {
-		return new ApiClient(this.surreal, endpoints);
+		return new ApiClient(this.surreal, endpoints, this.validation);
 	}
 
 	/**

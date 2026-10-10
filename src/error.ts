@@ -21,8 +21,10 @@ export class ValidationError extends OrmError {
 	constructor(
 		readonly issues: readonly ValidationIssue[],
 		readonly table?: string,
+		subject?: string,
 	) {
-		const where = table === undefined ? "data" : `data for table "${table}"`;
+		const where =
+			subject ?? (table === undefined ? "data" : `data for table "${table}"`);
 		const count = `${issues.length} validation error${issues.length === 1 ? "" : "s"}`;
 		super(
 			`Invalid ${where}: ${count}\n${issues.map((i) => `  - ${i.message}`).join("\n")}`,
