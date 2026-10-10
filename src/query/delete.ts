@@ -38,11 +38,12 @@ import type { NoWrite, WriteRow } from "./write-result.ts";
 type StoredRow<E extends AbstractType> = WriteRow<E, NoWrite, "update">;
 
 /**
- * Whether a DELETE returns rows. Without a `RETURN` (or with `RETURN NONE`) it
- * returns none: an empty array, or NONE with `.only()`. Any other `RETURN` gives
- * rows.
+ * What a DELETE returns. Without a `RETURN` (or with `RETURN NONE`) it returns
+ * none: an empty array, or NONE with `.only()`. `RETURN AFTER` returns one NONE
+ * per deleted record, since the record is gone when it is read. Any other
+ * `RETURN` gives rows.
  */
-export type DeleteReturns = "none" | "rows";
+export type DeleteReturns = "none" | "rows" | "after";
 
 /** The result of a DELETE, see {@link DeleteReturns}. */
 type DeleteResult<
@@ -53,10 +54,16 @@ type DeleteResult<
 	? Only extends true
 		? OptionType<NeverType>
 		: ArrayType<NeverType>
-	: QueryResult<E, Only>;
+	: Returns extends "after"
+		? QueryResult<OptionType<NeverType>, Only>
+		: QueryResult<E, Only>;
 
-/** The `Returns` a `.return()` argument selects: only `none` returns nothing. */
-type DeleteReturnsOf<M extends string> = M extends "none" ? "none" : "rows";
+/** The `Returns` a `.return()` argument selects. */
+type DeleteReturnsOf<M extends string> = M extends "none"
+	? "none"
+	: M extends "after"
+		? "after"
+		: "rows";
 
 /**
  * A fluent DELETE query builder. Supports WHERE, RETURN, and TIMEOUT clauses.
@@ -107,6 +114,10 @@ export class DeleteQuery<
 		let type: AbstractType;
 		if (this._return === undefined || this._return === "none") {
 			type = this._only ? t.option(t.never()) : t.array(t.never());
+		} else if (this._return === "after") {
+			// The record is gone when RETURN AFTER reads it: NONE for each record.
+			const element = t.option(t.never());
+			type = this._only ? element : t.array(element);
 		} else {
 			const schema =
 				typeof this._return !== "string" ? this._return[__type] : this.schema;
@@ -158,12 +169,15 @@ export class DeleteQuery<
 	}
 
 	/** Return the deleted rows, typed as the stored records (see `StoredRow`). */
-	return(
-		mode: "before" | "after",
-	): DeleteQuery<O, C, T, StoredRow<E>, Only, "rows">;
+	return(mode: "before"): DeleteQuery<O, C, T, StoredRow<E>, Only, "rows">;
+	/** The record is gone when RETURN AFTER reads it, so each entry is NONE. */
+	return(mode: "after"): DeleteQuery<O, C, T, E, Only, "after">;
 	return(mode: "none"): DeleteQuery<O, C, T, E, Only, "none">;
 	return(mode: "diff"): DeleteQuery<O, C, T, E, Only, "rows">;
-	/** A mode chosen at run time: the rows are typed as the broadest of the modes. */
+	/**
+	 * A mode chosen at run time: the result is typed as the union of the modes'
+	 * results, so an `after` in the union gives NONE entries, not rows.
+	 */
 	return<M extends "none" | "before" | "after" | "diff">(
 		mode: M,
 	): DeleteQuery<O, C, T, StoredRow<E>, Only, DeleteReturnsOf<M>>;
