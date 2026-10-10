@@ -662,7 +662,7 @@ A write that does not supply the whole record still succeeds, and returns only t
 | `update()` / `upsert()` `.set()` / `.merge()` | `id` and the fields written. The other fields may already be stored, so they are optional |
 | `update()` / `upsert()` `.content()` / `.replace()` | `id` and the fields written. The record is replaced, so no other field remains |
 | `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
-| `delete()` with `RETURN BEFORE` / `AFTER` or a projection | `id`; every other field is optional. The record may have been stored partially, and it is deleted before the row is read |
+| `delete()` with `RETURN BEFORE` or a projection | `id`; every other field is optional. The record may have been stored partially, and it is deleted before the row is read |
 | `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
 
 A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied. A dotted key (`.set({ "name.first": "Ada" })`) writes into the nested object `name`. CREATE and RELATE need that parent object set in full in the same call (`.set({ name: { first, last }, "name.first": "Ada" })`). Without it the call does not type-check, and `.set()` throws an `OrmError` before anything is sent, because the write would store a partial object. UPDATE and UPSERT cannot know whether the object exists on the stored record, so a dotted key into a missing object is accepted there and stores a partial object; reading that record back with the full schema then fails until the missing fields are set. A dotted key into an object that already exists is fine on every write.
@@ -922,7 +922,7 @@ const relation = await db
 ### DELETE statements
 
 ```typescript illustrative
-// Delete single record (returns array with 0 or 1 item)
+// Delete single record (no RETURN, so it resolves to an empty array)
 await db.delete("user", "alice");
 
 // Bulk delete with WHERE
