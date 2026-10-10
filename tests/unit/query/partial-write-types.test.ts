@@ -252,9 +252,17 @@ async function deleteResults() {
 	const deletedOnly = await db
 		.delete("member", "a")
 		.only()
-		.return("after")
+		.return("before")
 		.execute();
 	assertType<Equal<typeof deletedOnly.email, string | undefined>>();
+
+	// RETURN AFTER reads the record once it is gone: NONE, not the stored row.
+	const deletedOnlyAfter = await db
+		.delete("member", "a")
+		.only()
+		.return("after")
+		.execute();
+	assertType<Equal<typeof deletedOnlyAfter, undefined>>();
 
 	// A projection reads the stored row too, so it sees the same optional fields.
 	const deletedNames = await db
