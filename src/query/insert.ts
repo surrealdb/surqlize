@@ -31,20 +31,14 @@ import {
 	renderData,
 	schemaDefaults,
 } from "./defaults.ts";
+import type { SetData } from "./modification-methods.ts";
 import {
 	generateSetAssignments,
 	processSetOperators,
 	renderValue,
-	type SetValue,
 } from "./utils.ts";
 import { computedFieldsOf, implicitFieldsOf } from "./validate-input.ts";
 import type { FullWrite, WriteRow, WriteShape } from "./write-result.ts";
-
-type SetData<T extends ObjectType> = {
-	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
-		T["schema"][K]
-	>;
-};
 
 /**
  * A fluent INSERT query builder. Supports inline data, `.fields().values()`,

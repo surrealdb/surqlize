@@ -844,3 +844,52 @@ describe("README: per-query validation opt-out", () => {
 		expect(stored).toMatchObject({ name: 42 });
 	});
 });
+
+describe("README: insert with an id, then ON DUPLICATE KEY UPDATE", () => {
+	const getTestDb = withTestDb({ perTest: true });
+
+	test("a RecordId id inserts, and a second insert updates on conflict", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, user).validated();
+
+		await db.insert("user", {
+			id: new RecordId("user", "alice"),
+			name: "Alice",
+			email: "alice@example.com",
+			age: 30,
+		});
+		await db
+			.insert("user", {
+				id: new RecordId("user", "alice"),
+				name: "Alice",
+				email: "alice@example.com",
+				age: 30,
+			})
+			.onDuplicate({ age: { "+=": 1 } });
+
+		const stored = await surreal.select<{ age: number }>(
+			new RecordId("user", "alice"),
+		);
+		expect(stored).toMatchObject({ age: 31 });
+	});
+
+	test("a string id is rejected by validation, since an id is a RecordId", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, user).validated();
+
+		const error = await db
+			.insert("user", {
+				// A string is not a RecordId, so the id is rejected at runtime.
+				id: "alice",
+				name: "Alice",
+				email: "alice@example.com",
+				age: 30,
+			})
+			.then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+
+		expect(error).toBeInstanceOf(ValidationError);
+	});
+});

@@ -266,9 +266,8 @@ describe("SELECT ORDER BY", () => {
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
-		expect(result).toContain("ORDER BY");
-		expect(result).toContain(".name.last");
-		expect(result).toContain("ASC");
+		expect(result).toContain("ORDER BY name.last ASC");
+		expect(result).not.toContain("$this");
 	});
 
 	test("generates ORDER BY with multiple fields", () => {
@@ -279,11 +278,9 @@ describe("SELECT ORDER BY", () => {
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
-		expect(result).toContain("ORDER BY");
-		expect(result).toContain(".name.last ASC");
-		expect(result).toContain(".name.first ASC");
-		// Both should be in a single ORDER BY clause separated by comma
-		expect(result).toMatch(/ORDER BY .+, .+/);
+		// Both sort keys in one ORDER BY clause, in call order.
+		expect(result).toContain("ORDER BY name.last ASC, name.first ASC");
+		expect(result).not.toContain("$this");
 	});
 
 	test("generates ORDER BY NUMERIC", () => {
@@ -338,8 +335,8 @@ describe("SELECT ORDER BY", () => {
 		const ctx = displayContext();
 		const result = query[__display](ctx);
 
-		expect(result).toContain("ORDER BY");
-		expect(result).toContain("NUMERIC DESC");
+		expect(result).toContain("ORDER BY age NUMERIC DESC");
+		expect(result).not.toContain("$this");
 	});
 });
 

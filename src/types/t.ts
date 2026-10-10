@@ -2,6 +2,7 @@ import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
 	ArrayType,
+	BigIntType,
 	BoolType,
 	DateType,
 	DurationType,
@@ -58,6 +59,11 @@ export function date() {
 /** Create a duration type. */
 export function duration() {
 	return new DurationType();
+}
+
+/** Create a bigint type, for integers too large for a JS `number`. */
+export function bigint() {
+	return new BigIntType();
 }
 
 /** Create a native SurrealDB point type. */

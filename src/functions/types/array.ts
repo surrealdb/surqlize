@@ -247,7 +247,13 @@ export const functions = {
 	pop<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 	) {
-		return databaseFunction(this[__ctx], this[__type], "array::pop", this);
+		// Returns the removed element, or NONE for an empty array.
+		return databaseFunction(
+			this[__ctx],
+			t.option(this[__type].schema),
+			"array::pop",
+			this,
+		);
 	},
 	reverse<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
@@ -353,13 +359,16 @@ export const functions = {
 	},
 
 	// Set operation functions
-	combine<C extends WorkableContext, T extends AbstractType>(
-		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
-	) {
+	combine<
+		C extends WorkableContext,
+		T extends AbstractType,
+		U extends AbstractType,
+	>(this: Workable<C, ArrayType<T>>, other: Workable<C, ArrayType<U>>) {
+		// One [a, b] pair per combination of an element of each array.
+		const pair = t.array([this[__type].schema, other[__type].schema]);
 		return databaseFunction(
 			this[__ctx],
-			this[__type],
+			t.array(pair),
 			"array::combine",
 			this,
 			other,
@@ -367,112 +376,111 @@ export const functions = {
 	},
 	complement<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::complement",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	concat<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::concat",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	difference<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::difference",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	intersect<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::intersect",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	union<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::union",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	transpose<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::transpose",
 			this,
-			other,
 		);
 	},
 
-	// Boolean array functions
+	// Boolean array functions. SurrealDB coerces each element to a bool, so the
+	// result is always an array of booleans whatever the input's element type.
 	booleanAnd<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C, ArrayType<T>>,
 	) {
 		return databaseFunction(
 			this[__ctx],
-			this[__type],
+			t.array(t.bool()),
 			"array::boolean_and",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	booleanOr<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C, ArrayType<T>>,
 	) {
 		return databaseFunction(
 			this[__ctx],
-			this[__type],
+			t.array(t.bool()),
 			"array::boolean_or",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	booleanXor<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C, ArrayType<T>>,
 	) {
 		return databaseFunction(
 			this[__ctx],
-			this[__type],
+			t.array(t.bool()),
 			"array::boolean_xor",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	booleanNot<C extends WorkableContext, T extends AbstractType>(
@@ -480,45 +488,45 @@ export const functions = {
 	) {
 		return databaseFunction(
 			this[__ctx],
-			this[__type],
+			t.array(t.bool()),
 			"array::boolean_not",
 			this,
 		);
 	},
 	logicalAnd<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::logical_and",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	logicalOr<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::logical_or",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 	logicalXor<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: Workable<C>,
+		other: IntoWorkable<C>,
 	) {
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::logical_xor",
 			this,
-			other,
+			intoWorkable<C, AbstractType>(this[__ctx], this[__type], other),
 		);
 	},
 
@@ -577,14 +585,15 @@ export const functions = {
 	},
 	filterIndex<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: Workable<C>,
+		v: IntoWorkable<C, T>,
 	) {
+		// The indexes of the matching elements, not the elements.
 		return databaseFunction(
 			this[__ctx],
-			this[__type],
+			t.array(t.number()),
 			"array::filter_index",
 			this,
-			v,
+			intoWorkable(this[__ctx], this[__type].schema, v),
 		);
 	},
 
@@ -606,17 +615,27 @@ export const functions = {
 	slice<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 		start: IntoWorkable<C, NumberType>,
-		length: IntoWorkable<C, NumberType>,
+		end?: IntoWorkable<C, NumberType>,
 	) {
 		const s = intoWorkable(this[__ctx], t.number(), start);
-		const l = intoWorkable(this[__ctx], t.number(), length);
+		// SurrealDB rejects a NONE end, so it is omitted rather than bound.
+		if (end === undefined) {
+			return databaseFunction(
+				this[__ctx],
+				this[__type],
+				"array::slice",
+				this,
+				s,
+			);
+		}
+		const e = intoWorkable(this[__ctx], t.number(), end);
 		return databaseFunction(
 			this[__ctx],
 			this[__type],
 			"array::slice",
 			this,
 			s,
-			l,
+			e,
 		);
 	},
 	isEmpty<C extends WorkableContext>(this: Workable<C, ArrayType>) {
@@ -749,7 +768,7 @@ export type Functions = {
 	): Actionable<C, ArrayType<T>>;
 	pop<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-	): Actionable<C, ArrayType<T>>;
+	): Actionable<C, OptionType<T>>;
 	reverse<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 	): Actionable<C, ArrayType<T>>;
@@ -794,10 +813,14 @@ export type Functions = {
 	): Actionable<C, ArrayType<T>>;
 
 	// Set operation functions
-	combine<C extends WorkableContext, T extends AbstractType>(
+	combine<
+		C extends WorkableContext,
+		T extends AbstractType,
+		U extends AbstractType,
+	>(
 		this: Workable<C, ArrayType<T>>,
-		other: IntoWorkable<C>,
-	): Actionable<C, ArrayType<T>>;
+		other: Workable<C, ArrayType<U>>,
+	): Actionable<C, ArrayType<ArrayType<[T, U]>>>;
 	complement<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 		other: IntoWorkable<C>,
@@ -820,25 +843,24 @@ export type Functions = {
 	): Actionable<C, ArrayType<T>>;
 	transpose<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: IntoWorkable<C>,
 	): Actionable<C, ArrayType<T>>;
 
-	// Boolean array functions
+	// Boolean array functions: the result is always an array of booleans
 	booleanAnd<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: IntoWorkable<C>,
-	): Actionable<C, ArrayType<T>>;
+		other: IntoWorkable<C, ArrayType<T>>,
+	): Actionable<C, ArrayType<BoolType>>;
 	booleanOr<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: IntoWorkable<C>,
-	): Actionable<C, ArrayType<T>>;
+		other: IntoWorkable<C, ArrayType<T>>,
+	): Actionable<C, ArrayType<BoolType>>;
 	booleanXor<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		other: IntoWorkable<C>,
-	): Actionable<C, ArrayType<T>>;
+		other: IntoWorkable<C, ArrayType<T>>,
+	): Actionable<C, ArrayType<BoolType>>;
 	booleanNot<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-	): Actionable<C, ArrayType<T>>;
+	): Actionable<C, ArrayType<BoolType>>;
 	logicalAnd<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 		other: IntoWorkable<C>,
@@ -871,8 +893,8 @@ export type Functions = {
 	): Actionable<C, NumberType>;
 	filterIndex<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
-		v: IntoWorkable<C>,
-	): Actionable<C, ArrayType<T>>;
+		v: IntoWorkable<C, T>,
+	): Actionable<C, ArrayType<NumberType>>;
 
 	// Other functions
 	clump<C extends WorkableContext, T extends AbstractType>(
@@ -883,10 +905,11 @@ export type Functions = {
 		this: Workable<C, ArrayType>,
 		delimiter: IntoWorkable<C, StringType>,
 	): Actionable<C, StringType>;
+	/** Elements from `start` up to `end` (exclusive); without `end`, the rest. */
 	slice<C extends WorkableContext, T extends AbstractType>(
 		this: Workable<C, ArrayType<T>>,
 		start: IntoWorkable<C, NumberType>,
-		length: IntoWorkable<C, NumberType>,
+		end?: IntoWorkable<C, NumberType>,
 	): Actionable<C, ArrayType<T>>;
 	isEmpty<C extends WorkableContext>(
 		this: Workable<C, ArrayType>,

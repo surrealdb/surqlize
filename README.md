@@ -188,7 +188,7 @@ await db.create("user").content({ name: "Ada" }); // isVerified, createdAt and s
 // Result type: { id, name: string, isVerified: boolean, createdAt: Date, seenAt: Date }
 ```
 
-Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) whenever the field is omitted or `undefined`; an explicit value always wins. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `UPSERT`, `UPDATE`, `RELATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
+Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) when the field is omitted, and an explicit value always wins. `.content()`, `.merge()` and `INSERT` also apply the default when the key is present but `undefined`. `.set()` does not: a key passed as `undefined` counts as supplied, so the field is stored as absent. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `RELATE` applies an edge's defaults in the same way. `UPSERT`, `UPDATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
 
 `expr()` text is inserted into the query verbatim: only pass trusted, hard-coded SurrealQL, never user input.
 
@@ -657,20 +657,20 @@ A write that does not supply the whole record still succeeds, and returns only t
 | `create()` with no data | `id`, fields with a `.default()`, and `option<…>` fields |
 | `create().patch()` | `id`; every other field is optional |
 | `relate().content()` | Every field, including `in` and `out` |
-| `relate().set()` / `.merge()` / `.replace()` | `id`, `in`, `out`, the fields written, and `option<…>` fields (RELATE does not apply defaults) |
+| `relate().set()` / `.merge()` | `id`, `in`, `out`, the fields written, fields with a `.default()` (RELATE applies them, as CREATE does), and `option<…>` fields |
+| `relate().replace()` | `id`, `in`, `out`, the fields written, and `option<…>` fields (REPLACE does not apply defaults) |
 | `update()` / `upsert()` `.set()` / `.merge()` | `id` and the fields written. The other fields may already be stored, so they are optional |
 | `update()` / `upsert()` `.content()` / `.replace()` | `id` and the fields written. The record is replaced, so no other field remains |
 | `update()` / `upsert()` `.patch()`, and `RETURN BEFORE` on update / upsert | `id`; every other field is optional |
 | `delete()` with `RETURN BEFORE` / `AFTER` or a projection | `id`; every other field is optional. The record may have been stored partially, and it is deleted before the row is read |
 | `select()` | Every field. Each record is parsed in full, so a record stored without a required field cannot be read until it is completed |
 
-A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied.
+A field whose value may be `undefined` (an optional key, or a value typed `T | undefined`) counts as not written: it may be absent, so it is typed as optional. A `.set()` that passes a field as `undefined` does not apply that field's `.default()`, because the field was supplied. A dotted key (`.set({ "name.first": "Ada" })`) writes into the nested object `name`. CREATE and RELATE need that parent object set in full in the same call (`.set({ name: { first, last }, "name.first": "Ada" })`). Without it the call does not type-check, and `.set()` throws an `OrmError` before anything is sent, because the write would store a partial object. UPDATE and UPSERT cannot know whether the object exists on the stored record, so a dotted key into a missing object is accepted there and stores a partial object; reading that record back with the full schema then fails until the missing fields are set. A dotted key into an object that already exists is fine on every write.
 
 `.unset()` removes the unset fields from the result type. A `.return((row) => …)` projection only sees the fields the row is typed with, so it cannot read a field the write did not set. Inserts with `.onDuplicate()` return rows that may have been updated rather than inserted, so only `id` is required for those.
 
 ```typescript
 import { t, table } from "surqlize";
-
 const user = table("user", {
   name: t.string(),
   email: t.string(),
@@ -690,6 +690,8 @@ Class-linked tables still return instances of their class.
 Insert one or multiple records with support for bulk operations and conflict handling.
 
 ```typescript illustrative
+import { RecordId } from "surrealdb";
+
 // Insert single record (object style)
 await db.insert("user", {
   name: "Alice",
@@ -715,10 +717,11 @@ await db.insert("user")
 // IGNORE duplicates (skip conflicts silently)
 await db.insert("user", userData).ignore();
 
-// ON DUPLICATE KEY UPDATE (update on conflict)
+// ON DUPLICATE KEY UPDATE (update on conflict). An id is a RecordId, not a string.
 await db.insert("user", { 
-  id: "alice", 
+  id: new RecordId("user", "alice"), 
   name: "Alice", 
+  email: "alice@example.com",
   age: 30 
 })
 .onDuplicate({
@@ -1344,7 +1347,7 @@ adults.clearWhere();               // no WHERE clause at all
 
 ### Object-based filters and sorting
 
-`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks. Calling `where()` again replaces the earlier condition rather than adding to it, so put all of a query's conditions in one call (with `and()`, `or()` or an object). The objects are fully type-checked against your schema.
+`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks. The objects are fully type-checked against your schema.
 
 ```typescript illustrative
 const rows = await db.select("user")
@@ -1534,7 +1537,7 @@ const query = db.select("post").return((post) => ({
 type Result = t.infer<typeof query>;
 // Result: Array<{
 //   title: string;
-//   author: { name: string; email: string } | undefined;
+//   author: { name: string; email: string }[];
 // }>
 ```
 

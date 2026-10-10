@@ -119,8 +119,19 @@ export function fillValues(
 	defaults: FieldDefault[],
 ): { fields: string[]; rows: unknown[][] } {
 	const missing = defaults.filter(([f]) => !fields.includes(f));
+	// A defaulted column that is listed, but whose cell is `undefined`, takes its
+	// default too, as an object row's `undefined` key does.
+	const listed = defaults
+		.filter(([f]) => fields.includes(f))
+		.map(([f, v]) => [fields.indexOf(f), v] as const);
 	return {
 		fields: [...fields, ...missing.map(([f]) => f)],
-		rows: rows.map((row) => [...row, ...missing.map(([, v]) => resolve(v))]),
+		rows: rows.map((row) => {
+			const filled = [...row];
+			for (const [index, value] of listed) {
+				if (filled[index] === undefined) filled[index] = resolve(value);
+			}
+			return [...filled, ...missing.map(([, v]) => resolve(v))];
+		}),
 	};
 }
