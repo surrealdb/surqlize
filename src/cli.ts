@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The `surqlize` command, which is also installed as `sur`.
+// The `surqlize` command.
 
 import { run } from "./cli/index";
 

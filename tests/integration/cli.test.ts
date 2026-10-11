@@ -86,14 +86,12 @@ describe("Reporting for itself", () => {
 		expect(run.output).toContain("migrate");
 	});
 
-	test("is installed as both surqlize and the shorter sur", async () => {
+	test("is installed as surqlize", async () => {
 		const pkg = JSON.parse(await readFile("package.json", "utf-8")) as {
 			bin: Record<string, string>;
 		};
 
-		expect(Object.keys(pkg.bin).sort()).toEqual(["sur", "surqlize"]);
-		expect(pkg.bin.sur).toBeDefined();
-		expect(pkg.bin.sur).toBe(pkg.bin.surqlize as string);
+		expect(Object.keys(pkg.bin)).toEqual(["surqlize"]);
 	});
 
 	test("prints usage with no arguments", async () => {

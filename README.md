@@ -1215,8 +1215,6 @@ bunx surqlize status     # list the migrations that have been applied
 bunx surqlize rollback   # undo the most recent migration
 ```
 
-<sub>`sur` is installed as a shorter alias for `surqlize`, so `sur plan` and `surqlize plan` are the same command.</sub>
-
 A schema is a module that exports the tables and edges to manage. Running `plan` again after `migrate` reports nothing to do, so a change that fails part-way is recovered by planning again. A field renamed with `.was("old")` is migrated by copying its values, not by dropping it. Database settings come from `surqlize.config.ts`, then `SURREAL_*` environment variables, then flags, and `-e <name>` selects a named environment.
 
 ## Reactive store

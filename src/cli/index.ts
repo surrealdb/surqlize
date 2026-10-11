@@ -12,7 +12,6 @@ ${style.bold("surqlize")} — schema migrations for SurrealDB
 
 ${style.bold("Usage")}
   surqlize <command> [options]
-  sur <command> [options]        (the same command, shorter)
 
 ${style.bold("Commands")}
   init        Create a schema file and a config file
