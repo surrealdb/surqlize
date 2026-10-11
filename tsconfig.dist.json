@@ -14,6 +14,8 @@
 		"dist/index.d.ts",
 		"dist/index.d.cts",
 		"dist/react/index.d.ts",
-		"dist/react/index.d.cts"
+		"dist/react/index.d.cts",
+		"dist/solid/index.d.ts",
+		"dist/solid/index.d.cts"
 	]
 }
