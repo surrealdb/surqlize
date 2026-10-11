@@ -1,3 +1,5 @@
+import { quote } from "./syntax";
+
 /**
  * Database-level definitions: things that belong to the database rather than to
  * a table.
@@ -495,9 +497,4 @@ function exposure(value: GraphqlExposure | undefined): string {
 	if (value === undefined || value === "AUTO") return "AUTO";
 	if (value === "NONE") return "NONE";
 	return `INCLUDE ${value.join(", ")}`;
-}
-
-/** Quote a string for SurrealQL, escaping any embedded quotes. */
-function quote(value: string): string {
-	return `'${value.split("'").join("\\'")}'`;
 }

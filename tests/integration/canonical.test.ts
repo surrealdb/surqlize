@@ -3,7 +3,11 @@ import { edge, expr, t, table } from "../../src";
 import { canonicalise } from "../../src/migrator/canonical";
 import type { DefinableSchema } from "../../src/schema/ddl/define";
 import { defineSchema } from "../../src/schema/ddl/define";
+import { atLeast, serverVersion } from "../helpers/db";
 import { withTestDb } from "./setup";
+
+// SurrealDB accepts a `DEFAULT` on the `id` field from 3.2; earlier servers refuse it.
+const defaultOnId = atLeast(await serverVersion(), 3, 2);
 
 /**
  * A generated statement and the form SurrealDB stores it as must canonicalise
@@ -129,7 +133,7 @@ describe("Generated and stored definitions canonicalise alike", () => {
 		);
 	});
 
-	test("a declared id", async () => {
+	test.skipIf(!defaultOnId)("a declared id", async () => {
 		await expectConvergence(
 			table("docs", {
 				id: t.uuid().default(expr("rand::uuid::v7()")),

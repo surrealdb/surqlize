@@ -1,4 +1,4 @@
-import { ident } from "./syntax";
+import { ident, quote } from "./syntax";
 /** When an event fires. */
 export type EventTrigger = "CREATE" | "UPDATE" | "DELETE";
 
@@ -52,7 +52,7 @@ export function defineEvent(
 	parts.push("THEN", wrapThen(event.body));
 
 	if (event.comment) {
-		parts.push("COMMENT", `'${event.comment.replace(/'/g, "\\'")}'`);
+		parts.push("COMMENT", quote(event.comment));
 	}
 
 	return `${parts.join(" ")};`;

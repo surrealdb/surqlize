@@ -136,6 +136,10 @@ jobs:
           surrealdb_password: root
           surrealdb_log: info
 
+      # The CLI suite runs the built `sur` command.
+      - name: Build package
+        run: bun run build
+
       - name: Run integration tests
         run: bun run test:integration
         env:

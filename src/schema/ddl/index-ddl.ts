@@ -1,4 +1,4 @@
-import { ident } from "./syntax";
+import { ident, quote } from "./syntax";
 /** How SurrealDB measures distance between vectors. */
 export type DistanceMetric =
 	| "COSINE"
@@ -108,8 +108,7 @@ export function defineIndex(
 	else if (index.unique) parts.push("UNIQUE");
 
 	if (index.concurrently) parts.push("CONCURRENTLY");
-	if (index.comment)
-		parts.push("COMMENT", `'${index.comment.replace(/'/g, "\\'")}'`);
+	if (index.comment) parts.push("COMMENT", quote(index.comment));
 
 	return `${parts.join(" ")};`;
 }

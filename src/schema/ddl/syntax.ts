@@ -21,10 +21,15 @@ export function fieldPath(path: string): string {
 	return path
 		.split(".")
 		.map((segment) => {
-			const wildcards = segment.match(/(\[\*\])+$/)?.[0] ?? "";
-			return (
-				ident(segment.slice(0, segment.length - wildcards.length)) + wildcards
-			);
+			// Peel the trailing wildcards off one at a time: a pattern over a run of
+			// them would backtrack on a long run.
+			let name = segment;
+			let wildcards = "";
+			while (name.endsWith("[*]")) {
+				name = name.slice(0, -3);
+				wildcards += "[*]";
+			}
+			return ident(name) + wildcards;
 		})
 		.join(".");
 }
@@ -37,12 +42,15 @@ export function fieldPath(path: string): string {
  * modified on the next diff.
  */
 export function quote(value: string, mark = "'"): string {
+	// A backslash is the escape character, so a literal one is doubled first;
+	// otherwise `a\'` would end the string early.
+	const text = value.replaceAll("\\", "\\\\");
 	// SurrealDB picks whichever quote avoids escaping: a string holding an
 	// apostrophe is stored double-quoted, and vice versa. Matching that keeps a
 	// declared default equal to the stored one.
 	if (mark === "'" && value.includes("'") && !value.includes('"')) {
-		return `"${value}"`;
+		return `"${text}"`;
 	}
 
-	return `${mark}${value.split(mark).join(`\\${mark}`)}${mark}`;
+	return `${mark}${text.split(mark).join(`\\${mark}`)}${mark}`;
 }

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { edge, expr, t, table } from "../../src";
 import { defineSchema } from "../../src/schema/ddl/define";
+import { atLeast, serverVersion } from "../helpers/db";
 import { withTestDb } from "./setup";
+
+// SurrealDB accepts a `DEFAULT` on the `id` field from 3.2; earlier servers refuse it.
+const defaultOnId = atLeast(await serverVersion(), 3, 2);
 
 /**
  * Generated DDL has to be executed to be trusted.
@@ -190,7 +194,7 @@ describe("Generated DDL applies to SurrealDB", () => {
 		await apply(defineSchema(plain));
 	});
 
-	test("a declared id is defined", async () => {
+	test.skipIf(!defaultOnId)("a declared id is defined", async () => {
 		const doc = table("doc", {
 			id: t.uuid().default(expr("rand::uuid::v7()")),
 			title: t.string(),
