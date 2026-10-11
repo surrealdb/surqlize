@@ -1,3 +1,4 @@
+import { toSurqlString } from "surrealdb";
 import { toPlainModel } from "./model";
 
 /**
@@ -44,3 +45,10 @@ export type DisplayContext = {
 	variables: Record<string, unknown>;
 	contextId: symbol;
 };
+
+/**
+ * Render a value as a SurrealQL literal, for a `DEFINE` statement: it takes no
+ * parameters, so a value has to be written into the text.
+ */
+export const inlineValue = (value: unknown): string =>
+	typeof value === "string" ? JSON.stringify(value) : toSurqlString(value);

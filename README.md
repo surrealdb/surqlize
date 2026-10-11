@@ -1208,6 +1208,45 @@ await Bun.write("database/schema/surqlize.surql", toSurql(schema));
 
 Integration tests apply the statements to a real server and check that it accepts and rejects the same values as the client-side types, for each mapping above.
 
+### Permissions
+
+A table or a field can carry `PERMISSIONS`, one rule for each operation. A rule is `"full"`, `"none"`, or `where(…)`, a condition built from the row (`$this`) and the variables SurrealDB gives a permission clause.
+
+```ts
+import { authenticatedAs, or, t, table, where } from "surqlize";
+
+const user = table("user", { role: t.string() });
+const { where: asUser } = authenticatedAs(user); // `auth` is a record of `user`
+
+export const post = table("post", {
+  title: t.string(),
+  owner: t.record("user"),
+  secret: t.string().permissions({
+    select: where((row, { auth }) => row.owner.eq(auth.id)),
+    update: where((row, { auth }) => row.owner.eq(auth.id)),
+    create: "full",
+  }),
+}).permissions({
+  select: "full",
+  create: where((_row, { auth }) => auth.id.ne(undefined)),
+  update: asUser((row, { auth }) => or(row.owner.eq(auth.id), auth.role.eq("admin"))),
+  delete: "none",
+});
+```
+
+```sql
+DEFINE TABLE post TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $auth.id != NONE, FOR update WHERE $this.owner = $auth.id OR $auth.role = "admin", FOR delete NONE;
+DEFINE FIELD secret ON TABLE post TYPE string PERMISSIONS FOR select WHERE $this.owner = $auth.id, FOR update WHERE $this.owner = $auth.id, FOR create FULL;
+```
+
+- **Variables.** The second argument holds `auth` (`$auth`), `session`, `token` and `access`. A field's rules also get `value`, `before` and `after`, typed as the field; they are `NONE` in a table's rules, so using one there throws when the schema is generated.
+- **Typing `auth`.** What `$auth` is depends on your `DEFINE ACCESS … TYPE RECORD`, so it is not inferred. Plain `where` leaves `auth` loose (its `id` is a link, any other property is untyped); `authenticatedAs(user)` returns a `where` with `auth` typed as a record of that table, so `auth.role` is a string. Pass further tables (`authenticatedAs(user, team)`) to follow links into them.
+- **Typing the row.** A table's (or edge's) rules are checked against its fields: `row.nope` and `row.title.eq(1)` are errors. A field's rules see a loose row, as the table does not exist where the field is declared.
+- **Defaults.** An operation you leave out takes SurrealDB's default: `FULL` for a field, `NONE` for a table. A field has no `delete`. A table's `update` rule is checked against the record before and after the change.
+- **Raw SurrealQL.** A string is the escape hatch, and is written as is: `.permissions("FOR select FULL")`, or a string for one operation (`{ select: "$auth.id = owner" }`, with `WHERE` added for you). Strings and `where` mix.
+
+Typed rules are rendered when the schema is generated, by `generateSchema`, `defineSchema` and `surqlize plan`, so a migration of a table with typed permissions converges like any other.
+
 ## Migrations
 
 The `surqlize` command compares a schema with a database and works out what has to change. The migrator is also available as a library from `surqlize/migrate`.

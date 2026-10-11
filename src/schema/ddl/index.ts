@@ -56,11 +56,20 @@ export type {
 	VectorType,
 } from "./index-ddl";
 export { defineIndex } from "./index-ddl";
-export { printSurqlType } from "./print-type";
 export type {
-	HasTableDdl,
-	TableChangefeed,
-	TableDdl,
+	FieldOperation,
+	FieldPermissionRules,
+	FieldPermissions,
+	LooseAuthType,
+	LooseRow,
+	PermissionContext,
+	PermissionRule,
+	SessionType,
+	TableOperation,
 	TablePermissionRules,
 	TablePermissions,
-} from "./table-ddl";
+	TokenType,
+} from "./permissions";
+export { authenticatedAs, WhereRule, where } from "./permissions";
+export { printSurqlType } from "./print-type";
+export type { HasTableDdl, TableChangefeed, TableDdl } from "./table-ddl";

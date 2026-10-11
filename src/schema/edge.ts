@@ -141,10 +141,17 @@ export class EdgeSchema<
 		});
 	}
 
-	/** Set the edge table's `PERMISSIONS`. */
-	permissions(rules: TablePermissions): this {
+	/**
+	 * Set the edge table's `PERMISSIONS`: a SurrealQL clause as a string, or a
+	 * rule per operation, each `"full"`, `"none"`, SurrealQL, or a typed
+	 * condition built with `where()` over the edge's fields (`in` and `out`
+	 * included).
+	 */
+	permissions(
+		rules: TablePermissions<GetEdgeSchemaType<From, Tb, To, Fd>>,
+	): this {
 		return patchTableDdl(this, (d) => {
-			d.permissions = rules;
+			d.permissions = rules as TablePermissions;
 		});
 	}
 

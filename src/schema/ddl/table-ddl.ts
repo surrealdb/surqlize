@@ -1,5 +1,8 @@
 import type { EventOptions } from "./event-ddl";
 import type { IndexOptions } from "./index-ddl";
+import type { TablePermissions } from "./permissions";
+
+export type { TablePermissionRules, TablePermissions } from "./permissions";
 
 /**
  * DDL metadata carried alongside a table or edge schema.
@@ -7,17 +10,6 @@ import type { IndexOptions } from "./index-ddl";
  * As with field-level metadata, none of this affects the inferred row type —
  * it exists so a migration can generate `DEFINE TABLE`.
  */
-
-/** Per-operation permission rules. Each is a SurrealQL expression, or `FULL`/`NONE`. */
-export interface TablePermissionRules {
-	select?: string;
-	create?: string;
-	update?: string;
-	delete?: string;
-}
-
-/** A `PERMISSIONS` clause: one rule for everything, or one per operation. */
-export type TablePermissions = string | TablePermissionRules;
 
 /** A `CHANGEFEED` clause. */
 export interface TableChangefeed {

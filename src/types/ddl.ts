@@ -1,3 +1,5 @@
+import type { FieldPermissions } from "../schema/ddl/permissions";
+
 /**
  * DDL metadata carried alongside a field's type.
  *
@@ -61,7 +63,8 @@ export interface FieldDdl {
 	computed?: string;
 	readonly?: boolean;
 	flexible?: boolean;
-	permissions?: string;
+	/** A SurrealQL `PERMISSIONS` clause, or a rule per operation (typed or SurrealQL). */
+	permissions?: FieldPermissions;
 	comment?: string;
 	reference?: FieldReference;
 	/** Previous names, used to migrate a rename instead of dropping the field. */
