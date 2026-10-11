@@ -1331,6 +1331,51 @@ const pending = usePending(store);
 - The live subscription starts with the first component that uses a query and stops shortly after the last one unmounts. Inside a component nothing is subscribed until it has mounted, so rendering on the server starts no live queries and the value stays `{ status: "loading" }`.
 - `usePending(store)` holds the writes the database has not accepted yet.
 - `provideStore(store)` and `useStore<typeof db>()` pass a store down, or `app.provide(storeKey, store)` on the app, with `storeKey` exported from `surqlize/vue`.
+### Solid
+
+`surqlize/solid` binds a store to Solid with primitives that return accessors. `solid-js` is an optional peer dependency.
+
+```tsx
+import { createPending, createQuery } from "surqlize/solid";
+import { store } from "./store";
+
+function Tasks() {
+  const tasks = store.query("task", (q) => q.where({ done: false }));
+  const open = createQuery(tasks);
+  const pending = createPending(store);
+
+  return (
+    <>
+      <Show when={pending().length > 0}>
+        <p>Saving {pending().length} changes…</p>
+      </Show>
+      <Switch>
+        <Match when={open().status === "loading"}>
+          <p>Loading…</p>
+        </Match>
+        <Match when={open().status === "error"}>
+          <button onClick={() => tasks.refetch()}>Retry</button>
+        </Match>
+        <Match when={open()}>
+          {(snap) => (
+            <ul>
+              <For each={snap().status === "success" ? (snap() as { data: Task[] }).data : []}>
+                {(task) => <li>{task.title}</li>}
+              </For>
+            </ul>
+          )}
+        </Match>
+      </Switch>
+    </>
+  );
+}
+```
+
+- `createQuery(query)` returns an accessor of the snapshot. Pass an accessor to change the query over time, and `null` or `undefined` to skip it (`{ status: "skipped" }`).
+- The live subscription starts with the first owner that uses a query and stops shortly after the last one is disposed.
+- Solid does not run effects when rendering on the server, so nothing is subscribed there and the value stays `{ status: "loading" }`; the query runs in the browser.
+- `createPending(store)` holds the writes the database has not accepted yet.
+- `StoreProvider` and `useStore<typeof db>()` pass a store down.
 
 ## Accessing Single Records
 
