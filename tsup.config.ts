@@ -1,10 +1,11 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-	// The React bindings are a separate entry, so that `react` is only needed
-	// by code that imports `surqlize/react`.
+	// Each framework's bindings are a separate entry, so that the framework is
+	// only needed by code that imports `surqlize/<framework>`.
 	entry: {
 		index: "src/index.ts",
+		"svelte/index": "src/svelte/index.ts",
 		"react/index": "src/react/index.ts",
 	},
 	format: ["esm", "cjs"],
