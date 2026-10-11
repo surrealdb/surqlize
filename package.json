@@ -30,6 +30,11 @@
 			"types": "./dist/react/index.d.ts",
 			"import": "./dist/react/index.js",
 			"require": "./dist/react/index.cjs"
+		},
+		"./vue": {
+			"types": "./dist/vue/index.d.ts",
+			"import": "./dist/vue/index.js",
+			"require": "./dist/vue/index.cjs"
 		}
 	},
 	"files": [
@@ -47,15 +52,20 @@
 		"react-dom": "^19.0.0",
 		"react-test-renderer": "^19.0.0",
 		"surrealdb": "^2.1.0",
-		"tsup": "^8.5.1"
+		"tsup": "^8.5.1",
+		"vue": "^3.3.0"
 	},
 	"peerDependencies": {
 		"react": "^18.0.0 || ^19.0.0",
 		"surrealdb": "^2.1.0",
-		"typescript": "^5.0.0 || ^6.0.0"
+		"typescript": "^5.0.0 || ^6.0.0",
+		"vue": "^3.3.0"
 	},
 	"peerDependenciesMeta": {
 		"react": {
+			"optional": true
+		},
+		"vue": {
 			"optional": true
 		}
 	},

@@ -1301,6 +1301,37 @@ function Tasks() {
 - `usePending(store)` returns the writes the database has not accepted yet, for an "unsaved changes" indicator.
 - `StoreProvider` and `useStore<typeof db>()` pass the store down; you can also import the store directly.
 
+### Vue
+
+`surqlize/vue` binds a store to Vue 3 with composables that return refs. `vue` is an optional peer dependency.
+
+```vue
+<script setup lang="ts">
+import { useQuery, usePending } from "surqlize/vue";
+import { store } from "./store";
+
+const tasks = store.query("task", (q) => q.where({ done: false }));
+const open = useQuery(tasks);
+const pending = usePending(store);
+</script>
+
+<template>
+  <p v-if="open.status === 'loading'">Loading…</p>
+  <button v-else-if="open.status === 'error'" @click="tasks.refetch()">Retry</button>
+  <template v-else-if="open.status === 'success'">
+    <p v-if="pending.length > 0">Saving {{ pending.length }} changes…</p>
+    <ul>
+      <li v-for="task in open.data" :key="String(task.id)">{{ task.title }}</li>
+    </ul>
+  </template>
+</template>
+```
+
+- `useQuery(query)` returns a shallow ref of the snapshot. Pass a ref or a getter to change the query over time (use `shallowRef`, since a deep `ref` would wrap the store in a reactive proxy), and `null` or `undefined` to skip it (`{ status: "skipped" }`).
+- The live subscription starts with the first component that uses a query and stops shortly after the last one unmounts. Inside a component nothing is subscribed until it has mounted, so rendering on the server starts no live queries and the value stays `{ status: "loading" }`.
+- `usePending(store)` holds the writes the database has not accepted yet.
+- `provideStore(store)` and `useStore<typeof db>()` pass a store down, or `app.provide(storeKey, store)` on the app, with `storeKey` exported from `surqlize/vue`.
+
 ## Accessing Single Records
 
 All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:
