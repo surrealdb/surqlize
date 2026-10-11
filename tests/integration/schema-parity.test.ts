@@ -206,7 +206,10 @@ const cases: Case[] = [
 		name: "set<string>",
 		type: t.set(t.string()),
 		ok: [new Set(["a", "b"]), new Set()],
-		bad: [["a", "b"], [], "a", null, {}, new Set([1]), OMIT],
+		// A plain array is left out: servers from 3.3 coerce one into a set and
+		// earlier ones refuse it. That difference is checked, per version, in
+		// set.test.ts. The client rejects an array on every server.
+		bad: ["a", null, {}, new Set([1]), OMIT],
 	},
 	{
 		name: "tuple with an object",

@@ -8,7 +8,11 @@ import {
 	table,
 	ValidationError,
 } from "../../src";
+import { atLeast, serverVersion } from "../helpers/db";
 import { withTestDb } from "./setup";
+
+// From 3.3 the database coerces a plain array into a set; before that it refuses one.
+const coercesArrays = atLeast(await serverVersion(), 3, 3);
 
 const doc = table("doc", {
 	tags: t.set(t.string()),
@@ -64,18 +68,33 @@ describe("set fields (integration)", () => {
 		expect([...(row?.tags ?? [])]).toEqual(["z"]);
 	});
 
-	test("the database refuses an array for a set field", async () => {
+	async function createWithArray(): Promise<boolean> {
 		const { surreal } = getTestDb();
-		let refused = false;
 		try {
-			await surreal.query("CREATE doc:bad CONTENT $d", {
+			await surreal.query("CREATE doc:arr CONTENT $d", {
 				d: { ...base, tags: ["a"] },
 			});
+			return true;
 		} catch {
-			refused = true;
+			return false;
 		}
-		expect(refused).toBe(true);
-	});
+	}
+
+	test.skipIf(coercesArrays)(
+		"a server before 3.3 refuses an array for a set field",
+		async () => {
+			expect(await createWithArray()).toBe(false);
+		},
+	);
+
+	test.skipIf(!coercesArrays)(
+		"a server from 3.3 accepts an array for a set field",
+		async () => {
+			// The client still rejects one (see the next test), so writing through
+			// Surqlize always sends a Set.
+			expect(await createWithArray()).toBe(true);
+		},
+	);
 
 	test("the client validates before writing", async () => {
 		const db = make().validated();
