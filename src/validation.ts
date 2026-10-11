@@ -5,6 +5,7 @@ import {
 	type HasDefault,
 	ObjectType,
 	OptionType,
+	SetType,
 	SurqlExpression,
 	UnionType,
 } from "./types";
@@ -51,6 +52,7 @@ function describe(value: unknown): string {
 		return JSON.stringify(value.length > 40 ? `${value.slice(0, 40)}…` : value);
 	if (typeof value !== "object") return String(value);
 	if (Array.isArray(value)) return `array of ${value.length}`;
+	if (value instanceof Set) return `set of ${value.size}`;
 	const name = (value as object).constructor?.name;
 	return name && name !== "Object" ? name : "object";
 }
@@ -63,6 +65,8 @@ function expectedOf(type: AbstractType): string {
 			? `tuple of ${schema.length}`
 			: `array of ${expectedOf(schema)}`;
 	}
+	if (type instanceof SetType)
+		return `set of ${expectedOf(type.schema as AbstractType)}`;
 	if (type instanceof OptionType)
 		return `${expectedOf(type.schema)} or undefined`;
 	if (type instanceof UnionType)
@@ -154,6 +158,26 @@ function collectArray(
 	}
 }
 
+/** Check a set: every member against the element type, then the size bound. */
+function collectSet(
+	type: SetType,
+	value: unknown,
+	path: string,
+	issues: ValidationIssue[],
+): void {
+	if (!(value instanceof Set)) {
+		report(issues, path, expectedOf(type), value);
+		return;
+	}
+	let i = 0;
+	for (const member of value) {
+		collect(type.schema as AbstractType, member, join(path, i++), issues);
+	}
+	if (type.max !== undefined && value.size > type.max) {
+		report(issues, path, `at most ${type.max} members`, value);
+	}
+}
+
 /** Check `value` against `type`, recording every failure rather than stopping at the first. */
 function collect(
 	type: AbstractType,
@@ -169,6 +193,8 @@ function collect(
 		collectObject(type, value, path, issues, options);
 	} else if (type instanceof ArrayType) {
 		collectArray(type, value, path, issues);
+	} else if (type instanceof SetType) {
+		collectSet(type, value, path, issues);
 	} else if (!type.validate(value)) {
 		report(issues, path, expectedOf(type), value);
 	}
@@ -256,6 +282,10 @@ function collectOperand(
 		// `tags += "x"` appends an element; `tags += ["x"]` appends an array.
 		const member = base.schema as AbstractType;
 		collect(Array.isArray(operand) ? base : member, operand, path, issues);
+	} else if (base instanceof SetType) {
+		// `tags += "x"` adds a member; `tags += <set>` adds a set.
+		const member = base.schema as AbstractType;
+		collect(operand instanceof Set ? base : member, operand, path, issues);
 	} else if (base.name === "number") {
 		collect(base, operand, path, issues);
 	}

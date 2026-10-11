@@ -48,6 +48,8 @@ describe("flattenFields", () => {
 		expect(paths({ tags: t.array(t.string()) } as never)).toEqual(["tags"]);
 	});
 
+	// Checked against SurrealDB: `set<object>` accepts `tags[*].name` children,
+	// and enforces them on write, exactly as for an array.
 	test("handles a set of objects like an array", () => {
 		expect(
 			paths({ tags: t.set(t.object({ name: t.string() })) } as never),

@@ -30,6 +30,11 @@ function toJson(value: unknown, path: string): unknown {
 		return value;
 	if (Array.isArray(value))
 		return value.map((v, i) => toJson(v, `${path}[${i}]`));
+	if (value instanceof Set)
+		return {
+			[TAG]: "set",
+			v: [...value].map((v, i) => toJson(v, `${path}[${i}]`)),
+		};
 	if (
 		typeof value === "object" &&
 		Object.getPrototypeOf(value) === Object.prototype
@@ -86,6 +91,8 @@ function fromJson(value: unknown): unknown {
 			return new Uuid(object.v as string);
 		case "dur":
 			return new Duration(object.v as string);
+		case "set":
+			return new Set((object.v as unknown[]).map(fromJson));
 		case "obj":
 			return decodeObject(object.v as Record<string, unknown>);
 		default:

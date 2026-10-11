@@ -18,6 +18,13 @@ const m = (filter: Record<string, unknown> | undefined, r: unknown = row) =>
 	matchesWhere(filter, r);
 
 describe("matchesWhere", () => {
+	test("sets compare by members, not by their text", () => {
+		const r = { tags: new Set(["a", "b"]) };
+		expect(m({ tags: { eq: new Set(["b", "a"]) } }, r)).toBe(true);
+		expect(m({ tags: { eq: new Set(["a", "c"]) } }, r)).toBe(false);
+		expect(m({ tags: { eq: new Set(["a"]) } }, r)).toBe(false);
+	});
+
 	test("no filter matches everything", () => {
 		expect(m(undefined)).toBe(true);
 		expect(m({})).toBe(true);

@@ -37,6 +37,20 @@ const isPlain = (value: unknown): value is Record<string, unknown> => {
 	return proto === Object.prototype || proto === null;
 };
 
+/** Whether two sets hold the same members, compared by value. */
+function sameSet(a: Set<unknown>, b: Set<unknown>): boolean {
+	const rest = [...b];
+	return (
+		a.size === b.size &&
+		[...a].every((x) => {
+			const at = rest.findIndex((y) => same(x, y));
+			if (at < 0) return false;
+			rest.splice(at, 1);
+			return true;
+		})
+	);
+}
+
 /** Equality as SurrealQL sees it: by value, for dates, record ids, arrays and objects. */
 function same(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
@@ -47,6 +61,7 @@ function same(a: unknown, b: unknown): boolean {
 	if (Array.isArray(a) && Array.isArray(b)) {
 		return a.length === b.length && a.every((x, i) => same(x, b[i]));
 	}
+	if (a instanceof Set && b instanceof Set) return sameSet(a, b);
 	if (isPlain(a) && isPlain(b)) {
 		const keys = Object.keys(a);
 		return (

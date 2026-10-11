@@ -75,6 +75,14 @@ describe("codec", () => {
 		expect(back.inf).toBe(Number.POSITIVE_INFINITY);
 	});
 
+	test("a Set survives the round trip", () => {
+		const back = decode(encode({ tags: new Set(["a", new Date(0)]) })) as {
+			tags: Set<unknown>;
+		};
+		expect(back.tags).toBeInstanceOf(Set);
+		expect([...back.tags]).toEqual(["a", new Date(0)]);
+	});
+
 	test("refuses a value it cannot store, and says where", () => {
 		expect(() => encode({ a: { b: () => 1 } })).toThrow(/value\.a\.b/);
 		expect(() => encode(new Map())).toThrow(/Map/);

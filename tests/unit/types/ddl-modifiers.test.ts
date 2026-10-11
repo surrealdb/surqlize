@@ -18,6 +18,12 @@ describe("Collection bounds", () => {
 		expect(printSurqlType(t.set(t.string(), 5))).toBe("set<string, 5>");
 	});
 
+	test("a set is held to its maximum at parse time", () => {
+		const capped = t.set(t.string(), 2);
+		expect(capped.parse(new Set(["a", "b"])).size).toBe(2);
+		expect(() => capped.parse(new Set(["a", "b", "c"]))).toThrow();
+	});
+
 	test("an unbounded collection prints without one", () => {
 		expect(printSurqlType(t.array(t.string()))).toBe("array<string>");
 		expect(printSurqlType(t.set(t.string()))).toBe("set<string>");

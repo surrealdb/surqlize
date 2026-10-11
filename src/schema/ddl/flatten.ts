@@ -32,9 +32,9 @@ export interface FlatField {
  * DEFINE FIELD address.street ON user TYPE string;
  * ```
  *
- * Objects inside an array are addressed through the element wildcard —
+ * Objects inside an array or a set are addressed through the element wildcard —
  * `items[*].name`. The element field itself (`items[*]`) is **not** emitted:
- * SurrealDB creates it automatically for every array, and defining it by hand
+ * SurrealDB creates it automatically for every array and set, and defining it by hand
  * would show up as an extra field on the next diff.
  *
  * @param fields - The table's fields, as declared
@@ -80,6 +80,7 @@ function nestedObject(type: AbstractType): ObjectType | null {
 /** Strip `option` and array wrappers to reach the type they hold. */
 function unwrap(type: AbstractType): AbstractType {
 	if (type instanceof OptionType) return unwrap(type.schema);
+	if (type instanceof SetType) return unwrap(type.schema as AbstractType);
 	if (type instanceof ArrayType) {
 		const schema = type.schema;
 		// A tuple has no single element type, so there is nothing to expand into.

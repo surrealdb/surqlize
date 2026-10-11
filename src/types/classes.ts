@@ -806,24 +806,61 @@ export class AnyType extends AbstractType<unknown> {
 }
 
 /**
- * An array whose elements are unique.
+ * A set: an unordered collection of unique values, which SurrealDB accepts
+ * and returns as a JavaScript `Set` (never an array).
  *
- * Extends {@link ArrayType} — and keeps `name = "array"` — so sets behave like
- * arrays everywhere in the query builder. The distinction exists so a migration
- * can emit `TYPE set<string>` rather than `TYPE array<string>`.
+ * Sets have their own function family (`set::`), distinct from `array::`.
  */
 export class SetType<
 	T extends AbstractType = AbstractType,
-> extends ArrayType<T> {
+> extends AbstractType<Set<T["infer"]>> {
+	name = "set" as const;
 	get expected() {
-		return `Set<${this.schema.expected}>`;
+		return `Set<${this._schema.expected}>`;
 	}
 
-	// `name` stays "array" so the array function family still resolves; the
-	// distinction is carried by the class and read by the type printer.
+	/**
+	 * @param _schema - The element type
+	 * @param _max - The most members the set may hold, as `set<T, max>`
+	 */
+	constructor(
+		private _schema: T,
+		private _max?: number,
+	) {
+		super();
+	}
+
+	get schema() {
+		return this._schema;
+	}
+
+	/** The declared maximum size, if any. */
+	get max() {
+		return this._max;
+	}
 
 	validate(value: unknown): value is this["infer"] {
-		if (!super.validate(value)) return false;
-		return new Set(value as unknown[]).size === (value as unknown[]).length;
+		if (!(value instanceof Set)) return false;
+		if (this._max !== undefined && value.size > this._max) return false;
+		for (const member of value)
+			if (!this._schema.validate(member)) return false;
+		return true;
+	}
+
+	/**
+	 * Parse every member of `value` against the element type, returning a new
+	 * `Set` of the parsed members.
+	 *
+	 * @throws {TypeParseError} If `value` is not a `Set`, exceeds the declared
+	 *   maximum, or a member fails validation.
+	 */
+	parse(value: unknown): this["infer"] {
+		if (!(value instanceof Set))
+			throw new TypeParseError(this.name, this.expected, value);
+		if (this._max !== undefined && value.size > this._max)
+			throw new TypeParseError(this.name, this.expected, value);
+		const parsed = new Set<unknown>();
+		for (const member of value) parsed.add(this._schema.parse(member));
+		return parsed as this["infer"];
 	}
 }

@@ -6,7 +6,7 @@ import {
 	GeometryPoint,
 	Range,
 } from "surrealdb";
-import { t } from "../../../src";
+import { ArrayType, t } from "../../../src";
 
 describe("Numeric widths", () => {
 	test("int() rejects fractional values", () => {
@@ -92,18 +92,48 @@ describe("range()", () => {
 });
 
 describe("set()", () => {
-	test("rejects arrays containing duplicates", () => {
+	test("accepts a Set, including an empty one", () => {
 		const type = t.set(t.string());
-		expect(type.validate(["a", "b"])).toBe(true);
-		expect(type.validate(["a", "a"])).toBe(false);
+		expect(type.validate(new Set(["a", "b"]))).toBe(true);
+		expect(type.validate(new Set())).toBe(true);
 	});
 
-	test("still validates element types", () => {
+	test("rejects arrays and other non-Set values", () => {
 		const type = t.set(t.string());
-		expect(type.validate(["a", 1])).toBe(false);
+		expect(type.validate(["a", "b"])).toBe(false);
+		expect(type.validate([])).toBe(false);
+		expect(type.validate("a")).toBe(false);
+		expect(type.validate(null)).toBe(false);
+		expect(type.validate(undefined)).toBe(false);
+		expect(type.validate({})).toBe(false);
 	});
 
-	test("keeps name 'array' so array functions still resolve", () => {
-		expect(t.set(t.string()).name).toBe("array");
+	test("validates member types", () => {
+		const type = t.set(t.string());
+		expect(type.validate(new Set(["a", 1]))).toBe(false);
+		expect(type.validate(new Set([1]))).toBe(false);
+	});
+
+	test("enforces the declared maximum size", () => {
+		const type = t.set(t.string(), 2);
+		expect(type.validate(new Set(["a", "b"]))).toBe(true);
+		expect(type.validate(new Set(["a", "b", "c"]))).toBe(false);
+	});
+
+	test("parse returns a new Set of parsed members", () => {
+		const type = t.set(t.string());
+		const input = new Set(["a"]);
+		const out = type.parse(input);
+		expect(out).toBeInstanceOf(Set);
+		expect(out).not.toBe(input);
+		expect([...out]).toEqual(["a"]);
+		expect(() => type.parse(["a"])).toThrow();
+		expect(() => type.parse(new Set([1]))).toThrow();
+		expect(() => t.set(t.string(), 1).parse(new Set(["a", "b"]))).toThrow();
+	});
+
+	test("is its own type, not an array", () => {
+		expect(t.set(t.string()).name).toBe("set");
+		expect(t.set(t.string())).not.toBeInstanceOf(ArrayType);
 	});
 });

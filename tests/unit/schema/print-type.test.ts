@@ -30,8 +30,8 @@ describe("printSurqlType", () => {
 		expect(printSurqlType(t.set(t.string()))).toBe("set<string>");
 	});
 
-	test("distinguishes set from array despite the shared name", () => {
-		expect(t.set(t.string()).name).toBe(t.array(t.string()).name);
+	test("distinguishes set from array", () => {
+		expect(t.set(t.string()).name).not.toBe(t.array(t.string()).name);
 		expect(printSurqlType(t.set(t.string()))).not.toBe(
 			printSurqlType(t.array(t.string())),
 		);
