@@ -1205,7 +1205,36 @@ Integration tests apply the statements to a real server and check that it accept
 
 ### Permissions
 
-A table or a field can carry `PERMISSIONS`, one rule for each operation. A rule is `"full"`, `"none"`, or `where(…)`, a condition built from the row (`$this`) and the variables SurrealDB gives a permission clause.
+A table, an edge or a field can carry `PERMISSIONS`, one rule for each operation (`select`, `create`, `update`, `delete`). A rule can be written two ways, and the two can be mixed in one object:
+
+- **SurrealQL as a string**, written as is. This is always available, and the way to say anything the typed form cannot.
+- **A typed rule**, `"full"`, `"none"` or `where(…)`: a condition built from the row and the variables SurrealDB gives a permission clause, checked by TypeScript.
+
+#### SurrealQL strings
+
+```ts
+export const users = table("users", {
+  name: t.string(),
+  // A field takes the whole clause as a string
+  avatar_url: t.option(t.string()).permissions("FOR select, create, update, delete FULL"),
+}).permissions({
+  // A table takes a string for each operation; a bare condition gets its WHERE added
+  select: "FULL",
+  create: "$auth.id != NONE",
+  update: "$auth.id = id",
+  delete: "NONE",
+});
+```
+
+```sql
+DEFINE TABLE users TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $auth.id != NONE, FOR update WHERE $auth.id = id, FOR delete NONE;
+DEFINE FIELD name ON TABLE users TYPE string;
+DEFINE FIELD avatar_url ON TABLE users TYPE option<string> PERMISSIONS FOR select, create, update, delete FULL;
+```
+
+A table also takes a single string for every operation, such as `.permissions("FULL")`.
+
+#### Typed rules
 
 ```ts
 import { authenticatedAs, or, t, table, where } from "surqlize";
@@ -1230,15 +1259,37 @@ export const post = table("post", {
 ```
 
 ```sql
-DEFINE TABLE post TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $auth.id != NONE, FOR update WHERE $this.owner = $auth.id OR $auth.role = "admin", FOR delete NONE;
+DEFINE TABLE post TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $auth.id != NONE, FOR update WHERE $this.owner = $auth.id OR $auth.role = 'admin', FOR delete NONE;
 DEFINE FIELD secret ON TABLE post TYPE string PERMISSIONS FOR select WHERE $this.owner = $auth.id, FOR update WHERE $this.owner = $auth.id, FOR create FULL;
 ```
+
+#### Mixing the two
+
+A string and a typed rule can sit side by side, one operation each:
+
+```ts
+export const note = table("note", {
+  title: t.string(),
+  owner: t.record("user"),
+}).permissions({
+  select: "full",
+  create: where((row, { auth }) => row.owner.eq(auth.id)),
+  delete: "none",
+});
+```
+
+```sql
+DEFINE TABLE note TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $this.owner = $auth.id, FOR delete NONE;
+```
+
+`"full"` and `"none"` are accepted in either case, so `"FULL"` and `"full"` mean the same.
+
+#### Notes
 
 - **Variables.** The second argument holds `auth` (`$auth`), `session`, `token` and `access`. A field's rules also get `value`, `before` and `after`, typed as the field; they are `NONE` in a table's rules, so using one there throws when the schema is generated.
 - **Typing `auth`.** What `$auth` is depends on your `DEFINE ACCESS … TYPE RECORD`, so it is not inferred. Plain `where` leaves `auth` loose (its `id` is a link, any other property is untyped); `authenticatedAs(user)` returns a `where` with `auth` typed as a record of that table, so `auth.role` is a string. Pass further tables (`authenticatedAs(user, team)`) to follow links into them.
 - **Typing the row.** A table's (or edge's) rules are checked against its fields: `row.nope` and `row.title.eq(1)` are errors. A field's rules see a loose row, as the table does not exist where the field is declared.
 - **Defaults.** An operation you leave out takes SurrealDB's default: `FULL` for a field, `NONE` for a table. A field has no `delete`. A table's `update` rule is checked against the record before and after the change.
-- **Raw SurrealQL.** A string is the escape hatch, and is written as is: `.permissions("FOR select FULL")`, or a string for one operation (`{ select: "$auth.id = owner" }`, with `WHERE` added for you). Strings and `where` mix.
 
 Typed rules are rendered when the schema is generated, by `generateSchema`, `defineSchema` and `surqlize plan`, so a migration of a table with typed permissions converges like any other.
 
