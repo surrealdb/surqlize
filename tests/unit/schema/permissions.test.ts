@@ -395,3 +395,61 @@ describe("types", () => {
 		expect(true).toBe(true);
 	});
 });
+
+describe("The documented examples", () => {
+	// The README and the pull request show these, so they are pinned exactly:
+	// the strings keep generating what they always did, and the mix is as shown.
+
+	test("SurrealQL strings on a table", () => {
+		const users = table("users", { name: t.string() }).permissions({
+			select: "FULL",
+			create: "$auth.id != NONE",
+			update: "$auth.id = id",
+			delete: "NONE",
+		});
+
+		expect(defineTable(users)).toBe(
+			"DEFINE TABLE users TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $auth.id != NONE, FOR update WHERE $auth.id = id, FOR delete NONE;",
+		);
+	});
+
+	test("a SurrealQL string on a field", () => {
+		const users = table("users", {
+			avatar_url: t
+				.option(t.string())
+				.permissions("FOR select, create, update, delete FULL"),
+		});
+
+		expect(field(users, "avatar_url")).toBe(
+			"DEFINE FIELD avatar_url ON TABLE users TYPE option<string> PERMISSIONS FOR select, create, update, delete FULL;",
+		);
+	});
+
+	test("strings and a typed rule in one object", () => {
+		const note = table("note", {
+			title: t.string(),
+			owner: t.record("user"),
+		}).permissions({
+			select: "full",
+			create: where((row, { auth }) => row.owner.eq(auth.id)),
+			delete: "none",
+		});
+
+		expect(defineTable(note, { tables: { user, note } })).toBe(
+			"DEFINE TABLE note TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select FULL, FOR create WHERE $this.owner = $auth.id, FOR delete NONE;",
+		);
+	});
+
+	test("the keywords mean the same in either case", () => {
+		const upper = table("t", { a: t.string() }).permissions({
+			select: "FULL",
+			delete: "NONE",
+		});
+		const lower = table("t", { a: t.string() }).permissions({
+			select: "full",
+			delete: "none",
+		});
+
+		expect(defineTable(lower)).toBe(defineTable(upper));
+	});
+});
