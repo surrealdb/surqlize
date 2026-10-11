@@ -25,6 +25,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
+		},
+		"./react": {
+			"types": "./dist/react/index.d.ts",
+			"import": "./dist/react/index.js",
+			"require": "./dist/react/index.cjs"
 		}
 	},
 	"files": [
@@ -35,12 +40,24 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.15",
 		"@types/bun": "latest",
+		"@types/react": "^19.0.0",
+		"@types/react-dom": "^19.0.0",
+		"@types/react-test-renderer": "^19.0.0",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0",
+		"react-test-renderer": "^19.0.0",
 		"surrealdb": "^2.1.0",
 		"tsup": "^8.5.1"
 	},
 	"peerDependencies": {
+		"react": "^18.0.0 || ^19.0.0",
 		"surrealdb": "^2.1.0",
 		"typescript": "^5.0.0 || ^6.0.0"
+	},
+	"peerDependenciesMeta": {
+		"react": {
+			"optional": true
+		}
 	},
 	"scripts": {
 		"all": "bun test && bun run type-check && biome check .",

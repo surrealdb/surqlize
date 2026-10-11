@@ -33,7 +33,8 @@ Each layer is useful on its own and none requires the next.
    `{ subscribe, getSnapshot }` with `status: loading | success | error`.
    Subscriptions are reference-counted so ten consumers share one
    `LIVE SELECT`, and the first render comes from a snapshot `SELECT`. Thin
-   adapters (`surqlize/react`, `/vue`, `/svelte`) wrap it.
+   adapters wrap it; `surqlize/react` is implemented, and Vue and Svelte can
+   follow the same `subscribe` and `getSnapshot` shape.
 2. **Optimistic writes. Implemented.** A write applies to the store immediately and is
    rolled back on failure. This needs echo suppression so the live
    notification for our own write does not flicker the value.

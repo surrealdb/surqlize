@@ -10,5 +10,10 @@
 		// packages out so their own lib requirements don't fail this check.
 		"types": []
 	},
-	"files": ["dist/index.d.ts", "dist/index.d.cts"]
+	"files": [
+		"dist/index.d.ts",
+		"dist/index.d.cts",
+		"dist/react/index.d.ts",
+		"dist/react/index.d.cts"
+	]
 }

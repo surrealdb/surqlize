@@ -1249,6 +1249,58 @@ await store.ready; // writes left by an earlier session are sent from here
 
 Values in a stored write can be strings, numbers, booleans, null, dates, record ids, uuids, durations, bigints, and arrays and plain objects of those. A write holding anything else is rejected when it is made, with the path of the value.
 
+### React
+
+`surqlize/react` binds a store to React 18 and 19 with `useSyncExternalStore`. `react` is an optional peer dependency, and the entry adds no code to the rest of the package.
+
+```tsx
+import { createStore } from "surqlize";
+import { StoreProvider, usePending, useQuery, useStore } from "surqlize/react";
+
+const store = createStore(db);
+
+function App() {
+  return (
+    <StoreProvider store={store}>
+      <Tasks />
+    </StoreProvider>
+  );
+}
+
+function Tasks() {
+  const store = useStore<typeof db>();
+  const tasks = store.query("task", (q) => q.where({ done: false }));
+  const open = useQuery(tasks);
+  const pending = usePending(store);
+
+  if (open.status === "loading") return <p>Loading…</p>;
+  if (open.status === "error") return <button onClick={() => tasks.refetch()}>Retry</button>;
+
+  return (
+    <>
+      {pending.length > 0 && <p>Saving {pending.length} changes…</p>}
+      <ul>
+        {open.data.map((task) => (
+          <li key={String(task.id)}>
+            <input
+              type="checkbox"
+              onChange={() => store.table("task").update(task.id, { done: true })}
+            />
+            {task.title}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+- `useQuery(query)` re-renders when the result changes and returns the same `StoreSnapshot` described above. `store.query()` returns the same object for the same query, so it can be called while rendering. Pass `null` or `undefined` to skip a query until its inputs are known; the result is then `{ status: "skipped" }`.
+- The live subscription starts with the first component that uses a query and stops shortly after the last one unmounts, so StrictMode's extra mount and unmount does not restart it.
+- On the server, and while hydrating, `useQuery` returns `{ status: "loading" }`; the query runs in the browser.
+- `usePending(store)` returns the writes the database has not accepted yet, for an "unsaved changes" indicator.
+- `StoreProvider` and `useStore<typeof db>()` pass the store down; you can also import the store directly.
+
 ## Accessing Single Records
 
 All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:
