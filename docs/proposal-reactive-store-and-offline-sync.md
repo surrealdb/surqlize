@@ -81,8 +81,10 @@ Each layer is useful on its own and none requires the next.
   retries. On reconnect the outbox is flushed before queries read again.
 - Storage is pluggable: memory by default, IndexedDB on request, with a small
   codec for dates, record ids and similar values.
-- A filtered query does not show locally created records until the database has
-  them, since the client cannot evaluate the filter.
+- A query that is a plain object filter is checked on the client, so a local
+  write enters or leaves the result at once. The check answers true, false or
+  unknown, and acts only on a definite answer; callback filters, ordered
+  results and anything beyond a filter keep the database as the only authority.
 
 ## Open questions
 

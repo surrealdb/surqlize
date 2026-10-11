@@ -67,6 +67,14 @@ export type QueryStoreDeps<T> = {
 		/** Call `listener` when the pending writes change. */
 		subscribe(listener: () => void): () => void;
 	};
+	/**
+	 * Whether a whole record, as the database returned it, belongs to the result:
+	 * `true`, `false`, or `undefined` when that cannot be told. Only for `refetch`
+	 * queries that are a plain filter.
+	 */
+	membership?: (row: T) => boolean | undefined;
+	/** Whether a record that comes back from a write may be added to a `refetch` result. */
+	insertable?: boolean;
 	/** Called once the store has no subscribers and has shut down. */
 	onDispose?(): void;
 	/** How long to keep running after the last subscriber leaves. */
@@ -169,10 +177,19 @@ export class QueryStore<T> {
 		const row = change.row as T;
 		if (this.deps.mode === "direct") {
 			this.#rows.set(change.key, row);
-		} else {
+			return;
+		}
+		// A filtered result: the row belongs in it only if it passes the filter.
+		const member = this.deps.membership?.(row);
+		const present = this.#base.some((r) => this.deps.keyOf(r) === change.key);
+		if (member === false) {
+			this.#base = this.#base.filter((r) => this.deps.keyOf(r) !== change.key);
+		} else if (present) {
 			this.#base = this.#base.map((r) =>
 				this.deps.keyOf(r) === change.key ? row : r,
 			);
+		} else if (member === true && this.deps.insertable) {
+			this.#base = [...this.#base, row];
 		}
 	}
 

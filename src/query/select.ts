@@ -196,6 +196,7 @@ export class SelectQuery<
 	private _start?: number;
 	private _limit?: number;
 	private _filter?: Workable<C>;
+	private _whereInput?: unknown;
 	private _entry?: Workable<C, E>;
 	private _orderBy?: Array<{
 		field: Workable<C> | string;
@@ -351,13 +352,47 @@ export class SelectQuery<
 		if (!condition) {
 			return this.derive((next) => {
 				next._filter = undefined;
+				next._whereInput = undefined;
 			});
 		}
 
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
+			next._whereInput = input;
 		});
+	}
+
+	/**
+	 * What a client needs to check a row against this query without asking the
+	 * database, or `undefined` when the query is more than a filter over a
+	 * table: a callback filter (a SurrealQL expression), a projection, `FETCH`,
+	 * `LIMIT`, `START`, `GROUP`, `SPLIT`, `.only()`, or several tables.
+	 *
+	 * - `where` is the object passed to `.where()`, if there is one.
+	 * - `ordered` tells that the rows come in an order the client does not
+	 *   reproduce, so a row it adds would be in the wrong place.
+	 */
+	clientFilter():
+		| { where: Record<string, unknown> | undefined; ordered: boolean }
+		| undefined {
+		const plain =
+			typeof this.tb === "string" &&
+			typeof this.subject === "string" &&
+			!this._only &&
+			this._entry === undefined &&
+			this._start === undefined &&
+			this._limit === undefined &&
+			this._groupBy === undefined &&
+			this._split === undefined &&
+			this._fetch === undefined;
+		if (!plain) return undefined;
+		const input = this._whereInput;
+		if (typeof input === "function") return undefined;
+		return {
+			where: input as Record<string, unknown> | undefined,
+			ordered: this._orderBy !== undefined,
+		};
 	}
 
 	start(start: number) {

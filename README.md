@@ -1209,11 +1209,34 @@ await committed; // the stored record, once the database has accepted the write
 ```
 
 - **The id is known at once.** `create()` generates a record id unless you pass `{ id }`, so the record can be used before the database has seen it.
-- **Shown on top of the database's state.** Pending writes are applied to the result of each query of the table. When the database accepts a write, its answer replaces the pending write in the result, so nothing flickers when the live notification for it arrives. A query with a filter does not show a record that was created or updated locally until the database has it, because the store cannot tell whether the record would match.
+- **Shown on top of the database's state.** Pending writes are applied to the result of each query of the table. When the database accepts a write, its answer replaces the pending write in the result, so nothing flickers when the live notification for it arrives. See [Filtered queries](#filtered-queries-and-local-writes) for how a write enters or leaves a filtered result.
 - **A refusal is taken back.** If the database refuses a write (a failed assertion, a missing record for an update, a permissions error), the change disappears from the results and `committed` rejects with the error.
 - **A connection problem is not a refusal.** The write stays queued, is retried with a growing delay, and is sent as soon as the connection returns, before the queries read again. While offline, `committed` stays pending. `store.pending` has `subscribe` and `getSnapshot` for the writes that are waiting, for example to show an "unsaved changes" indicator.
 - **Merging.** Writes to the same record that have not been sent yet are combined, so editing a field repeatedly offline sends one write. Updates merge top-level fields: the last write to a field wins, and a nested object is replaced as a whole. Text is not merged.
 - **Safe to send twice.** A write that was sent but whose answer was lost is sent again. A create is an upsert of the whole record, an update is a merge, and deleting a missing record is not an error, so repeating any of them leaves the same record.
+
+#### Filtered queries and local writes
+
+When a query is a plain object filter, the store checks each local write against it, so a record enters or leaves the result at once:
+
+```ts
+const open = store.query("task", (q) => q.where({ done: false, priority: { gte: 2 } }));
+
+tasks.create({ title: "A", done: false, priority: 5 }); // appears now
+tasks.update(id, { done: true });                        // disappears now
+```
+
+The check understands `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `inside`, `notInside`, `contains`, `containsNot`, `containsAll`, `containsAny`, `containsNone`, `allInside`, `anyInside`, `noneInside`, `startsWith` and `endsWith`, nested object fields, and `and`, `or` and `not`. It is a prediction, and the database stays the authority: the answer to each write replaces it, and the refetch that follows corrects any mismatch.
+
+The store does not guess when it cannot be sure, and leaves the result as the database last reported it. That is the case when:
+
+- the filter is a callback (`q.where((r) => r.done.eq(false))`) rather than an object, because a callback builds a SurrealQL expression the client cannot evaluate;
+- the filter uses an operator not listed above, compares values it does not order, or reaches into a linked record;
+- a created record leaves out a field the filter reads, since the database may fill it in with a default;
+- the query has a `LIMIT`, `START`, `GROUP`, `SPLIT`, `FETCH`, a projection, or `.only()`, where it is not just a filter;
+- the query is ordered. An update still changes a row in place, but a created record is not added until the database has ordered it.
+
+A record that left the result and is updated back to matching is not shown until the database reports it, because the client holds only the fields of the write, not the whole record.
 
 By default pending writes are kept in memory, so they survive a dropped connection but not a reload. To keep them across reloads, pass an IndexedDB store, and wait for `store.ready` before relying on them:
 

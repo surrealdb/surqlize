@@ -138,9 +138,69 @@ describe("Store writes (integration)", () => {
 		stop();
 	});
 
-	test("a filtered query leaves a created record out until the database has it", async () => {
-		const { store } = connect();
+	test("a filtered query shows a created record at once when it matches, and not when it does not", async () => {
+		const { store, surreal } = connect();
+		const open = store.query("task", (q) =>
+			q.where({ done: false, priority: { gte: 2 } }),
+		);
+		const stop = open.subscribe(() => {});
+		await waitFor(() => titles(open) === "");
+		const writes = store.table("task");
+
+		const fits = writes.create({ title: "Fits", done: false, priority: 5 });
+		const wrongDone = writes.create({ title: "Done", done: true, priority: 5 });
+		const wrongPriority = writes.create({
+			title: "Low",
+			done: false,
+			priority: 1,
+		});
+		expect(titles(open)).toBe("Fits");
+
+		await Promise.all([
+			fits.committed,
+			wrongDone.committed,
+			wrongPriority.committed,
+		]);
+		await new Promise((r) => setTimeout(r, 200));
+		expect(titles(open)).toBe("Fits");
+		const [stored] = await surreal.query<[{ title: string }[]]>(
+			"SELECT * FROM task WHERE done = false AND priority >= 2",
+		);
+		expect(stored?.map((r) => r.title)).toEqual(["Fits"]);
+		stop();
+	});
+
+	test("an update that makes a record stop matching removes it at once", async () => {
+		const { store, surreal } = connect();
+		const writes = store.table("task");
+		const a = writes.create({ title: "A", done: false, priority: 1 });
+		const b = writes.create({ title: "B", done: false, priority: 2 });
+		await Promise.all([a.committed, b.committed]);
+
 		const open = store.query("task", (q) => q.where({ done: false }));
+		const stop = open.subscribe(() => {});
+		await waitFor(() => titles(open) === "A,B");
+
+		const finish = writes.update(a.id, { done: true });
+		expect(titles(open)).toBe("B");
+		await finish.committed;
+		await new Promise((r) => setTimeout(r, 200));
+		expect(titles(open)).toBe("B");
+
+		// Back to matching: the record is not in the result, and the client holds
+		// only part of it, so it comes back when the database reports it.
+		await writes.update(a.id, { done: false }).committed;
+		await waitFor(() => titles(open) === "A,B");
+		const [stored] = await surreal.query<[{ title: string }[]]>(
+			"SELECT * FROM task WHERE done = false",
+		);
+		expect(stored).toHaveLength(2);
+		stop();
+	});
+
+	test("a query with a callback filter does not show a created record until the database has it", async () => {
+		const { store } = connect();
+		const open = store.query("task", (q) => q.where((r) => r.done.eq(false)));
 		const stop = open.subscribe(() => {});
 		await waitFor(() => titles(open) === "");
 		const write = store
@@ -149,6 +209,31 @@ describe("Store writes (integration)", () => {
 		expect(titles(open)).toBe("");
 		await write.committed;
 		await waitFor(() => titles(open) === "New");
+		stop();
+	});
+
+	test("an ordered query does not place a created record before the database has ordered it", async () => {
+		const { store, db } = connect();
+		await db
+			.create("task", "a")
+			.content({ title: "A", done: false, priority: 1 });
+		const ordered = store.query("task", (q) =>
+			q.where({ done: false }).orderBy("priority", "DESC"),
+		);
+		const stop = ordered.subscribe(() => {});
+		await waitFor(() => titles(ordered) === "A");
+		const write = store
+			.table("task")
+			.create({ title: "Top", done: false, priority: 9 });
+		expect(titles(ordered)).toBe("A");
+		await write.committed;
+		const order = () => {
+			const snap = ordered.getSnapshot();
+			return snap.status === "success"
+				? snap.data.map((r) => r.title).join()
+				: snap.status;
+		};
+		await waitFor(() => order() === "Top,A");
 		stop();
 	});
 

@@ -5,6 +5,7 @@ import type { CreateInput } from "../query/modification-methods";
 import type { SelectQuery } from "../query/select";
 import type { Orm } from "../schema/orm";
 import type { WorkableContext } from "../utils";
+import { matchesWhere } from "./match";
 import {
 	memoryStorage,
 	Outbox,
@@ -66,6 +67,11 @@ export type QueryOptions<T> = {
 };
 
 type Row<Q> = Awaited<Q> extends readonly (infer R)[] ? R : Awaited<Q>;
+
+type ClientFilter = {
+	where: Record<string, unknown> | undefined;
+	ordered: boolean;
+};
 
 const isConnectionEvents = (value: unknown): value is ConnectionEvents =>
 	typeof (value as ConnectionEvents | undefined)?.subscribe === "function";
@@ -243,6 +249,13 @@ export class Store<O extends Orm> {
 			execute(): Promise<unknown>;
 			prepare(): { query: string; bindings: unknown };
 		};
+		// A query that is a plain filter can be checked against records on the
+		// client, which lets a local write enter or leave the result at once.
+		const filter = build
+			? (
+					query as { clientFilter?: () => ClientFilter | undefined }
+				).clientFilter?.()
+			: undefined;
 		const prepared = query.prepare();
 		const key = `${build ? "refetch" : "direct"}\u0000${keyOf(prepared.query, prepared.bindings)}`;
 
@@ -253,15 +266,25 @@ export class Store<O extends Orm> {
 			table: tb,
 			mode: build ? "refetch" : "direct",
 			overlay: {
-				apply: (rows, insert) =>
-					applyOverlay(
+				apply: (rows, direct) => {
+					const rowKey = (row: unknown) => String((row as { id: RecordId }).id);
+					const ops = this.#outbox.forTable(tb);
+					if (direct) return applyOverlay(rows, ops, rowKey, true);
+					if (!filter) return applyOverlay(rows, ops, rowKey, false);
+					return applyOverlay(
 						rows,
-						this.#outbox.forTable(tb),
-						(row) => String((row as { id: RecordId }).id),
-						insert,
-					),
+						ops,
+						rowKey,
+						(row) =>
+							!filter.ordered &&
+							matchesWhere(filter.where, row, { partial: true }) === true,
+						(row) => matchesWhere(filter.where, row) !== false,
+					);
+				},
 				subscribe: this.#outbox.subscribe,
 			},
+			membership: filter ? (row) => matchesWhere(filter.where, row) : undefined,
+			insertable: filter ? !filter.ordered : false,
 			fetch: async () => {
 				const result = await query.execute();
 				if (Array.isArray(result)) return result;
