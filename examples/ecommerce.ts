@@ -4,8 +4,8 @@
  * A sequence for order numbers, events that adjust stock as orders move
  * through their states, and per-operation table permissions.
  *
- *   bun sur plan    --schema examples/ecommerce.ts
- *   bun sur migrate --schema examples/ecommerce.ts
+ *   bunx surqlize plan    --schema examples/ecommerce.ts
+ *   bunx surqlize migrate --schema examples/ecommerce.ts
  */
 import { analyzer, expr, sequence, t, table } from "surqlize";
 

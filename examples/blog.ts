@@ -4,8 +4,8 @@
  * Field validation, composite and unique indexes, full-text search, events that
  * fire on a state change, and two graph edges.
  *
- *   bun sur plan    --schema examples/blog.ts
- *   bun sur migrate --schema examples/blog.ts
+ *   bunx surqlize plan    --schema examples/blog.ts
+ *   bunx surqlize migrate --schema examples/blog.ts
  */
 import { analyzer, edge, t, table } from "surqlize";
 

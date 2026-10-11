@@ -4,8 +4,8 @@
  * The combination most likely to disagree with the database: an HNSW vector
  * index, a full-text index, and a custom analyzer, in one schema.
  *
- *   bun sur plan    --schema examples/ai-embeddings.ts
- *   bun sur migrate --schema examples/ai-embeddings.ts
+ *   bunx surqlize plan    --schema examples/ai-embeddings.ts
+ *   bunx surqlize migrate --schema examples/ai-embeddings.ts
  */
 import { analyzer, expr, t, table } from "surqlize";
 

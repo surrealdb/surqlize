@@ -8,10 +8,11 @@ import { fail, info, printStatements, style, success, warn } from "./output";
 import { type Definition, loadDefinitions } from "./schema";
 
 const USAGE = `
-${style.bold("sur")} — schema migrations for SurrealDB
+${style.bold("surqlize")} — schema migrations for SurrealDB
 
 ${style.bold("Usage")}
-  sur <command> [options]
+  surqlize <command> [options]
+  sur <command> [options]        (the same command, shorter)
 
 ${style.bold("Commands")}
   init        Create a schema file and a config file
@@ -256,7 +257,7 @@ async function initCommand(): Promise<number> {
 
 	info("");
 	info(
-		`Next: edit ${style.bold("schema.ts")}, then run ${style.bold("sur plan")}`,
+		`Next: edit ${style.bold("schema.ts")}, then run ${style.bold("surqlize plan")}`,
 	);
 	return 0;
 }
@@ -445,7 +446,7 @@ const SCHEMA_TEMPLATE = `/**
  * Your database schema.
  *
  * Every table and edge exported here is one Surqlize will manage. Run
- * \`sur plan\` to see what it would change, then \`sur migrate\` to apply it.
+ * \`surqlize plan\` to see what it would change, then \`surqlize migrate\` to apply it.
  */
 import { expr, t, table } from "surqlize";
 

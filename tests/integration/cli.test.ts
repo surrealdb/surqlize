@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 /**
- * The `sur` binary, driven as a user drives it.
+ * The `surqlize` binary, driven as a user drives it.
  *
  * Everything else tests the functions the CLI calls. These test the CLI: that
  * it parses its flags, exits non-zero when it should, and prints something a
@@ -54,7 +54,7 @@ export const user = table("user", {
 	);
 });
 
-/** Run `sur` with `args` in the temp directory. */
+/** Run `surqlize` with `args` in the temp directory. */
 async function sur(...args: string[]): Promise<Run> {
 	const proc = Bun.spawn(["bun", CLI, ...args], {
 		cwd: dir,
@@ -82,8 +82,18 @@ describe("Reporting for itself", () => {
 		const run = await sur("--help");
 
 		expect(run.code).toBe(0);
-		expect(run.output).toContain("sur");
+		expect(run.output).toContain("surqlize");
 		expect(run.output).toContain("migrate");
+	});
+
+	test("is installed as both surqlize and the shorter sur", async () => {
+		const pkg = JSON.parse(await readFile("package.json", "utf-8")) as {
+			bin: Record<string, string>;
+		};
+
+		expect(Object.keys(pkg.bin).sort()).toEqual(["sur", "surqlize"]);
+		expect(pkg.bin.sur).toBeDefined();
+		expect(pkg.bin.sur).toBe(pkg.bin.surqlize as string);
 	});
 
 	test("prints usage with no arguments", async () => {
@@ -311,7 +321,7 @@ export const widget = table("widget", { name: t.string() });
 		throw new Error(`SurrealDB did not start on port ${port}`);
 	}
 
-	/** Run `sur` in the environment fixture directory, with no SURREAL_* set. */
+	/** Run `surqlize` in the environment fixture directory, with no SURREAL_* set. */
 	async function run(...args: string[]): Promise<Run> {
 		const env = { ...process.env };
 		for (const key of Object.keys(env)) {

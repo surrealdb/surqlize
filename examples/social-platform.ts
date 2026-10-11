@@ -4,8 +4,8 @@
  * Every table is schemaless, so the declared fields are validated and anything
  * else is still allowed through — useful while a shape is still settling.
  *
- *   bun sur plan    --schema examples/social-platform.ts
- *   bun sur migrate --schema examples/social-platform.ts
+ *   bunx surqlize plan    --schema examples/social-platform.ts
+ *   bunx surqlize migrate --schema examples/social-platform.ts
  */
 import { expr, t, table } from "surqlize";
 

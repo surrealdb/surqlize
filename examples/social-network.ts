@@ -4,8 +4,8 @@
  * Composite indexes, denormalised counters, and two edges between the same pair
  * of tables.
  *
- *   bun sur plan    --schema examples/social-network.ts
- *   bun sur migrate --schema examples/social-network.ts
+ *   bunx surqlize plan    --schema examples/social-network.ts
+ *   bunx surqlize migrate --schema examples/social-network.ts
  */
 import { edge, expr, t, table } from "surqlize";
 

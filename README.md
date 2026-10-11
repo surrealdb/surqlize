@@ -49,7 +49,7 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
 - **Schema DDL** - Generate `DEFINE` statements from the same schema that types your queries
-- **Migrations** - Diff a schema against a live database and converge it, with `sur plan` / `migrate` / `rollback`
+- **Migrations** - Diff a schema against a live database and converge it, with `surqlize plan` / `migrate` / `rollback`
 
 ## Installation
 
@@ -1205,15 +1205,17 @@ Integration tests apply the statements to a real server and check that it accept
 
 ## Migrations
 
-The `sur` command compares a schema with a database and works out what has to change. It is also available as a library from `surqlize/migrate`.
+The `surqlize` command compares a schema with a database and works out what has to change. The migrator is also available as a library from `surqlize/migrate`.
 
 ```bash
-bunx sur init       # write surqlize.config.ts and a starter schema
-bunx sur plan       # show the statements that would run, without running them
-bunx sur migrate    # apply them, and record the migration
-bunx sur status     # list the migrations that have been applied
-bunx sur rollback   # undo the most recent migration
+bunx surqlize init       # write surqlize.config.ts and a starter schema
+bunx surqlize plan       # show the statements that would run, without running them
+bunx surqlize migrate    # apply them, and record the migration
+bunx surqlize status     # list the migrations that have been applied
+bunx surqlize rollback   # undo the most recent migration
 ```
+
+<sub>`sur` is installed as a shorter alias for `surqlize`, so `sur plan` and `surqlize plan` are the same command.</sub>
 
 A schema is a module that exports the tables and edges to manage. Running `plan` again after `migrate` reports nothing to do, so a change that fails part-way is recovered by planning again. A field renamed with `.was("old")` is migrated by copying its values, not by dropping it. Database settings come from `surqlize.config.ts`, then `SURREAL_*` environment variables, then flags, and `-e <name>` selects a named environment.
 

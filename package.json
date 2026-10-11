@@ -105,6 +105,7 @@
 		"qau": "biome check . --write --unsafe"
 	},
 	"bin": {
+		"surqlize": "./dist/cli.js",
 		"sur": "./dist/cli.js"
 	}
 }

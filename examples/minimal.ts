@@ -4,8 +4,8 @@
  * One table, a couple of constraints, a default and a timestamp. Enough to run
  * a first migration against.
  *
- *   bun sur plan    --schema examples/minimal.ts
- *   bun sur migrate --schema examples/minimal.ts
+ *   bunx surqlize plan    --schema examples/minimal.ts
+ *   bunx surqlize migrate --schema examples/minimal.ts
  */
 import { t, table } from "surqlize";
 
