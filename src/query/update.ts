@@ -2,7 +2,6 @@ import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
-	type ArrayType,
 	type ObjectType,
 	type RecordType,
 	t,
@@ -23,7 +22,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
 import {
 	applyContent,
 	applyMerge,
@@ -36,8 +35,11 @@ import {
 	type ModificationMode,
 	type ModificationState,
 	type SetData,
+	type WriteData,
 } from "./modification-methods.ts";
+import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
+import { validateWrite } from "./validate-input.ts";
 
 /**
  * A fluent UPDATE query builder. Supports SET, UNSET, CONTENT, MERGE, PATCH,
@@ -48,11 +50,13 @@ export class UpdateQuery<
 		C extends WorkableContext<O>,
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
+		Only extends boolean = false,
 	>
-	extends Query<C, ArrayType<E>>
+	extends Query<C, QueryResult<E, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
+	private _only = false;
 	_set?: Record<string, unknown>;
 	_unset?: string[];
 	_content?: unknown;
@@ -89,11 +93,18 @@ export class UpdateQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
-		}
-		return t.array(this.schema);
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+	}
+
+	only(): UpdateQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as UpdateQuery<O, C, T, E, true>;
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
@@ -106,11 +117,11 @@ export class UpdateQuery<
 		return this.derive((next) => applyUnset(next, fields as string[]));
 	}
 
-	content(data: Partial<E["infer"]>): this {
+	content(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyContent(next, data));
 	}
 
-	merge(data: Partial<E["infer"]>): this {
+	merge(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyMerge(next, data));
 	}
 
@@ -118,11 +129,17 @@ export class UpdateQuery<
 		return this.derive((next) => applyPatch(next, operations));
 	}
 
-	replace(data: Partial<E["infer"]>): this {
+	replace(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyReplace(next, data));
 	}
 
-	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
+	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
+	where(filter: WhereObject<C, O["tables"][T]["schema"]>): this;
+	where(
+		input:
+			| ((tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>)
+			| WhereObject<C, O["tables"][T]["schema"]>,
+	): this {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: resolveSubjectSchema(this[__ctx].orm, this.tb),
@@ -131,7 +148,17 @@ export class UpdateQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		const filter = sanitizeWorkable(cb(tb));
+		const condition =
+			typeof input === "function"
+				? input(tb)
+				: whereFromObject(tb as unknown as Workable<C>, input);
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
+
+		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
 		});
@@ -141,7 +168,7 @@ export class UpdateQuery<
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): UpdateQuery<O, C, T, R>;
+	>(cb: (tb: Actionable<C, E>) => P): UpdateQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
@@ -181,6 +208,16 @@ export class UpdateQuery<
 		});
 	}
 
+	protected override validateInput(): void {
+		validateWrite(
+			this[__ctx].orm,
+			String(this.tb),
+			this.schema,
+			this,
+			"update",
+		);
+	}
+
 	[__display](inp: DisplayContext) {
 		const ctx = displayContext({
 			...inp,
@@ -194,7 +231,7 @@ export class UpdateQuery<
 					? this.subject[__display](ctx)
 					: ctx.var(this.subject);
 
-		let query = /* surql */ `UPDATE ${thing}`;
+		let query = /* surql */ `UPDATE ${this._only ? "ONLY " : ""}${thing}`;
 
 		query += displayModificationClause(this, ctx);
 

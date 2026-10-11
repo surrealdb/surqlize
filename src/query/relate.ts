@@ -23,7 +23,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
 import {
 	applyContent,
 	applyMerge,
@@ -35,7 +35,9 @@ import {
 	type ModificationMode,
 	type ModificationState,
 	type SetData,
+	type WriteData,
 } from "./modification-methods.ts";
+import { validateWrite } from "./validate-input.ts";
 
 /**
  * A fluent RELATE query builder for creating graph edges between records.
@@ -46,11 +48,13 @@ export class RelateQuery<
 		C extends WorkableContext<O>,
 		Edge extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][Edge]["schema"],
+		Only extends boolean = false,
 	>
-	extends Query<C, ArrayType<E>>
+	extends Query<C, QueryResult<E, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
+	private _only = false;
 	_set?: Record<string, unknown>;
 	_content?: unknown;
 	_merge?: unknown;
@@ -85,11 +89,18 @@ export class RelateQuery<
 		return this[__ctx].orm.tables[this.edge]!.schema as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
-		}
-		return t.array(this.schema);
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+	}
+
+	only(): RelateQuery<O, C, Edge, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as RelateQuery<O, C, Edge, E, true>;
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
@@ -100,13 +111,13 @@ export class RelateQuery<
 
 	content(
 		data: E extends ObjectType
-			? Omit<E["infer"], "id" | "in" | "out">
+			? Omit<WriteData<E>, "id" | "in" | "out">
 			: E["infer"],
 	): this {
 		return this.derive((next) => applyContent(next, data));
 	}
 
-	merge(data: Partial<E["infer"]>): this {
+	merge(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyMerge(next, data));
 	}
 
@@ -114,14 +125,20 @@ export class RelateQuery<
 		return this.derive((next) => applyPatch(next, operations));
 	}
 
-	replace(data: Partial<E["infer"]>): this {
+	replace(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyReplace(next, data));
 	}
 
 	return(mode: "none" | "before" | "after" | "diff"): this;
 	return(
 		cb: (record: Actionable<C, E>) => Inheritable<C>,
-	): RelateQuery<O, C, Edge, InheritableIntoType<C, ReturnType<typeof cb>>>;
+	): RelateQuery<
+		O,
+		C,
+		Edge,
+		InheritableIntoType<C, ReturnType<typeof cb>>,
+		Only
+	>;
 	return(
 		value:
 			| "none"
@@ -159,6 +176,10 @@ export class RelateQuery<
 		});
 	}
 
+	protected override validateInput(): void {
+		validateWrite(this[__ctx].orm, this.edge, this.schema, this, "create");
+	}
+
 	[__display](inp: DisplayContext) {
 		const ctx = displayContext({
 			...inp,
@@ -189,7 +210,7 @@ export class RelateQuery<
 			toStr = ctx.var(this.to);
 		}
 
-		let query = /* surql */ `RELATE ${fromStr}->${edgeTable}->${toStr}`;
+		let query = /* surql */ `RELATE ${this._only ? "ONLY " : ""}${fromStr}->${edgeTable}->${toStr}`;
 
 		query += displayModificationClause(this, ctx);
 

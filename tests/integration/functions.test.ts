@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { fn, TypeParseError, t } from "../../src";
+import { GeometryPoint } from "surrealdb";
+import { fn, geo, orm, TypeParseError, t, table } from "../../src";
 import { withTestDb } from "./setup";
+
+const location = table("location", {
+	point: t.point(),
+});
 
 describe("User-defined function integration tests", () => {
 	const getTestDb = withTestDb({ perTest: true });
@@ -144,6 +149,29 @@ describe("User-defined function integration tests", () => {
 			expect(result).toHaveLength(2);
 			const names = result.map((r) => r.name.first).sort();
 			expect(names).toEqual(["Alice", "Charlie"]);
+		});
+	});
+
+	describe("geo.distance()", () => {
+		test("executes native and coordinate tuple point distances", async () => {
+			const { surreal } = getTestDb();
+			const db = orm(surreal, location);
+			const origin = new GeometryPoint([12.5, 41.9]);
+
+			await db.create("location", "rome").set({ point: origin }).execute();
+
+			const result = await db
+				.select("location")
+				.return((loc) => ({
+					native: geo.distance(loc.point, origin),
+					tuple: geo.distance(loc.point, [12.5, 41.95]),
+				}))
+				.execute();
+
+			expect(result).toHaveLength(1);
+			expect(result[0]!.native).toBe(0);
+			expect(result[0]!.tuple).toBeGreaterThan(5000);
+			expect(result[0]!.tuple).toBeLessThan(6000);
 		});
 	});
 

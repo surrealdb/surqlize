@@ -2,7 +2,6 @@ import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
 import {
 	type AbstractType,
-	type ArrayType,
 	type ObjectType,
 	type RecordType,
 	t,
@@ -23,7 +22,7 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
 import {
 	applyContent,
 	applyMerge,
@@ -35,8 +34,10 @@ import {
 	type ModificationMode,
 	type ModificationState,
 	type SetData,
+	type WriteData,
 } from "./modification-methods.ts";
 import { resolveSubjectSchema } from "./subject.ts";
+import { validateWrite } from "./validate-input.ts";
 
 /**
  * A fluent UPSERT query builder. Creates the record if it doesn't exist, or
@@ -48,11 +49,13 @@ export class UpsertQuery<
 		C extends WorkableContext<O>,
 		T extends keyof O["tables"] & string,
 		E extends AbstractType = O["tables"][T]["schema"],
+		Only extends boolean = false,
 	>
-	extends Query<C, ArrayType<E>>
+	extends Query<C, QueryResult<E, Only>>
 	implements ModificationState
 {
 	readonly [__ctx]: C;
+	private _only = false;
 	_set?: Record<string, unknown>;
 	_content?: unknown;
 	_merge?: unknown;
@@ -88,11 +91,18 @@ export class UpsertQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
-		}
-		return t.array(this.schema);
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
+	}
+
+	only(): UpsertQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as UpsertQuery<O, C, T, E, true>;
 	}
 
 	set(data: E extends ObjectType ? Partial<SetData<E>> : never): this {
@@ -101,11 +111,11 @@ export class UpsertQuery<
 		);
 	}
 
-	content(data: Partial<E["infer"]>): this {
+	content(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyContent(next, data));
 	}
 
-	merge(data: Partial<E["infer"]>): this {
+	merge(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyMerge(next, data));
 	}
 
@@ -113,7 +123,7 @@ export class UpsertQuery<
 		return this.derive((next) => applyPatch(next, operations));
 	}
 
-	replace(data: Partial<E["infer"]>): this {
+	replace(data: Partial<WriteData<E>>): this {
 		return this.derive((next) => applyReplace(next, data));
 	}
 
@@ -136,7 +146,7 @@ export class UpsertQuery<
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): UpsertQuery<O, C, T, R>;
+	>(cb: (tb: Actionable<C, E>) => P): UpsertQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
@@ -176,6 +186,16 @@ export class UpsertQuery<
 		});
 	}
 
+	protected override validateInput(): void {
+		validateWrite(
+			this[__ctx].orm,
+			String(this.tb),
+			this.schema,
+			this,
+			"update",
+		);
+	}
+
 	[__display](inp: DisplayContext) {
 		const ctx = displayContext({
 			...inp,
@@ -189,7 +209,7 @@ export class UpsertQuery<
 					? this.subject[__display](ctx)
 					: ctx.var(this.subject);
 
-		let query = /* surql */ `UPSERT ${thing}`;
+		let query = /* surql */ `UPSERT ${this._only ? "ONLY " : ""}${thing}`;
 
 		query += displayModificationClause(this, ctx);
 

@@ -3,15 +3,28 @@ import type {
 	GraphArgs,
 	GraphDirection,
 	GraphSegmentResult,
+	RecursionBody,
+	RecursionDepth,
+	RecursionOptions,
 } from "../../schema/traversal";
-import type { GraphType, RecordType } from "../../types";
-import { __ctx, type Workable, type WorkableContext } from "../../utils";
+import type { GraphType, OptionType, RecordType } from "../../types";
+import {
+	__ctx,
+	__display,
+	__type,
+	type IntoWorkable,
+	intoWorkable,
+	type Workable,
+	type WorkableContext,
+} from "../../utils";
 import type { Actionable } from "../../utils/actionable";
 import {
 	edgeFilter,
 	graphAlternatives,
 	graphResultTarget,
 	type RenderedGraphAlternative,
+	recursion,
+	renderRecursionDepth,
 	traverse,
 } from "../utils";
 
@@ -91,6 +104,74 @@ export const functions = {
 	>(this: Workable<C, RecordType<Tb>>, ...args: Args) {
 		return graph(this, "both", args);
 	},
+
+	recurse<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		depth: RecursionDepth,
+		body: RecursionBody<C, Tb>,
+	) {
+		return recursion(
+			this,
+			this[__type].tb as Tb,
+			{ depth: renderRecursionDepth(depth) },
+			body,
+		);
+	},
+
+	collect<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		...args:
+			| [RecursionDepth, RecursionBody<C, Tb>, RecursionOptions?]
+			| [RecursionBody<C, Tb>, RecursionOptions?]
+	) {
+		const [depth, body, options] =
+			typeof args[0] === "function"
+				? ([{}, args[0], args[1]] as [
+						RecursionDepth,
+						RecursionBody<C, Tb>,
+						RecursionOptions?,
+					])
+				: (args as [RecursionDepth, RecursionBody<C, Tb>, RecursionOptions?]);
+		const inclusive = options?.inclusive ? "+inclusive" : "";
+		return recursion(
+			this,
+			this[__type].tb as Tb,
+			{
+				depth: renderRecursionDepth(depth),
+				modifiers: () => `+collect${inclusive}`,
+			},
+			body,
+		);
+	},
+
+	shortest<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		target: IntoWorkable<C, RecordType<Tb>>,
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	) {
+		const to = intoWorkable(this[__ctx], this[__type], target);
+		const inclusive = options?.inclusive ? "+inclusive" : "";
+		return recursion<C, Tb, OptionType<GraphType<Tb>>>(
+			this,
+			this[__type].tb as Tb,
+			{
+				depth: "..",
+				modifiers: (ctx) => `+shortest=${to[__display](ctx)}${inclusive}`,
+				optional: true,
+			},
+			body,
+		);
+	},
 } satisfies Functions;
 
 export type Functions = {
@@ -125,4 +206,44 @@ export type Functions = {
 		this: Workable<C, RecordType<Tb>>,
 		...args: Args
 	): Actionable<C, GraphType<GraphSegmentResult<C, Tb, "both", Args>>>;
+
+	/** Repeat a step over a depth: `.{depth}(step)`. See `RecursiveTraversal`. */
+	recurse<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		depth: RecursionDepth,
+		body: RecursionBody<C, Tb>,
+	): Actionable<C, GraphType<Tb>>;
+
+	/** Unique nodes reached within a depth: `.{depth+collect}(step)`. */
+	collect<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		depth: RecursionDepth,
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	): Actionable<C, GraphType<Tb>>;
+	collect<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	): Actionable<C, GraphType<Tb>>;
+
+	/** Shortest path to a record: `.{..+shortest=target}(step)`, or `NONE`. */
+	shortest<
+		C extends WorkableContext,
+		Tb extends keyof C["orm"]["tables"] & string,
+	>(
+		this: Workable<C, RecordType<Tb>>,
+		target: IntoWorkable<C, RecordType<Tb>>,
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	): Actionable<C, OptionType<GraphType<Tb>>>;
 };

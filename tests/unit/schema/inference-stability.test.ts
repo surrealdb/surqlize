@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { RecordId, Uuid } from "surrealdb";
-import { edge, t, table } from "../../../src";
+import { edge, expr, t, table } from "../../../src";
 
 /**
  * Schema modifiers must be inert to type inference.
@@ -48,7 +48,7 @@ describe("Inference is unaffected by DDL metadata", () => {
 
 	test("an overridden id changes the row type to match", () => {
 		const doc = table("doc", {
-			id: t.uuid().default("rand::uuid::v7()"),
+			id: t.uuid().default(expr("rand::uuid::v7()")),
 			title: t.string(),
 		});
 
@@ -62,7 +62,7 @@ describe("Inference is unaffected by DDL metadata", () => {
 	test("an edge with modifiers infers the same row as one without", () => {
 		const plain = edge("user", "authored", "post", { at: t.date() });
 		const decorated = edge("user", "authored", "post", {
-			at: t.date().defaultAlways("time::now()"),
+			at: t.date().defaultAlways(expr("time::now()")),
 		}).enforced();
 
 		type Plain = (typeof plain)["type"];

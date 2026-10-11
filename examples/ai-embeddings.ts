@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/ai-embeddings.ts
  *   bun sur migrate --schema examples/ai-embeddings.ts
  */
-import { analyzer, t, table } from "surqlize";
+import { analyzer, expr, t, table } from "surqlize";
 
 /** Splits identifiers as well as prose, for technical writing. */
 export const tech = analyzer("tech", {
@@ -27,7 +27,7 @@ export const document = table("document", {
 	/** An OpenAI ada-002 embedding, hence 1536 dimensions below. */
 	embedding: t.array(t.float()),
 
-	createdAt: t.date().default("time::now()"),
+	createdAt: t.date().default(expr("time::now()")),
 	updatedAt: t.date(),
 })
 	.comment("Documents with semantic embeddings")
@@ -47,14 +47,14 @@ export const searchHistory = table("search_history", {
 	query: t.string().assert("$value != NONE"),
 	user: t.record("user"),
 	results: t.array(t.record("document")),
-	searchedAt: t.date().default("time::now()"),
+	searchedAt: t.date().default(expr("time::now()")),
 });
 
 export const documentSimilarity = table("document_similarity", {
 	source: t.record("document").assert("$value != NONE"),
 	target: t.record("document").assert("$value != NONE"),
 	score: t.float().assert("$value != NONE"),
-	computedAt: t.date().default("time::now()"),
+	computedAt: t.date().default(expr("time::now()")),
 })
 	.comment("Pre-computed similar document pairs")
 	.index("similarity_source", { fields: ["source"] })

@@ -1,7 +1,17 @@
 // Generating SurrealQL definitions from a schema.
 
-export type { DefinableSchema, DefineOptions } from "./define";
-export { defineField, defineSchema, defineTable } from "./define";
+export type {
+	DefinableSchema,
+	DefineOptions,
+	SchemaStatement,
+	StatementKind,
+} from "./define";
+export {
+	defineField,
+	defineSchema,
+	defineTable,
+	schemaStatements,
+} from "./define";
 export type {
 	AccessDuration,
 	AccessOptions,
@@ -31,6 +41,12 @@ export type { EventDefinition, EventOptions, EventTrigger } from "./event-ddl";
 export { defineEvent } from "./event-ddl";
 export type { FlatField } from "./flatten";
 export { flattenFields } from "./flatten";
+export type {
+	GeneratedSchema,
+	SchemaOptions,
+	SkippedDefinition,
+} from "./generate";
+export { generateSchema, toSurql } from "./generate";
 export type {
 	DistanceMetric,
 	FulltextOptions,

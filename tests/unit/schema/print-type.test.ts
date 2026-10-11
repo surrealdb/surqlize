@@ -60,15 +60,33 @@ describe("printSurqlType", () => {
 		);
 	});
 
-	test("collapses a tuple to an array of its member union", () => {
-		// SurrealDB has no tuple type; an array of the union is the closest
-		// honest equivalent.
+	test("prints a tuple as a tuple, so the database holds its length and positions", () => {
 		expect(printSurqlType(t.array([t.string(), t.int()]))).toBe(
-			"array<string | int>",
+			"[string, int]",
 		);
+		// Two positions of one type are still two positions
 		expect(printSurqlType(t.array([t.string(), t.string()]))).toBe(
-			"array<string>",
+			"[string, string]",
 		);
+	});
+
+	test("an object in a union or tuple is written out; elsewhere it is `object`", () => {
+		expect(printSurqlType(t.object({ a: t.string() }))).toBe("object");
+		expect(printSurqlType(t.array(t.object({ a: t.string() })))).toBe(
+			"array<object>",
+		);
+		expect(
+			printSurqlType(t.union([t.object({ a: t.string() }), t.string()])),
+		).toBe("{ a: string } | string");
+	});
+
+	test("a string literal is quoted the way the database stores it", () => {
+		expect(printSurqlType(t.literal("draft"))).toBe("'draft'");
+		expect(printSurqlType(t.literal("it's"))).toBe(`"it's"`);
+	});
+
+	test("a point is a geometry<point>, not `any`", () => {
+		expect(printSurqlType(t.point())).toBe("geometry<point>");
 	});
 
 	test("renders a nested object as `object`", () => {

@@ -1,12 +1,8 @@
 import { escapeIdent, Table } from "surrealdb";
 import { OrmError } from "../error.ts";
 import type { Orm } from "../schema/orm.ts";
-import {
-	type AbstractType,
-	type ArrayType,
-	type ObjectType,
-	t,
-} from "../types";
+import type { ComputedKeys } from "../schema/table.ts";
+import { type AbstractType, type ArrayType, ObjectType, t } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
@@ -22,15 +18,31 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
+import {
+	checkRecord,
+	checkSet,
+	throwIfInvalid,
+	type ValidationIssue,
+} from "../validation.ts";
 import { Query } from "./abstract.ts";
+import {
+	fillData,
+	fillValues,
+	renderData,
+	schemaDefaults,
+} from "./defaults.ts";
 import {
 	generateSetAssignments,
 	processSetOperators,
+	renderValue,
 	type SetValue,
 } from "./utils.ts";
+import { computedFieldsOf, implicitFieldsOf } from "./validate-input.ts";
 
 type SetData<T extends ObjectType> = {
-	[K in keyof T["schema"]]?: SetValue<T["schema"][K]>;
+	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
+		T["schema"][K]
+	>;
 };
 
 /**
@@ -83,7 +95,9 @@ export class InsertQuery<
 	 * @throws {OrmError} If the query was constructed with inline data.
 	 */
 	fields(
-		fields: E extends ObjectType ? (keyof E["schema"])[] : string[],
+		fields: E extends ObjectType
+			? Exclude<keyof E["schema"], ComputedKeys<E["schema"]>>[]
+			: string[],
 	): this {
 		if (this._data) {
 			throw new OrmError("Cannot use fields() with object-style insert");
@@ -205,6 +219,39 @@ export class InsertQuery<
 		});
 	}
 
+	protected override validateInput(): void {
+		const schema = this.schema;
+		if (!(schema instanceof ObjectType)) return;
+		const orm = this[__ctx].orm;
+		const options = {
+			mode: "create" as const,
+			implicit: implicitFieldsOf(orm, this.tb),
+			computed: computedFieldsOf(orm, this.tb),
+		};
+		const issues: ValidationIssue[] = [];
+
+		if (this._data !== undefined) {
+			if (Array.isArray(this._data)) {
+				this._data.forEach((row, i) => {
+					issues.push(...checkRecord(schema, row, options, `[${i}]`));
+				});
+			} else {
+				issues.push(...checkRecord(schema, this._data, options));
+			}
+		} else if (this._fields && this._values) {
+			const fields = this._fields;
+			this._values.forEach((values, i) => {
+				const row = Object.fromEntries(fields.map((f, j) => [f, values[j]]));
+				issues.push(...checkRecord(schema, row, options, `[${i}]`));
+			});
+		}
+		if (this._onDuplicate) {
+			issues.push(...checkSet(schema, this._onDuplicate, options.computed));
+		}
+
+		throwIfInvalid(issues, this.tb);
+	}
+
 	[__display](inp: DisplayContext) {
 		const ctx = displayContext({
 			...inp,
@@ -218,15 +265,17 @@ export class InsertQuery<
 		query += /* surql */ ` INTO ${table}`;
 
 		// Object-style syntax
+		const defaults = schemaDefaults(this.schema);
 		if (this._data) {
-			query += /* surql */ ` ${ctx.var(this._data)}`;
+			query += /* surql */ ` ${renderData(fillData(this._data, defaults), ctx)}`;
 		}
 
 		// VALUES tuple syntax
 		else if (this._fields && this._values) {
-			query += /* surql */ ` (${this._fields.map(escapeIdent).join(", ")})`;
-			const valueGroups = this._values.map(
-				(row) => `(${row.map((v) => ctx.var(v)).join(", ")})`,
+			const filled = fillValues(this._fields, this._values, defaults);
+			query += /* surql */ ` (${filled.fields.map(escapeIdent).join(", ")})`;
+			const valueGroups = filled.rows.map(
+				(row) => `(${row.map((v) => renderValue(v, ctx)).join(", ")})`,
 			);
 			query += /* surql */ ` VALUES ${valueGroups.join(", ")}`;
 		}

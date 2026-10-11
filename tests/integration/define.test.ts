@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { edge, t, table } from "../../src";
+import { edge, expr, t, table } from "../../src";
 import { defineSchema } from "../../src/schema/ddl/define";
 import { withTestDb } from "./setup";
 
@@ -33,7 +33,7 @@ describe("Generated DDL applies to SurrealDB", () => {
 				.comment("Display name"),
 			email: t.string().assert("string::is_email($value)"),
 			age: t.int().default(0),
-			createdAt: t.date().defaultAlways("time::now()").readonly(),
+			createdAt: t.date().defaultAlways(expr("time::now()")).readonly(),
 			slug: t.string().computed("string::lowercase($this.name)"),
 			meta: t.object({ tier: t.string() }).flexible(),
 			bio: t.option(t.string()).permissions("FULL"),
@@ -67,7 +67,7 @@ describe("Generated DDL applies to SurrealDB", () => {
 	test("a string default is quoted but an expression is not", async () => {
 		const thing = table("thing", {
 			status: t.string().default("active"),
-			at: t.date().default("time::now()"),
+			at: t.date().default(expr("time::now()")),
 		});
 
 		const fields = await apply(defineSchema(thing));
@@ -152,7 +152,7 @@ describe("Generated DDL applies to SurrealDB", () => {
 
 	test("an edge defines as a relation without redefining in and out", async () => {
 		const authored = edge("user", "authored", "post", {
-			at: t.date().default("time::now()"),
+			at: t.date().default(expr("time::now()")),
 		}).enforced();
 
 		const statements = defineSchema(authored);
@@ -192,7 +192,7 @@ describe("Generated DDL applies to SurrealDB", () => {
 
 	test("a declared id is defined", async () => {
 		const doc = table("doc", {
-			id: t.uuid().default("rand::uuid::v7()"),
+			id: t.uuid().default(expr("rand::uuid::v7()")),
 			title: t.string(),
 		});
 

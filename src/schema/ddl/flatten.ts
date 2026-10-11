@@ -59,9 +59,11 @@ function collect(path: string, type: AbstractType, into: FlatField[]): void {
 	const nested = nestedObject(type);
 	if (!nested) return;
 
-	// Objects held in an array are reached through the element wildcard.
-	const prefix = isCollection(type) ? `${path}[*]` : path;
-	for (const [key, child] of Object.entries(nested.schema)) {
+	// Objects held in an array are reached through one element wildcard per level.
+	const prefix = path + "[*]".repeat(collectionDepth(type));
+	for (const [key, child] of Object.entries(
+		nested.schema as Record<string, AbstractType>,
+	)) {
 		collect(`${prefix}.${key}`, child, into);
 	}
 }
@@ -87,10 +89,13 @@ function unwrap(type: AbstractType): AbstractType {
 	return type;
 }
 
-/** Whether reaching this type's contents requires the `[*]` element wildcard. */
-function isCollection(type: AbstractType): boolean {
-	if (type instanceof OptionType) return isCollection(type.schema);
-	if (type instanceof SetType) return true;
-	if (type instanceof ArrayType) return !Array.isArray(type.schema);
-	return false;
+/** How many arrays or sets wrap the type, so how many `[*]` reach its contents. */
+function collectionDepth(type: AbstractType): number {
+	if (type instanceof OptionType) return collectionDepth(type.schema);
+	if (type instanceof SetType)
+		return 1 + collectionDepth(type.schema as AbstractType);
+	if (type instanceof ArrayType && !Array.isArray(type.schema)) {
+		return 1 + collectionDepth(type.schema as AbstractType);
+	}
+	return 0;
 }

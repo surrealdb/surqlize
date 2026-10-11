@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/social-platform.ts
  *   bun sur migrate --schema examples/social-platform.ts
  */
-import { t, table } from "surqlize";
+import { expr, t, table } from "surqlize";
 
 export const user = table("user", {
 	email: t.string().assert("string::is_email($value)"),
@@ -18,7 +18,7 @@ export const user = table("user", {
 		.assert("string::len($value) <= 32"),
 	link: t.option(t.string()),
 	description: t.option(t.string()),
-	dateJoined: t.date().default("time::now()"),
+	dateJoined: t.date().default(expr("time::now()")),
 	tokens: t.int().default(0).assert("$value >= 0"),
 	roles: t.array(t.string()).default([]),
 })
@@ -35,7 +35,7 @@ export const post = table("post", {
 	user: t.record("user"),
 	title: t.string().assert("$value != NONE"),
 	content: t.string(),
-	time: t.date().default("time::now()"),
+	time: t.date().default(expr("time::now()")),
 	replyTo: t.option(t.record("post")),
 	topics: t.array(t.record("topic")).default([]),
 	archived: t.bool().default(false),
@@ -46,7 +46,7 @@ export const post = table("post", {
 export const thread = table("thread", {
 	user: t.record("user"),
 	content: t.string().assert("$value != NONE"),
-	time: t.date().default("time::now()"),
+	time: t.date().default(expr("time::now()")),
 	replyTo: t.option(t.record("thread")),
 	topics: t.array(t.record("topic")).default([]),
 	edited: t.bool().default(false),
@@ -57,14 +57,14 @@ export const comment = table("comment", {
 	user: t.record("user"),
 	post: t.record("post"),
 	content: t.string(),
-	time: t.date().default("time::now()"),
+	time: t.date().default(expr("time::now()")),
 	edited: t.bool().default(false),
 }).schemaless();
 
 export const notification = table("notification", {
 	recipient: t.record("user"),
 	message: t.string(),
-	time: t.date().default("time::now()"),
+	time: t.date().default(expr("time::now()")),
 	viewed: t.bool().default(false),
 }).schemaless();
 

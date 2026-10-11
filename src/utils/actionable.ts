@@ -1,5 +1,6 @@
 import { OrmError } from "../error";
-import { type GetFunctions, getFunctions } from "../functions";
+import type { GetFunctions } from "../functions";
+import { functionTable } from "../functions";
 import type { MergeFields } from "../query/subject.ts";
 import type { TableFieldsOf } from "../schema/traversal";
 import type {
@@ -12,7 +13,12 @@ import type {
 	StringType,
 	UnionType,
 } from "../types";
-import { type Workable, type WorkableContext, workableGet } from "./workable";
+import {
+	__type,
+	type Workable,
+	type WorkableContext,
+	workableGet,
+} from "./workable";
 
 /**
  * The merged field map a record link `record<Tb>` exposes for property access:
@@ -22,6 +28,13 @@ import { type Workable, type WorkableContext, workableGet } from "./workable";
  */
 type RecordFields<C extends WorkableContext, Tb extends string> =
 	TableFieldsOf<C, Tb> extends ObjectType<infer O> ? MergeFields<O> : never;
+
+type UnionObjectFields<T extends AbstractType> =
+	T extends ObjectType<infer O> ? O : never;
+
+type UnionFields<Members extends AbstractType[]> = MergeFields<
+	UnionObjectFields<Members[number]>
+>;
 
 /** Field props for an `option<Inner>`: like `Inner`'s, but each kept optional. */
 type OptionalProps<C extends WorkableContext, Inner extends AbstractType> =
@@ -49,27 +62,36 @@ export type ActionableProps<C extends WorkableContext, T extends AbstractType> =
 							RecordFields<C, Tb>[K] & AbstractType
 						>;
 					}
-				: T extends GraphType<infer Tb>
-					? TableFieldsOf<C, Tb> extends ObjectType<infer O>
-						? { [K in keyof O]: Actionable<C, ArrayType<O[K]>> }
-						: unknown
-					: T extends ArrayType<infer A>
-						? A extends AbstractType
-							? {
-									[K: number]: Actionable<C, OptionType<A>>;
-								}
-							: A extends AbstractType[]
+				: T extends UnionType<infer Members extends AbstractType[]>
+					? [UnionObjectFields<Members[number]>] extends [never]
+						? unknown
+						: {
+								[K in keyof UnionFields<Members>]: Actionable<
+									C,
+									UnionFields<Members>[K] & AbstractType
+								>;
+							}
+					: T extends GraphType<infer Tb>
+						? TableFieldsOf<C, Tb> extends ObjectType<infer O>
+							? { [K in keyof O]: Actionable<C, ArrayType<O[K]>> }
+							: unknown
+						: T extends ArrayType<infer A>
+							? A extends AbstractType
 								? {
-										[K in keyof A as K extends keyof unknown[]
-											? never
-											: K]: A[K] extends AbstractType
-											? Actionable<C, A[K]>
-											: never;
-									} & {
-										[K: number]: Actionable<C, OptionType<UnionType<A>>>;
+										[K: number]: Actionable<C, OptionType<A>>;
 									}
-								: never
-						: unknown;
+								: A extends AbstractType[]
+									? {
+											[K in keyof A as K extends keyof unknown[]
+												? never
+												: K]: A[K] extends AbstractType
+												? Actionable<C, A[K]>
+												: never;
+										} & {
+											[K: number]: Actionable<C, OptionType<UnionType<A>>>;
+										}
+									: never
+							: unknown;
 
 export type Actionable<
 	C extends WorkableContext,
@@ -86,32 +108,37 @@ export function actionable<
 	C extends WorkableContext = WorkableContext,
 	T extends AbstractType = StringType,
 >(workable: Workable<C, T>): Actionable<C, T> {
-	const functions = getFunctions(workable);
+	// The shared, unbound table of functions for this type. Functions are bound
+	// to `workable` lazily, the first time they are read: binding the full table
+	// (over a hundred functions for a string) on every property access dominated
+	// query construction.
+	const table = functionTable(workable[__type].name);
+	const bound = new Map<string, unknown>();
 
-	return new Proxy(functions, {
+	return new Proxy(table, {
 		get(target, prop) {
 			if (typeof prop === "symbol") {
 				return workable[prop as keyof typeof workable];
 			}
 
-			const res = workableGet(workable, prop);
-			const val = actionable(res);
-
-			if (prop in functions) {
-				const fn = target[prop as keyof typeof target];
-
-				if (typeof fn === "function") {
-					return Object.assign(fn, {
-						valueOf() {
-							return val;
-						},
+			if (prop in target) {
+				let fn = bound.get(prop);
+				if (fn === undefined) {
+					const unbound = target[prop];
+					if (typeof unbound !== "function") {
+						throw new OrmError(`Property ${prop} is not a function`);
+					}
+					// The workable the property would resolve to as a field is only
+					// needed through `valueOf()`, so it is built on demand.
+					fn = Object.assign(unbound.bind(workable), {
+						valueOf: () => actionable(workableGet(workable, prop)),
 					});
+					bound.set(prop, fn);
 				}
-
-				throw new OrmError(`Property ${prop} is not a function`);
+				return fn;
 			}
 
-			return val;
+			return actionable(workableGet(workable, prop));
 		},
-	}) as Actionable<C, T>;
+	}) as unknown as Actionable<C, T>;
 }

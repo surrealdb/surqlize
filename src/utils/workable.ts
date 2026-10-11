@@ -4,9 +4,10 @@ import {
 	type AbstractType,
 	ArrayType,
 	GraphType,
-	type ObjectType,
+	ObjectType,
 	OptionType,
 	RecordType,
+	UnionType,
 } from "../types";
 import type { DisplayContext } from "./display";
 
@@ -87,7 +88,7 @@ function linkedSchema(orm: Orm, tb: RecordType["tb"]): ObjectType | undefined {
  * unregistered or unknown target table falls back to the type's own `get`,
  * which yields `NoneType` — matching the pre-existing graph behaviour.
  */
-function resolveAccessType(
+export function resolveAccessType(
 	orm: Orm,
 	type: AbstractType,
 ): { target: AbstractType; rewrap: (field: AbstractType) => AbstractType } {
@@ -104,6 +105,16 @@ function resolveAccessType(
 	if (type instanceof RecordType) {
 		const schema = linkedSchema(orm, type.tb);
 		if (schema) return { target: schema, rewrap: (f) => f };
+	}
+
+	if (type instanceof UnionType) {
+		const schemas = type.schema.filter(
+			(member: AbstractType): member is ObjectType =>
+				member instanceof ObjectType,
+		);
+		if (schemas.length === type.schema.length && schemas.length > 0) {
+			return { target: mergeSchemas(schemas), rewrap: (f) => f };
+		}
 	}
 
 	return { target: type, rewrap: (f) => f };
@@ -131,9 +142,10 @@ export function sanitizeWorkable<
 	C extends WorkableContext,
 	T extends AbstractType,
 >(workable: Workable<C, T>): Workable<C, T> {
+	const display = workable[__display].bind(workable);
 	return {
 		[__ctx]: workable[__ctx],
-		[__display]: workable[__display],
+		[__display]: display,
 		[__type]: workable[__type],
 	};
 }

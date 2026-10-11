@@ -233,6 +233,54 @@ describe("Complex Queries Integration Tests", () => {
 	});
 
 	describe("String functions in queries", () => {
+		test("searches a full-text indexed field with @@", async () => {
+			const { db, surreal } = getTestDb();
+
+			await surreal.query(`
+				DEFINE ANALYZER post_search_analyzer
+					TOKENIZERS blank, class
+					FILTERS lowercase;
+				DEFINE INDEX post_body_search
+					ON TABLE post FIELDS body FULLTEXT ANALYZER post_search_analyzer BM25;
+
+				CREATE post:search_rust SET
+					title = "Rust search",
+					body = "Rust is great for web programming",
+					author = user:alice,
+					created = time::now(),
+					updated = time::now();
+				CREATE post:search_database SET
+					title = "Database search",
+					body = "SurrealDB is a document database",
+					author = user:alice,
+					created = time::now(),
+					updated = time::now();
+				CREATE post:search_unrelated SET
+					title = "Unrelated post",
+					body = "A recipe for vegetable soup",
+					author = user:alice,
+					created = time::now(),
+					updated = time::now();
+			`);
+
+			const rust = await db
+				.select("post")
+				.where((post) => post.body.search("RUST"))
+				.execute();
+			const database = await db
+				.select("post")
+				.where((post) => post.body.search("database"))
+				.execute();
+			const missing = await db
+				.select("post")
+				.where((post) => post.body.search("missing"))
+				.execute();
+
+			expect(rust.map((post) => post.id.id)).toEqual(["search_rust"]);
+			expect(database.map((post) => post.id.id)).toEqual(["search_database"]);
+			expect(missing).toEqual([]);
+		});
+
 		test("uses startsWith in WHERE clause", async () => {
 			const { db } = getTestDb();
 			const result = await db

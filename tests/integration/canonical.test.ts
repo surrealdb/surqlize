@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { edge, t, table } from "../../src";
+import { edge, expr, t, table } from "../../src";
 import { canonicalise } from "../../src/migrator/canonical";
 import type { DefinableSchema } from "../../src/schema/ddl/define";
 import { defineSchema } from "../../src/schema/ddl/define";
@@ -38,7 +38,10 @@ describe("Generated and stored definitions canonicalise alike", () => {
 			const match = statement.match(/DEFINE FIELD (\S+) ON TABLE/);
 			if (!match) continue; // the DEFINE TABLE statement
 
-			const name = (match[1] as string).replace(/\[\*\]/g, ".*");
+			// The statement escapes a reserved word (`⟨by⟩`); the stored key does not.
+			const name = (match[1] as string)
+				.replace(/[⟨⟩]/g, "")
+				.replace(/\[\*\]/g, ".*");
 			const storedStatement = stored[name];
 
 			expect(storedStatement, `no stored field for ${name}`).toBeDefined();
@@ -106,8 +109,8 @@ describe("Generated and stored definitions canonicalise alike", () => {
 				assertMany: t.string().assert("$value != ''").assert("$value != 'x'"),
 				withDefault: t.int().default(0),
 				stringDefault: t.string().default("active"),
-				exprDefault: t.date().default("time::now()"),
-				alwaysDefault: t.date().defaultAlways("time::now()"),
+				exprDefault: t.date().default(expr("time::now()")),
+				alwaysDefault: t.date().defaultAlways(expr("time::now()")),
 				valued: t.string().valueExpr("string::lowercase($value)"),
 				readonlyField: t.string().readonly(),
 				flexi: t.object({ x: t.string() }).flexible(),
@@ -129,7 +132,7 @@ describe("Generated and stored definitions canonicalise alike", () => {
 	test("a declared id", async () => {
 		await expectConvergence(
 			table("docs", {
-				id: t.uuid().default("rand::uuid::v7()"),
+				id: t.uuid().default(expr("rand::uuid::v7()")),
 				title: t.string(),
 			}),
 		);
@@ -141,7 +144,7 @@ describe("Generated and stored definitions canonicalise alike", () => {
 		);
 		await expectConvergence(
 			edge("user", "authored", "post", {
-				at: t.date().default("time::now()"),
+				at: t.date().default(expr("time::now()")),
 				weight: t.option(t.float()),
 			}),
 		);

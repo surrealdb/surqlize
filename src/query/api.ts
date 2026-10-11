@@ -1,4 +1,3 @@
-import type { SurrealSession } from "surrealdb";
 import type {
 	ApiEndpointSchema,
 	ApiMethodDef,
@@ -6,6 +5,8 @@ import type {
 	HttpMethod,
 } from "../schema/api";
 import type { AbstractType } from "../types";
+import { checkValue, throwIfInvalid } from "../validation.ts";
+import type { SurrealConnection } from "./request.ts";
 
 // ---------------------------------------------------------------------------
 // Type-level helpers
@@ -73,7 +74,8 @@ export interface ApiResponse<T> {
 
 /**
  * A type-safe wrapper around the SurrealDB SDK's `SurrealApi` that validates
- * responses against Surqlize endpoint schemas.
+ * responses against Surqlize endpoint schemas, and request bodies too when the
+ * ORM is {@link Orm.validated | validated}.
  *
  * Created via `db.api()` on an {@link Orm} instance.
  *
@@ -83,8 +85,9 @@ export class ApiClient<E extends ApiEndpointSchema[] = ApiEndpointSchema[]> {
 	private schemas: Map<string, ApiMethods>;
 
 	constructor(
-		private readonly surreal: SurrealSession,
+		private readonly surreal: SurrealConnection,
 		endpoints: E,
+		private readonly validate = false,
 	) {
 		this.schemas = new Map();
 		for (const ep of endpoints) {
@@ -116,6 +119,14 @@ export class ApiClient<E extends ApiEndpointSchema[] = ApiEndpointSchema[]> {
 		method: HttpMethod,
 		body?: unknown,
 	): Promise<ApiResponse<T>> {
+		const request = this.getMethodDef(path, method)?.request;
+		if (this.validate && request) {
+			throwIfInvalid(
+				checkValue(request, body),
+				undefined,
+				`request body for ${method.toUpperCase()} ${path}`,
+			);
+		}
 		const sdkApi = this.surreal.api();
 		const response = (await sdkApi.invoke(path, {
 			method,

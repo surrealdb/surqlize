@@ -1,11 +1,6 @@
 import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
-import {
-	type AbstractType,
-	type ArrayType,
-	type RecordType,
-	t,
-} from "../types";
+import { type AbstractType, type RecordType, t } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
 import {
@@ -22,7 +17,8 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
+import { type WhereObject, whereFromObject } from "./object-filter.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 
 /**
@@ -33,8 +29,10 @@ export class DeleteQuery<
 	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, ArrayType<E>> {
+	Only extends boolean = false,
+> extends Query<C, QueryResult<E, Only>> {
 	readonly [__ctx]: C;
+	private _only = false;
 	private _filter?: Workable<C>;
 	private _return?: "none" | "before" | "after" | "diff" | Workable<C, E>;
 	private _timeout?: string;
@@ -64,14 +62,27 @@ export class DeleteQuery<
 		return resolveSubjectSchema(this[__ctx].orm, this.tb) as unknown as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		if (this._return && typeof this._return !== "string") {
-			return t.array(this._return[__type]) as ArrayType<E>;
-		}
-		return t.array(this.schema);
+	get [__type](): QueryResult<E, Only> {
+		const schema =
+			this._return && typeof this._return !== "string"
+				? this._return[__type]
+				: this.schema;
+		return (this._only ? schema : t.array(schema)) as QueryResult<E, Only>;
 	}
 
-	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>) {
+	only(): DeleteQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as DeleteQuery<O, C, T, E, true>;
+	}
+
+	where(cb: (tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>): this;
+	where(filter: WhereObject<C, O["tables"][T]["schema"]>): this;
+	where(
+		input:
+			| ((tb: Actionable<C, O["tables"][T]["schema"]>) => Workable<C>)
+			| WhereObject<C, O["tables"][T]["schema"]>,
+	): this {
 		const tb = actionable({
 			[__ctx]: this[__ctx],
 			[__type]: resolveSubjectSchema(this[__ctx].orm, this.tb),
@@ -80,7 +91,17 @@ export class DeleteQuery<
 			},
 		}) as Actionable<C, O["tables"][T]["schema"]>;
 
-		const filter = sanitizeWorkable(cb(tb));
+		const condition =
+			typeof input === "function"
+				? input(tb)
+				: whereFromObject(tb as unknown as Workable<C>, input);
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+			});
+		}
+
+		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
 		});
@@ -90,7 +111,7 @@ export class DeleteQuery<
 	return<
 		P extends Inheritable<C>,
 		R extends InheritableIntoType<C, P> = InheritableIntoType<C, P>,
-	>(cb: (tb: Actionable<C, E>) => P): DeleteQuery<O, C, T, R>;
+	>(cb: (tb: Actionable<C, E>) => P): DeleteQuery<O, C, T, R, Only>;
 	return(
 		value:
 			| "none"
@@ -143,7 +164,7 @@ export class DeleteQuery<
 					? this.subject[__display](ctx)
 					: ctx.var(this.subject);
 
-		let query = /* surql */ `DELETE ${thing}`;
+		let query = /* surql */ `DELETE ${this._only ? "ONLY " : ""}${thing}`;
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;

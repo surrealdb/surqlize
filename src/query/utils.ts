@@ -1,5 +1,5 @@
 import { escapeIdent } from "surrealdb";
-import type { AbstractType } from "../types";
+import { type AbstractType, SurqlExpression } from "../types";
 import type { DisplayContext } from "../utils";
 
 /**
@@ -65,8 +65,13 @@ export function generateSetAssignments(
 				`${field} -= ${ctx.var((value as { "-=": unknown })["-="])}`,
 			);
 		} else {
-			assignments.push(`${field} = ${ctx.var(value)}`);
+			assignments.push(`${field} = ${renderValue(value, ctx)}`);
 		}
 	}
 	return assignments;
+}
+
+/** Render a value: raw SurrealQL expressions inline, everything else bound. */
+export function renderValue(value: unknown, ctx: DisplayContext): string {
+	return value instanceof SurqlExpression ? value.sql : ctx.var(value);
 }

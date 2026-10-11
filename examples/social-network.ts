@@ -7,10 +7,10 @@
  *   bun sur plan    --schema examples/social-network.ts
  *   bun sur migrate --schema examples/social-network.ts
  */
-import { edge, t, table } from "surqlize";
+import { edge, expr, t, table } from "surqlize";
 
 export const user = table("user", {
-	uuid: t.uuid().default("rand::uuid::v7()"),
+	uuid: t.uuid().default(expr("rand::uuid::v7()")),
 	username: t
 		.string()
 		.assert("$value != NONE")
@@ -32,7 +32,7 @@ export const user = table("user", {
 	.index("user_email", { fields: ["email"], unique: true });
 
 export const post = table("post", {
-	uuid: t.uuid().default("rand::uuid::v7()"),
+	uuid: t.uuid().default(expr("rand::uuid::v7()")),
 	content: t
 		.string()
 		.assert("$value != NONE")
@@ -47,7 +47,7 @@ export const post = table("post", {
 	.index("post_public", { fields: ["isPublic", "createdAt"] });
 
 export const comment = table("comment", {
-	uuid: t.uuid().default("rand::uuid::v7()"),
+	uuid: t.uuid().default(expr("rand::uuid::v7()")),
 	content: t
 		.string()
 		.assert("$value != NONE")
@@ -59,7 +59,7 @@ export const comment = table("comment", {
 }).index("comment_post", { fields: ["post", "createdAt"] });
 
 export const notification = table("notification", {
-	uuid: t.uuid().default("rand::uuid::v7()"),
+	uuid: t.uuid().default(expr("rand::uuid::v7()")),
 	recipient: t.record("user"),
 	// `type` is the kind of notification, not a SurrealQL type.
 	type: t.string().assert("$value != NONE"),

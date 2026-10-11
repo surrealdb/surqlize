@@ -207,7 +207,9 @@ describe("displayModificationClause", () => {
 		expect(result).toContain("UNSET email, phone");
 	});
 
-	test("renders combined SET and UNSET", () => {
+	test("folds UNSET into SET rather than emitting both clauses", () => {
+		// SurrealQL takes one data clause per UPDATE: `SET a = 1 UNSET b` is a
+		// parse error. Clearing a field from inside a SET is `field = NONE`.
 		const state = createState();
 		applySet(state, { name: "Alice" });
 		applyUnset(state, ["email"]);
@@ -215,7 +217,8 @@ describe("displayModificationClause", () => {
 		const result = displayModificationClause(state, ctx);
 		expect(result).toContain("SET");
 		expect(result).toContain("name =");
-		expect(result).toContain("UNSET email");
+		expect(result).toContain("email = NONE");
+		expect(result).not.toContain("UNSET");
 	});
 
 	test("renders CONTENT clause", () => {

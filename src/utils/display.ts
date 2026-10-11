@@ -1,13 +1,19 @@
+import { toPlainModel } from "./model";
+
 /**
  * Create a variable store for parameterized query rendering. Returns a tuple of
  * the variables record and a function to register new variables.
  */
 export function createVariableStore() {
 	const variables: Record<string, unknown> = {};
+	// Names are numbered in registration order. Counting is O(1), where counting
+	// the keys on every call made rendering n parameters O(n^2).
+	let count = 0;
 	const v = (value: unknown) => {
-		const num = Object.keys(variables).length;
-		const name = `_v${num}`;
-		variables[name] = value;
+		let name = `_v${count++}`;
+		// Only reachable if the caller added entries to the record themselves.
+		while (name in variables) name = `_v${count++}`;
+		variables[name] = toPlainModel(value);
 		return `$${name}`;
 	};
 

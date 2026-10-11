@@ -1,3 +1,4 @@
+import { installStandardSchema } from "../standard-schema";
 import type { Workable, WorkableContext } from "../utils";
 import {
 	type AbstractType,
@@ -19,6 +20,7 @@ import {
 	NumberType,
 	ObjectType,
 	OptionType,
+	PointType,
 	RangeType,
 	RecordType,
 	SetType,
@@ -26,6 +28,8 @@ import {
 	UnionType,
 	UuidType,
 } from "./classes";
+
+installStandardSchema();
 
 /** Create a string type. */
 export function string() {
@@ -114,6 +118,11 @@ export function never() {
 /** Create a datetime type. */
 export function date() {
 	return new DateType();
+}
+
+/** Create a native SurrealDB point type. */
+export function point() {
+	return new PointType();
 }
 
 /** Create a UUID type. */

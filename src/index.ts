@@ -14,7 +14,16 @@ export * from "./query/create";
 export * from "./query/delete";
 export * from "./query/insert";
 export * from "./query/live";
+export type { CreateInput } from "./query/modification-methods";
+export type {
+	FieldCondition,
+	OperatorFilter,
+	OrderByObject,
+	OrderDirection,
+	WhereObject,
+} from "./query/object-filter";
 export * from "./query/relate";
+export type { SurrealConnection } from "./query/request";
 export * from "./query/select";
 export * from "./query/transaction";
 export * from "./query/update";
@@ -23,6 +32,12 @@ export * from "./query/upsert";
 export * from "./schema";
 // Generating SurrealQL definitions from a schema
 export * from "./schema/ddl";
+export type {
+	StandardIssue,
+	StandardSchemaProps,
+	StandardSchemaV1,
+} from "./standard-schema";
+export * from "./store";
 // Type system: the `t.*` builders and the `*Type` classes
 export * from "./types";
 export type {
@@ -39,3 +54,7 @@ export type {
 // (`displayContext` / `__display`) and the structural types that appear in
 // public signatures are part of the surface.
 export { __ctx, __display, __type, displayContext } from "./utils";
+export type {
+	SafeParseResult,
+	ValidationMode,
+} from "./validation";

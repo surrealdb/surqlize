@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { RecordId } from "surrealdb";
-import { t } from "../../../src";
+import { Duration, GeometryPoint, RecordId } from "surrealdb";
+import { DurationType, t } from "../../../src";
 import { TypeParseError } from "../../../src/error";
 import { NoneType, UnionType } from "../../../src/types/classes";
 
@@ -98,6 +98,45 @@ describe("Type builders", () => {
 		});
 	});
 
+	describe("duration()", () => {
+		test("creates DurationType", () => {
+			const type = t.duration();
+			expect(type).toBeDefined();
+			expect(type.name).toBe("duration");
+		});
+
+		test("validates Duration values", () => {
+			const type = t.duration();
+			expect(type.validate(new Duration("1h"))).toBe(true);
+			expect(type.validate("1h")).toBe(false);
+			expect(type.validate(3600)).toBe(false);
+		});
+
+		test("accepts and preserves Duration instances", () => {
+			const duration = new Duration("1h");
+			const type = new DurationType();
+
+			expect(type.validate(duration)).toBe(true);
+			expect(type.parse(duration)).toBe(duration);
+			expect(t.duration().parse(duration)).toBe(duration);
+		});
+	});
+
+	describe("point()", () => {
+		test("creates PointType", () => {
+			const type = t.point();
+			expect(type).toBeDefined();
+			expect(type.name).toBe("point");
+			expect(type.expected).toBe("GeometryPoint");
+		});
+
+		test("validates GeometryPoint values", () => {
+			const type = t.point();
+			expect(type.validate(new GeometryPoint([10, 20]))).toBe(true);
+			expect(type.validate([10, 20])).toBe(false);
+			expect(type.validate({ point: [10, 20] })).toBe(false);
+		});
+	});
 	describe("object()", () => {
 		test("creates ObjectType with schema", () => {
 			const type = t.object({
@@ -365,6 +404,15 @@ describe("Type builders", () => {
 			expect(() => t.date().parse("2024-01-01")).toThrow(TypeParseError);
 		});
 
+		test("DurationType.parse() returns Duration passthrough", () => {
+			const duration = new Duration("1h");
+			expect(t.duration().parse(duration)).toBe(duration);
+		});
+
+		test("DurationType.parse() throws for invalid value", () => {
+			expect(() => t.duration().parse("1h")).toThrow(TypeParseError);
+		});
+
 		test("OptionType.parse() returns undefined for absent value", () => {
 			expect(t.option(t.date()).parse(undefined)).toBeUndefined();
 		});
@@ -500,6 +548,14 @@ describe("Type builders", () => {
 			expect(arrayType).toBeDefined();
 			expect(unionType).toBeDefined();
 			expect(optionType).toBeDefined();
+		});
+
+		test("infers GeometryPoint from point()", () => {
+			const pointType = t.point();
+			type Point = t.infer<typeof pointType>;
+			const point: Point = new GeometryPoint([10, 20]);
+
+			expect(point).toBeInstanceOf(GeometryPoint);
 		});
 	});
 });

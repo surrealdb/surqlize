@@ -1,4 +1,5 @@
 export * from "./api";
+export * from "./ddl";
 export * from "./edge";
 export * from "./function";
 export * from "./orm";
@@ -22,6 +23,10 @@ export type {
 	InStepSegments,
 	OutgoingEdges,
 	OutStepSegments,
+	RecursionBody,
+	RecursionDepth,
+	RecursionOptions,
+	RecursiveTraversal,
 	RowTraversal,
 	SegmentBuilder,
 	SegmentCallback,

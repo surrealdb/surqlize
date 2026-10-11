@@ -1,9 +1,16 @@
+import type { CreateInput, WriteData } from "../query/modification-methods";
 import {
 	type AbstractType,
 	type ObjectType,
 	type RecordType,
 	t,
 } from "../types";
+import {
+	type SafeParseResult,
+	safeParseWith,
+	throwIfInvalid,
+	type ValidationMode,
+} from "../validation";
 import type { EventOptions } from "./ddl/event-ddl";
 import type { IndexOptions } from "./ddl/index-ddl";
 import {
@@ -63,29 +70,41 @@ export class EdgeSchema<
 	/** Schema metadata used to generate `DEFINE TABLE … TYPE RELATION`. */
 	readonly ddl: Readonly<TableDdl> = {};
 
+	// An edge is immutable, so what it derives from its fields is built once.
+	private _fieldsCache?: Fd & {
+		id: RecordType<Tb>;
+		in: RecordType<From>;
+		out: RecordType<To>;
+	} & {};
+	private _schemaCache?: GetEdgeSchemaType<From, Tb, To, Fd>;
+
 	get fields(): Fd & {
 		id: RecordType<Tb>;
 		in: RecordType<From>;
 		out: RecordType<To>;
 	} & {} {
-		return {
-			// `id` leads so a schema declaring its own wins; `in` and `out` follow
-			// the declared fields because they define the edge and cannot be changed.
-			id: t.record(this.tb),
-			...this._fields,
-			in: t.record(this.from),
-			out: t.record(this.to),
-		} as Fd & {
-			id: RecordType<Tb>;
-			in: RecordType<From>;
-			out: RecordType<To>;
-		} & {};
+		if (!this._fieldsCache) {
+			this._fieldsCache = {
+				...this._fields,
+				// A schema that declares its own `id` keeps it. `in` and `out` define
+				// the edge, so they follow the declared fields and cannot be changed.
+				...("id" in this._fields ? {} : { id: t.record(this.tb) }),
+				in: t.record(this.from),
+				out: t.record(this.to),
+			} as Fd & {
+				id: RecordType<Tb>;
+				in: RecordType<From>;
+				out: RecordType<To>;
+			} & {};
+		}
+		return this._fieldsCache;
 	}
 
 	type = undefined as unknown as GetEdgeInferType<From, Tb, To, Fd>;
 
 	get schema(): GetEdgeSchemaType<From, Tb, To, Fd> {
-		return t.object(this.fields);
+		if (!this._schemaCache) this._schemaCache = t.object(this.fields);
+		return this._schemaCache;
 	}
 
 	/** Type-guard that checks whether a value matches this edge's schema. */
@@ -165,6 +184,67 @@ export class EdgeSchema<
 		return patchTableDdl(this, (d) => {
 			d.events = { ...d.events, [name]: options };
 		});
+	}
+
+	/**
+	 * Check `data` against this edge's schema without throwing, listing
+	 * every field that fails rather than only the first. The `mode` says what
+	 * the data is: `"create"` (default) is the input of a create or insert,
+	 * where fields with a `.default()` or of type `option<...>` may be left out
+	 * and `id`, `in` and `out` are not required; `"update"` is a partial write; `"row"` is a whole stored
+	 * record. On success, `data` is typed accordingly.
+	 *
+	 * The data is returned as given: validation does not convert it.
+	 */
+	safeParse(
+		data: unknown,
+		options?: { mode?: "create" },
+	): SafeParseResult<
+		Omit<CreateInput<GetEdgeSchemaType<From, Tb, To, Fd>>, "in" | "out">
+	>;
+	safeParse(
+		data: unknown,
+		options: { mode: "update" },
+	): SafeParseResult<Partial<WriteData<GetEdgeSchemaType<From, Tb, To, Fd>>>>;
+	safeParse(
+		data: unknown,
+		options: { mode: "row" },
+	): SafeParseResult<GetEdgeInferType<From, Tb, To, Fd>>;
+	safeParse(
+		data: unknown,
+		options: { mode?: ValidationMode } = {},
+	): SafeParseResult<unknown> {
+		return safeParseWith(
+			this.schema,
+			data,
+			options.mode ?? "create",
+			this.tb,
+			["id", "in", "out"],
+			[],
+		);
+	}
+
+	/**
+	 * Like {@link EdgeSchema.safeParse}, but returns the typed data or throws.
+	 *
+	 * @throws {ValidationError} Listing every field that fails.
+	 */
+	parse(
+		data: unknown,
+		options?: { mode?: "create" },
+	): Omit<CreateInput<GetEdgeSchemaType<From, Tb, To, Fd>>, "in" | "out">;
+	parse(
+		data: unknown,
+		options: { mode: "update" },
+	): Partial<WriteData<GetEdgeSchemaType<From, Tb, To, Fd>>>;
+	parse(
+		data: unknown,
+		options: { mode: "row" },
+	): GetEdgeInferType<From, Tb, To, Fd>;
+	parse(data: unknown, options: { mode?: ValidationMode } = {}): unknown {
+		const result = this.safeParse(data, options as { mode: "row" });
+		if (!result.success) throwIfInvalid(result.error.issues, this.tb);
+		return data;
 	}
 }
 

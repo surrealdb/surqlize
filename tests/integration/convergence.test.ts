@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { edge, t, table } from "../../src";
+import { edge, expr, t, table } from "../../src";
 import type { Definition } from "../../src/cli/schema";
 import { diff } from "../../src/migrator/diff";
 import { introspect } from "../../src/migrator/introspect";
@@ -83,7 +83,7 @@ describe("Convergence", () => {
 			fixed: t.string().readonly(),
 			loose: t.object({}).flexible(),
 			preset: t.string().default("draft"),
-			computed_at: t.date().defaultAlways("time::now()"),
+			computed_at: t.date().defaultAlways(expr("time::now()")),
 			derived: t.string().valueExpr("string::lowercase($value)"),
 			deferred: t.int().computed("1 + 1"),
 			checked: t.int().assert("$value >= 0").assert("$value <= 10"),
@@ -245,7 +245,7 @@ describe("Convergence", () => {
 		const user = table("user", {
 			email: t.string().assert("string::is_email($value)"),
 			bio: t.option(t.string()),
-			joined: t.date().default("time::now()").readonly(),
+			joined: t.date().default(expr("time::now()")).readonly(),
 			profile: t.object({ city: t.string(), tags: t.array(t.string()) }),
 		})
 			.comment("People")
@@ -301,7 +301,7 @@ describe("Defaults converge and mean what they say", () => {
 	});
 
 	test("an expression default is called, not stored as text", async () => {
-		const probe = table("probe", { at: t.date().default("time::now()") });
+		const probe = table("probe", { at: t.date().default(expr("time::now()")) });
 
 		expect(await applyTwice([probe])).toEqual([]);
 
@@ -327,19 +327,20 @@ describe("Defaults converge and mean what they say", () => {
 		expect(created?.[0]?.label).toBe("some::thing");
 	});
 
-	test("a string that looks like a call is read as one", async () => {
-		// Right almost always — `time::now()` should be called
-		const probe = table("probe", { label: t.string().default("time::now()") });
+	test("an expr() default is passed through as SurrealQL", async () => {
+		const probe = table("probe", {
+			label: t.string().default(expr("time::now()")),
+		});
 
 		const { up } = diff([probe], await introspect(db().surreal));
 
 		expect(up.join("\n")).toContain("DEFAULT time::now()");
 	});
 
-	test("defaultLiteral stores the characters instead", async () => {
-		// The escape hatch for the one case the heuristic cannot express
+	test("a string that looks like a call is stored as text", async () => {
+		// Only expr() is SurrealQL: a string is data
 		const probe = table("probe", {
-			label: t.string().defaultLiteral("time::now()"),
+			label: t.string().default("time::now()"),
 		});
 
 		expect(await applyTwice([probe])).toEqual([]);

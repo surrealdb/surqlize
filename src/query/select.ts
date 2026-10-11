@@ -1,5 +1,6 @@
 import { type RecordId, Table } from "surrealdb";
 import type { Orm } from "../schema/orm.ts";
+import { ModelType } from "../schema/table.ts";
 import type { RowTraversal } from "../schema/traversal.ts";
 import {
 	type AbstractType,
@@ -10,6 +11,7 @@ import {
 	OptionType,
 	RecordType,
 	t,
+	UnionType,
 } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
 import { type DisplayContext, displayContext } from "../utils/display.ts";
@@ -29,7 +31,13 @@ import {
 	type Workable,
 	type WorkableContext,
 } from "../utils/workable.ts";
-import { Query } from "./abstract.ts";
+import { Query, type QueryResult } from "./abstract.ts";
+import {
+	type OrderByObject,
+	orderFromObject,
+	type WhereObject,
+	whereFromObject,
+} from "./object-filter.ts";
 import { type ResolveEntry, resolveSubjectSchema } from "./subject.ts";
 import { escapeIdiomPath } from "./utils.ts";
 
@@ -80,20 +88,35 @@ type PathTail<K extends string, P extends string> = P extends `${K}.${infer R}`
 	: never;
 
 /**
+ * The shape of a fetched record whose table is not registered with the ORM: its
+ * fields are unknown, so only the `id` is typed.
+ */
+type UnknownRecord<Tb extends string | undefined> = ObjectType<{
+	id: RecordType<Tb>;
+}>;
+
+/**
  * Resolve a record link to the schema it points at, unwrapping `option<…>` and
- * `array<…>` wrappers. Non-record types (and records to unknown tables) are
- * left untouched.
+ * `array<…>` wrappers. Non-record types are left untouched; a record to an
+ * unregistered table resolves to an {@link UnknownRecord}, as FETCH replaces the
+ * link with the record regardless of whether the ORM knows its table.
  */
 type ResolveLink<O extends Orm, F extends AbstractType> =
 	F extends RecordType<infer Tb>
 		? Tb extends keyof O["tables"] & string
 			? O["tables"][Tb]["schema"]
-			: F
-		: F extends OptionType<infer Inner extends AbstractType>
-			? OptionType<ResolveLink<O, Inner>>
-			: F extends ArrayType<infer Inner extends AbstractType>
-				? ArrayType<ResolveLink<O, Inner>>
-				: F;
+			: UnknownRecord<Tb>
+		: F extends UnionType<infer Members extends AbstractType[]>
+			? UnionType<{
+					[K in keyof Members]: Members[K] extends AbstractType
+						? ResolveLink<O, Members[K]>
+						: never;
+				}>
+			: F extends OptionType<infer Inner extends AbstractType>
+				? OptionType<ResolveLink<O, Inner>>
+				: F extends ArrayType<infer Inner extends AbstractType>
+					? ArrayType<ResolveLink<O, Inner>>
+					: F;
 
 /**
  * Resolve a record link and then continue fetching `Tails` within the resolved
@@ -108,14 +131,20 @@ type ResolveNested<
 	F extends RecordType<infer Tb>
 		? Tb extends keyof O["tables"] & string
 			? FetchedSchema<O, O["tables"][Tb]["schema"], Tails>
-			: F
-		: F extends OptionType<infer Inner extends AbstractType>
-			? OptionType<ResolveNested<O, Inner, Tails>>
-			: F extends ArrayType<infer Inner extends AbstractType>
-				? ArrayType<ResolveNested<O, Inner, Tails>>
-				: F extends ObjectType<ObjectTypeInner>
-					? FetchedSchema<O, F, Tails>
-					: F;
+			: UnknownRecord<Tb>
+		: F extends UnionType<infer Members extends AbstractType[]>
+			? UnionType<{
+					[K in keyof Members]: Members[K] extends AbstractType
+						? ResolveNested<O, Members[K], Tails>
+						: never;
+				}>
+			: F extends OptionType<infer Inner extends AbstractType>
+				? OptionType<ResolveNested<O, Inner, Tails>>
+				: F extends ArrayType<infer Inner extends AbstractType>
+					? ArrayType<ResolveNested<O, Inner, Tails>>
+					: F extends ObjectType<ObjectTypeInner>
+						? FetchedSchema<O, F, Tails>
+						: F;
 
 /** Resolve a single fetched field given the nested paths (if any) beneath it. */
 type FetchField<O extends Orm, F extends AbstractType, Tails extends string> = [
@@ -134,13 +163,22 @@ export type FetchedSchema<
 	E extends AbstractType,
 	Paths extends string,
 > =
-	E extends ObjectType<infer S>
-		? ObjectType<{
-				[K in keyof S]: K extends PathHead<Paths>
-					? FetchField<O, S[K], PathTail<K & string, Paths>>
-					: S[K];
-			}>
-		: E;
+	E extends ModelType<infer S, infer I>
+		? ModelType<
+				{
+					[K in keyof S]: K extends PathHead<Paths>
+						? FetchField<O, S[K], PathTail<K & string, Paths>>
+						: S[K];
+				},
+				I
+			>
+		: E extends ObjectType<infer S>
+			? ObjectType<{
+					[K in keyof S]: K extends PathHead<Paths>
+						? FetchField<O, S[K], PathTail<K & string, Paths>>
+						: S[K];
+				}>
+			: E;
 
 /**
  * A fluent SELECT query builder. Supports WHERE, ORDER BY, GROUP BY, SPLIT,
@@ -151,11 +189,14 @@ export class SelectQuery<
 	C extends WorkableContext<O>,
 	T extends keyof O["tables"] & string,
 	E extends AbstractType = O["tables"][T]["schema"],
-> extends Query<C, ArrayType<E>> {
+	Only extends boolean = false,
+> extends Query<C, QueryResult<E, Only>> {
 	readonly [__ctx]: C;
+	private _only = false;
 	private _start?: number;
 	private _limit?: number;
 	private _filter?: Workable<C>;
+	private _whereInput?: unknown;
 	private _entry?: Workable<C, E>;
 	private _orderBy?: Array<{
 		field: Workable<C> | string;
@@ -218,8 +259,17 @@ export class SelectQuery<
 			resolveSubjectSchema(this[__ctx].orm, this.tb)) as E;
 	}
 
-	get [__type](): ArrayType<E> {
-		return t.array(this.entry);
+	get [__type](): QueryResult<E, Only> {
+		return (this._only ? this.entry : t.array(this.entry)) as QueryResult<
+			E,
+			Only
+		>;
+	}
+
+	only(): SelectQuery<O, C, T, E, true> {
+		return this.derive((next) => {
+			next._only = true;
+		}) as SelectQuery<O, C, T, E, true>;
 	}
 
 	/**
@@ -250,7 +300,7 @@ export class SelectQuery<
 				RowTraversal<C, T> &
 				RowExtend<C, ResolveEntry<E>>,
 		) => P,
-	): SelectQuery<O, C, T, R> {
+	): SelectQuery<O, C, T, R, Only> {
 		const tb = this.rowActionable(this.entry) as Actionable<
 			C,
 			ResolveEntry<E>
@@ -265,25 +315,84 @@ export class SelectQuery<
 		const entry = sanitizeWorkable(workable);
 
 		return this.derive((next) => {
-			(next as unknown as SelectQuery<O, C, T, R>)._entry = entry;
-		}) as unknown as SelectQuery<O, C, T, R>;
+			(next as unknown as SelectQuery<O, C, T, R, Only>)._entry = entry;
+		}) as unknown as SelectQuery<O, C, T, R, Only>;
 	}
 
+	/**
+	 * Filter rows. Takes either a callback building the condition from the row,
+	 * or a plain filter object (`{ name: "x", age: { gt: 18 } }`) that compiles to
+	 * the same condition — see {@link WhereObject}.
+	 */
 	where(
 		cb: (
 			tb: Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
 				RowTraversal<C, T>,
 		) => Workable<C>,
-	) {
+	): this;
+	where(filter: WhereObject<C, ResolveEntry<O["tables"][T]["schema"]>>): this;
+	where(
+		input:
+			| ((
+					tb: Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
+						RowTraversal<C, T>,
+			  ) => Workable<C>)
+			| WhereObject<C, ResolveEntry<O["tables"][T]["schema"]>>,
+	): this {
 		const tb = this.rowActionable(
 			resolveSubjectSchema(this[__ctx].orm, this.tb),
 		) as Actionable<C, ResolveEntry<O["tables"][T]["schema"]>> &
 			RowTraversal<C, T>;
 
-		const filter = sanitizeWorkable(cb(tb));
+		const condition =
+			typeof input === "function"
+				? input(tb)
+				: whereFromObject(tb as unknown as Workable<C>, input);
+		// An object filter that imposes no condition leaves the query unfiltered.
+		if (!condition) {
+			return this.derive((next) => {
+				next._filter = undefined;
+				next._whereInput = undefined;
+			});
+		}
+
+		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = filter;
+			next._whereInput = input;
 		});
+	}
+
+	/**
+	 * What a client needs to check a row against this query without asking the
+	 * database, or `undefined` when the query is more than a filter over a
+	 * table: a callback filter (a SurrealQL expression), a projection, `FETCH`,
+	 * `LIMIT`, `START`, `GROUP`, `SPLIT`, `.only()`, or several tables.
+	 *
+	 * - `where` is the object passed to `.where()`, if there is one.
+	 * - `ordered` tells that the rows come in an order the client does not
+	 *   reproduce, so a row it adds would be in the wrong place.
+	 */
+	clientFilter():
+		| { where: Record<string, unknown> | undefined; ordered: boolean }
+		| undefined {
+		const plain =
+			typeof this.tb === "string" &&
+			typeof this.subject === "string" &&
+			!this._only &&
+			this._entry === undefined &&
+			this._start === undefined &&
+			this._limit === undefined &&
+			this._groupBy === undefined &&
+			this._split === undefined &&
+			this._fetch === undefined;
+		if (!plain) return undefined;
+		const input = this._whereInput;
+		if (typeof input === "function") return undefined;
+		return {
+			where: input as Record<string, unknown> | undefined,
+			ordered: this._orderBy !== undefined,
+		};
 	}
 
 	start(start: number) {
@@ -328,6 +437,12 @@ export class SelectQuery<
 		});
 	}
 
+	/**
+	 * Sort rows by a field name, a callback returning a field, or an object of
+	 * `{ field: "asc" | "desc" }` pairs (nested objects sort by nested fields) —
+	 * see {@link OrderByObject}. Calls accumulate, so object and fluent forms can
+	 * be chained.
+	 */
 	orderBy(
 		field:
 			| FieldKeys<O, T>
@@ -335,7 +450,26 @@ export class SelectQuery<
 					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
 			  ) => Workable<C>),
 		direction?: "ASC" | "DESC",
+	): this;
+	orderBy(sort: OrderByObject<C, ResolveEntry<E>>): this;
+	orderBy(
+		field:
+			| FieldKeys<O, T>
+			| ((
+					record: Actionable<C, ResolveEntry<E>> & RowTraversal<C, T>,
+			  ) => Workable<C>)
+			| OrderByObject<C, ResolveEntry<E>>,
+		direction?: "ASC" | "DESC",
 	): this {
+		if (typeof field === "object" && field !== null) {
+			const specs = orderFromObject(
+				this.rowActionable(this.entry) as unknown as Workable<C>,
+				field,
+			);
+			return this.derive((next) => {
+				next._orderBy = [...(next._orderBy ?? []), ...specs];
+			});
+		}
 		return this._addOrderBy(field, direction);
 	}
 
@@ -381,7 +515,7 @@ export class SelectQuery<
 
 	fetch<P extends FetchPaths<O, T>>(
 		...fields: P[]
-	): SelectQuery<O, C, T, FetchedSchema<O, E, P>> {
+	): SelectQuery<O, C, T, FetchedSchema<O, E, P>, Only> {
 		// Build a resolved schema where fetched record references are replaced
 		// with the referenced table's ObjectType schema, recursing into nested
 		// paths so parse() validates the resolved objects instead of expecting
@@ -397,7 +531,7 @@ export class SelectQuery<
 		return this.derive((next) => {
 			next._fetch = fields;
 			if (resolved) next._fetchResolvedType = resolved;
-		}) as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>>;
+		}) as unknown as SelectQuery<O, C, T, FetchedSchema<O, E, P>, Only>;
 	}
 
 	timeout(duration: string): this {
@@ -447,7 +581,7 @@ export class SelectQuery<
 		const predicates = this._entry
 			? /* surql */ `VALUE ${this._entry[__display](ctx)}`
 			: "*";
-		let query = /* surql */ `SELECT ${predicates} FROM ${thing}`;
+		let query = /* surql */ `SELECT ${predicates} FROM ${this._only ? "ONLY " : ""}${thing}`;
 
 		if (this._filter)
 			query += /* surql */ ` WHERE ${this._filter[__display](ctx)}`;
@@ -504,7 +638,9 @@ export function resolveFetchObject(
 		const fieldType = resolved[head];
 		if (fieldType) resolved[head] = resolveFetchField(fieldType, tails, orm);
 	}
-	return new ObjectType(resolved);
+	return schema instanceof ModelType
+		? new ModelType(resolved, schema.model)
+		: new ObjectType(resolved);
 }
 
 /**
@@ -518,27 +654,64 @@ function resolveFetchField(
 	orm: Orm,
 ): AbstractType {
 	if (fieldType instanceof RecordType) {
-		const tb = fieldType.tb;
-		// A multi-table link (`record<a | b>`) has no single schema to expand
-		// into, so leave it unresolved rather than coercing the array to a key.
-		if (typeof tb === "string") {
-			const target = orm.tables[tb];
-			if (target) {
-				return tails.length === 0
-					? target.schema
-					: resolveFetchObject(target.schema, tails, orm);
-			}
-		}
-		return fieldType;
+		return resolveFetchRecord(fieldType, tails, orm);
+	}
+	if (fieldType instanceof UnionType) {
+		return new UnionType(
+			fieldType.schema.map((member: AbstractType) =>
+				resolveFetchField(member, tails, orm),
+			),
+		);
 	}
 	if (fieldType instanceof OptionType) {
 		return new OptionType(resolveFetchField(fieldType.schema, tails, orm));
 	}
-	if (fieldType instanceof ArrayType && !Array.isArray(fieldType.schema)) {
-		return new ArrayType(resolveFetchField(fieldType.schema, tails, orm));
+	if (fieldType instanceof ArrayType) {
+		return resolveFetchArray(fieldType, tails, orm);
 	}
 	if (fieldType instanceof ObjectType && tails.length > 0) {
 		return resolveFetchObject(fieldType, tails, orm);
 	}
 	return fieldType;
+}
+
+function resolveFetchRecord(
+	fieldType: RecordType,
+	tails: string[],
+	orm: Orm,
+): AbstractType {
+	const tb = fieldType.tb;
+
+	if (typeof tb === "string") {
+		return resolveFetchTable(tb, tails, orm);
+	}
+
+	if (!Array.isArray(tb)) return fieldType;
+
+	return new UnionType(tb.map((table) => resolveFetchTable(table, tails, orm)));
+}
+
+/**
+ * The schema of a record fetched from `tb`. A table the ORM does not know has no
+ * declared fields, so it resolves to an object that only types its `id`.
+ */
+function resolveFetchTable(
+	tb: string,
+	tails: string[],
+	orm: Orm,
+): AbstractType {
+	const target = orm.tables[tb];
+	if (!target) return new ObjectType({ id: new RecordType(tb) });
+	return tails.length === 0
+		? target.schema
+		: resolveFetchObject(target.schema, tails, orm);
+}
+
+function resolveFetchArray(
+	fieldType: ArrayType,
+	tails: string[],
+	orm: Orm,
+): AbstractType {
+	if (Array.isArray(fieldType.schema)) return fieldType;
+	return new ArrayType(resolveFetchField(fieldType.schema, tails, orm));
 }

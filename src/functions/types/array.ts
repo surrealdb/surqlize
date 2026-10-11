@@ -11,13 +11,19 @@ import {
 } from "../../types";
 import {
 	__ctx,
+	__display,
 	__type,
 	type IntoWorkable,
 	intoWorkable,
 	type Workable,
 	type WorkableContext,
 } from "../../utils";
-import type { Actionable } from "../../utils/actionable";
+import { type Actionable, actionable } from "../../utils/actionable";
+import {
+	type Inheritable,
+	type InheritableIntoType,
+	inheritableIntoWorkable,
+} from "../../utils/inheritable";
 import type { At } from "../../utils/types";
 import { comparingFilter } from "../filters";
 import { databaseFunction } from "../utils";
@@ -526,6 +532,8 @@ export const functions = {
 		);
 	},
 
+	map,
+
 	at,
 
 	val,
@@ -784,6 +792,26 @@ export type Functions = {
 		size: IntoWorkable<C, NumberType>,
 	): Actionable<C, ArrayType<T>>;
 
+	map<
+		C extends WorkableContext,
+		T extends AbstractType[],
+		R extends Inheritable<C>,
+	>(
+		this: Workable<C, ArrayType<T>>,
+		cb: (
+			item: Actionable<C, UnionType<T>>,
+			index: Actionable<C, NumberType>,
+		) => R,
+	): Actionable<C, ArrayType<InheritableIntoType<C, R>>>;
+	map<
+		C extends WorkableContext,
+		T extends AbstractType,
+		R extends Inheritable<C>,
+	>(
+		this: Workable<C, ArrayType<T>>,
+		cb: (item: Actionable<C, T>, index: Actionable<C, NumberType>) => R,
+	): Actionable<C, ArrayType<InheritableIntoType<C, R>>>;
+
 	at<C extends WorkableContext, T extends AbstractType[], N extends number>(
 		this: Workable<C, ArrayType<T>>,
 		n: IntoWorkable<C, LiteralType<N>>,
@@ -814,6 +842,59 @@ export type Functions = {
 };
 
 // Array functions which require overloading signatures
+
+type ArrayMapElement<T extends AbstractType[] | AbstractType> =
+	T extends AbstractType[] ? UnionType<T> : T extends AbstractType ? T : never;
+
+function map<
+	C extends WorkableContext,
+	T extends AbstractType[],
+	R extends Inheritable<C>,
+>(
+	this: Workable<C, ArrayType<T>>,
+	cb: (
+		item: Actionable<C, UnionType<T>>,
+		index: Actionable<C, NumberType>,
+	) => R,
+): Actionable<C, ArrayType<InheritableIntoType<C, R>>>;
+function map<
+	C extends WorkableContext,
+	T extends AbstractType,
+	R extends Inheritable<C>,
+>(
+	this: Workable<C, ArrayType<T>>,
+	cb: (item: Actionable<C, T>, index: Actionable<C, NumberType>) => R,
+): Actionable<C, ArrayType<InheritableIntoType<C, R>>>;
+function map<
+	C extends WorkableContext,
+	T extends AbstractType[] | AbstractType,
+	R extends Inheritable<C>,
+>(
+	this: Workable<C, ArrayType<T>>,
+	cb: (
+		item: Actionable<C, ArrayMapElement<T>>,
+		index: Actionable<C, NumberType>,
+	) => R,
+) {
+	const item = actionable({
+		[__ctx]: this[__ctx],
+		[__type]: elementType(this[__type]),
+		[__display]: () => "$item",
+	}) as Actionable<C, ArrayMapElement<T>>;
+	const index = actionable({
+		[__ctx]: this[__ctx],
+		[__type]: t.number(),
+		[__display]: () => "$index",
+	});
+	const result = inheritableIntoWorkable(cb(item, index));
+
+	return actionable({
+		[__ctx]: this[__ctx],
+		[__type]: t.array(result[__type]),
+		[__display]: (ctx) =>
+			`array::map(${this[__display](ctx)}, |$item, $index| ${result[__display](ctx)})`,
+	});
+}
 
 function at<
 	C extends WorkableContext,

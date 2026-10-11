@@ -158,19 +158,20 @@ describe("workableGet", () => {
 describe("sanitizeWorkable", () => {
 	test("returns a new object with only workable properties", () => {
 		const ctx = { orm: {} as never, id: Symbol() };
-		const displayFn = () => "test";
 		const type = t.string();
 
 		const input = {
 			[__ctx]: ctx,
-			[__display]: displayFn,
+			[__display](this: { extra: string }) {
+				return this.extra;
+			},
 			[__type]: type,
-			extra: "should not be in output",
+			extra: "test",
 		};
 
 		const result = sanitizeWorkable(input as never);
 		expect(result[__ctx]).toBe(ctx);
-		expect(result[__display]).toBe(displayFn);
+		expect(result[__display](displayContext())).toBe("test");
 		expect(result[__type]).toBe(type);
 		expect((result as Record<string, unknown>).extra).toBeUndefined();
 	});

@@ -1,3 +1,4 @@
+import { ident } from "./syntax";
 /** How SurrealDB measures distance between vectors. */
 export type DistanceMetric =
 	| "COSINE"
@@ -94,7 +95,7 @@ export function defineIndex(
 
 	const parts = ["DEFINE INDEX"];
 	if (options.overwrite) parts.push("OVERWRITE");
-	parts.push(index.name, "ON TABLE", tableName);
+	parts.push(ident(index.name), "ON TABLE", ident(tableName));
 
 	// A COUNT index covers the table itself, so it takes no columns.
 	if (!index.count && index.fields?.length) {

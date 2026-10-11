@@ -1,3 +1,4 @@
+import { ident } from "./syntax";
 /** When an event fires. */
 export type EventTrigger = "CREATE" | "UPDATE" | "DELETE";
 
@@ -45,7 +46,7 @@ export function defineEvent(
 ): string {
 	const parts = ["DEFINE EVENT"];
 	if (options.overwrite) parts.push("OVERWRITE");
-	parts.push(event.name, "ON TABLE", tableName);
+	parts.push(ident(event.name), "ON TABLE", ident(tableName));
 
 	parts.push("WHEN", buildWhen(event));
 	parts.push("THEN", wrapThen(event.body));

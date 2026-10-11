@@ -26,6 +26,26 @@
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
 		},
+		"./react": {
+			"types": "./dist/react/index.d.ts",
+			"import": "./dist/react/index.js",
+			"require": "./dist/react/index.cjs"
+		},
+		"./solid": {
+			"types": "./dist/solid/index.d.ts",
+			"import": "./dist/solid/index.js",
+			"require": "./dist/solid/index.cjs"
+		},
+		"./svelte": {
+			"types": "./dist/svelte/index.d.ts",
+			"import": "./dist/svelte/index.js",
+			"require": "./dist/svelte/index.cjs"
+		},
+		"./vue": {
+			"types": "./dist/vue/index.d.ts",
+			"import": "./dist/vue/index.js",
+			"require": "./dist/vue/index.cjs"
+		},
 		"./migrate": {
 			"types": "./dist/migrate.d.ts",
 			"import": "./dist/migrate.js",
@@ -40,21 +60,47 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.15",
 		"@types/bun": "latest",
-		"tsup": "^8.5.1"
+		"@types/react": "^19.0.0",
+		"@types/react-dom": "^19.0.0",
+		"@types/react-test-renderer": "^19.0.0",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0",
+		"react-test-renderer": "^19.0.0",
+		"solid-js": "^1.8.0",
+		"surrealdb": "^2.1.0",
+		"svelte": "^5.0.0",
+		"tsup": "^8.5.1",
+		"vue": "^3.3.0"
 	},
 	"peerDependencies": {
-		"surrealdb": ">=2.0.0",
-		"typescript": "^5.0.0"
+		"react": "^18.0.0 || ^19.0.0",
+		"solid-js": "^1.8.0",
+		"surrealdb": "^2.1.0",
+		"typescript": "^5.0.0 || ^6.0.0",
+		"vue": "^3.3.0"
+	},
+	"peerDependenciesMeta": {
+		"react": {
+			"optional": true
+		},
+		"solid-js": {
+			"optional": true
+		},
+		"vue": {
+			"optional": true
+		}
 	},
 	"scripts": {
-		"all": "bun test && bun type-check && biome check .",
+		"all": "bun test && bun run type-check && biome check .",
 		"test": "bun test",
 		"test:unit": "bun test tests/unit/",
 		"test:integration": "bun test tests/integration/",
 		"type-check": "tsc --noEmit",
+		"bench": "bun benchmarks/bench.ts",
 		"qc": "biome check .",
 		"qa": "biome check . --write",
-		"build": "tsup",
+		"build": "tsup && bun run check:dist",
+		"check:dist": "tsc -p tsconfig.dist.json",
 		"prepublishOnly": "bun run build",
 		"qau": "biome check . --write --unsafe"
 	},

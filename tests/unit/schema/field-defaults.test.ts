@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { t, table } from "../../../src";
+import { expr, t, table } from "../../../src";
 import { defineField } from "../../../src/schema/ddl/define";
 import { flattenFields } from "../../../src/schema/ddl/flatten";
 import type { AbstractType } from "../../../src/types/classes";
@@ -43,32 +43,18 @@ describe("Strings", () => {
 		expect(defaultClause('say "hi"')).toBe(`'say "hi"'`);
 	});
 
-	test("a function call is left as an expression", () => {
-		expect(defaultClause("time::now()", t.date())).toBe("time::now()");
-		expect(defaultClause("rand::uuid::v7()", t.uuid())).toBe(
+	test("expr() is left as an expression", () => {
+		expect(defaultClause(expr("time::now()"), t.date())).toBe("time::now()");
+		expect(defaultClause(expr("rand::uuid::v7()"), t.uuid())).toBe(
 			"rand::uuid::v7()",
 		);
+		expect(defaultClause(expr("$auth.id"), t.record("user"))).toBe("$auth.id");
 	});
 
-	test("a variable reference is left as an expression", () => {
-		expect(defaultClause("$auth.id", t.record("user"))).toBe("$auth.id");
-	});
-
-	test("defaultLiteral stores a call as text rather than calling it", () => {
-		// The escape hatch for the one case the heuristic cannot express
-		const schema = table("probe", {
-			f: t.string().defaultLiteral("time::now()"),
-		});
-		const flat = flattenFields(schema.fields).find((f) => f.name === "f");
-
-		expect(defineField("probe", flat!)).toContain("DEFAULT 'time::now()'");
-	});
-
-	test("defaultLiteral quotes a value that needs no help too", () => {
-		const schema = table("probe", { f: t.string().defaultLiteral("draft") });
-		const flat = flattenFields(schema.fields).find((f) => f.name === "f");
-
-		expect(defineField("probe", flat!)).toContain("DEFAULT 'draft'");
+	test("a string that looks like a call is stored as text, not called", () => {
+		// Only expr() is SurrealQL: a string is always data
+		expect(defaultClause("time::now()")).toBe("'time::now()'");
+		expect(defaultClause("$auth.id")).toBe("'$auth.id'");
 	});
 
 	test("a bare word with a namespace but no call is quoted", () => {

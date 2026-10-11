@@ -194,8 +194,15 @@ async function connect(config: CliConfig): Promise<Surreal> {
 		// The driver retries a WebSocket connection indefinitely, which is right
 		// for a long-running app and wrong for a command: a mistyped URL would
 		// hang with nothing on screen. One attempt, with a deadline, then say so.
+		// The address goes in the message: newer drivers report a refused connection
+		// without saying where they were trying to reach.
 		await withTimeout(
-			surreal.connect(config.url, { reconnect: false }),
+			surreal.connect(config.url, { reconnect: false }).catch((error) => {
+				const reason = error instanceof Error ? error.message : String(error);
+				throw new Error(`Could not connect to ${config.url}: ${reason}`, {
+					cause: error,
+				});
+			}),
 			CONNECT_TIMEOUT_MS,
 			`Could not reach ${config.url} within ${CONNECT_TIMEOUT_MS / 1000}s.`,
 		);
@@ -440,12 +447,12 @@ const SCHEMA_TEMPLATE = `/**
  * Every table and edge exported here is one Surqlize will manage. Run
  * \`sur plan\` to see what it would change, then \`sur migrate\` to apply it.
  */
-import { t, table } from "surqlize";
+import { expr, t, table } from "surqlize";
 
 export const user = table("user", {
   name: t.string().assert("string::len($value) > 0"),
   email: t.string().assert("string::is_email($value)"),
-  createdAt: t.date().default("time::now()").readonly(),
+  createdAt: t.date().default(expr("time::now()")).readonly(),
 })
   .index("email_idx", { fields: ["email"], unique: true });
 `;

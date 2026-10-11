@@ -1,5 +1,5 @@
-import type { GraphType } from "../types";
-import type { Workable, WorkableContext } from "../utils";
+import type { GraphType, OptionType, RecordType } from "../types";
+import type { IntoWorkable, Workable, WorkableContext } from "../utils";
 import type { Actionable } from "../utils/actionable";
 import type { EdgeSchema } from "./edge";
 import type { AnyTable } from "./orm";
@@ -237,6 +237,74 @@ export type GraphArgs<
 	Dir extends GraphDirection,
 > = readonly ValidGraphArg<C, Tb, Dir>[];
 
+/**
+ * How many hops a recursive traversal makes: a fixed count (`3` → `{3}`) or a
+ * range. `{ min: 2, max: 4 }` → `{2..4}`, `{ min: 2 }` → `{2..}`,
+ * `{ max: 4 }` → `{..4}` and `{}` → `{..}` (any depth). Both bounds are
+ * inclusive integers in `1..256`.
+ */
+export type RecursionDepth = number | { min?: number; max?: number };
+
+/** Options shared by the `collect` and `shortest` recursion modes. */
+export type RecursionOptions = {
+	/** Also include the starting record in the result (`+inclusive`). */
+	inclusive?: boolean;
+};
+
+/**
+ * The repeated step of a recursive traversal. It receives a placeholder for the
+ * node being expanded, and must return a traversal that lands back on the same
+ * table (`(n) => n.out("knows").out("person")`), so every iteration is typed
+ * against the same record type.
+ */
+export type RecursionBody<C extends WorkableContext, Tb extends string> = (
+	node: Actionable<C, RecordType<Tb>>,
+) => Workable<C, GraphType<Tb>>;
+
+/**
+ * Recursive traversal (SurrealQL `.{depth}(step)`, `+collect`, `+shortest`).
+ * Recursion is available on records and, as sugar, on select rows (rooted at
+ * the row's `id`).
+ */
+export type RecursiveTraversal<C extends WorkableContext, Tb extends string> = {
+	/**
+	 * Repeat `body` over the given depth: `.{depth}(body)`. A fixed depth yields
+	 * the nodes exactly that many hops away; a range yields the nodes at the
+	 * deepest level reached (and nothing if the minimum depth is never reached).
+	 * An unbounded range on a graph containing cycles does not terminate in a
+	 * useful time, so bound it or use `collect`.
+	 */
+	recurse(
+		depth: RecursionDepth,
+		body: RecursionBody<C, Tb>,
+	): Actionable<C, GraphType<Tb>>;
+
+	/**
+	 * Flattened, de-duplicated nodes reached within the depth (`+collect`),
+	 * nearest first. Cycle-safe, so the depth may be omitted (`{..+collect}`).
+	 */
+	collect(
+		depth: RecursionDepth,
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	): Actionable<C, GraphType<Tb>>;
+	collect(
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	): Actionable<C, GraphType<Tb>>;
+
+	/**
+	 * The shortest path to `target` (`+shortest=target`) as the nodes walked, not
+	 * including the start. `NONE` (`undefined`) when the target is unreachable —
+	 * or is the start itself — hence the optional result.
+	 */
+	shortest(
+		target: IntoWorkable<C, RecordType<Tb>>,
+		body: RecursionBody<C, Tb>,
+		options?: RecursionOptions,
+	): Actionable<C, OptionType<GraphType<Tb>>>;
+};
+
 /** Row-level traversal sugar, rooted at the row's `id`. */
 export type RowTraversal<C extends WorkableContext, T extends string> = {
 	out<const Args extends GraphArgs<C, T, "out">>(
@@ -248,7 +316,7 @@ export type RowTraversal<C extends WorkableContext, T extends string> = {
 	both<const Args extends GraphArgs<C, T, "both">>(
 		...args: Args
 	): Actionable<C, GraphType<GraphSegmentResult<C, T, "both", Args>>>;
-};
+} & RecursiveTraversal<C, T>;
 
 /**
  * The edge names reachable in the outgoing (`->`) direction from a node.

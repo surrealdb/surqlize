@@ -1,5 +1,5 @@
 import { type EdgeFields, EdgeSchema } from "./edge";
-import type { TableFields, TableSchema } from "./table";
+import type { TableSchema } from "./table";
 
 // Helper to determine if array contains at least one EdgeSchema
 type HasEdgeSchema<T extends readonly (EdgeSchema | TableSchema)[]> =
@@ -16,7 +16,8 @@ type HasEdgeSchema<T extends readonly (EdgeSchema | TableSchema)[]> =
 type ExtractSchemaInfo<T> =
 	T extends EdgeSchema<infer F, infer V, infer To, EdgeFields>
 		? { type: "edge"; from: F; via: V; to: To }
-		: T extends TableSchema<infer Tb, TableFields>
+		: // biome-ignore lint/suspicious/noExplicitAny: a table's field map is invariant now that its methods mention it
+			T extends TableSchema<infer Tb, any>
 			? { type: "table"; table: Tb }
 			: never;
 
@@ -125,8 +126,11 @@ type LookupState = {
 	from: Record<string, readonly string[]>;
 };
 
+// Narrow on `typeof x === "string"` rather than `Array.isArray(x)`:
+// `Array.isArray` is typed `arg is any[]`, which does not narrow a
+// `readonly string[]` union member, so the else branch keeps the whole union.
 const asArray = (x: string | readonly string[]): readonly string[] =>
-	Array.isArray(x) ? x : [x];
+	typeof x === "string" ? [x] : x;
 
 function ensureNode(lookup: LookupState, node: string): void {
 	if (!lookup.to[node]) lookup.to[node] = [];

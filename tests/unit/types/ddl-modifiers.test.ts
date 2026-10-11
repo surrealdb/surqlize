@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { t } from "../../../src";
+import { expr, t } from "../../../src";
 import { printSurqlType } from "../../../src/schema/ddl/print-type";
 
 /**
@@ -44,22 +44,33 @@ describe("Modifiers record their metadata", () => {
 			value: true,
 			always: false,
 		});
-		expect(t.date().defaultAlways("time::now()").ddl.default).toEqual({
+		expect(t.date().defaultAlways(expr("time::now()")).ddl.default).toEqual({
 			value: "time::now()",
 			always: true,
+			expression: true,
 		});
 	});
 
-	test("defaultLiteral marks the value as data", () => {
-		expect(t.string().defaultLiteral("time::now()").ddl.default).toEqual({
+	test("a string default is data, and expr() marks SurrealQL", () => {
+		expect(t.string().default("time::now()").ddl.default).toEqual({
 			value: "time::now()",
 			always: false,
-			literal: true,
+		});
+		expect(t.date().default(expr("time::now()")).ddl.default).toEqual({
+			value: "time::now()",
+			always: false,
+			expression: true,
 		});
 	});
 
-	test("a plain default is not marked literal", () => {
-		expect(t.string().default("draft").ddl.default?.literal).toBeUndefined();
+	test("a function default is the client's alone, so it leaves no DDL default", () => {
+		expect(t.date().default(() => new Date()).ddl.default).toBeUndefined();
+	});
+
+	test("default keeps the client-side default as well", () => {
+		const field = t.string().default("draft");
+		expect((field as { _default?: unknown })._default).toBe("draft");
+		expect(field.ddl.default).toEqual({ value: "draft", always: false });
 	});
 
 	test("readonly and flexible", () => {

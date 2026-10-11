@@ -7,7 +7,7 @@
  *   bun sur plan    --schema examples/ecommerce.ts
  *   bun sur migrate --schema examples/ecommerce.ts
  */
-import { analyzer, sequence, t, table } from "surqlize";
+import { analyzer, expr, sequence, t, table } from "surqlize";
 
 export const english = analyzer("english", {
 	tokenizers: ["blank", "class"],
@@ -45,7 +45,7 @@ export const product = table("product", {
 	// Free-form, so flexible rather than a declared shape.
 	dimensions: t.option(t.object({}).flexible()),
 	metadata: t.option(t.object({}).flexible()),
-	createdAt: t.date().default("time::now()"),
+	createdAt: t.date().default(expr("time::now()")),
 	updatedAt: t.date().valueExpr("time::now()"),
 })
 	.index("product_sku", { fields: ["sku"], unique: true })
@@ -74,12 +74,12 @@ export const customer = table("customer", {
 	addresses: t.array(t.object({}).flexible()).default([]),
 	orderCount: t.int().default(0),
 	totalSpent: t.decimal().default(0),
-	createdAt: t.date().default("time::now()"),
+	createdAt: t.date().default(expr("time::now()")),
 	updatedAt: t.date().valueExpr("time::now()"),
 }).index("customer_email", { fields: ["email"], unique: true });
 
 export const order = table("order", {
-	orderNumber: t.int().default("sequence::nextval('order_number')"),
+	orderNumber: t.int().default(expr("sequence::nextval('order_number')")),
 	customer: t.record("customer").assert("$value != NONE"),
 	/** Each entry is `{ product, quantity, price }`. */
 	items: t.array(t.object({}).flexible()).assert("$value != NONE"),
@@ -91,7 +91,7 @@ export const order = table("order", {
 	shippingAddress: t.object({}).flexible().assert("$value != NONE"),
 	billingAddress: t.option(t.object({}).flexible()),
 	notes: t.option(t.string()),
-	createdAt: t.date().default("time::now()"),
+	createdAt: t.date().default(expr("time::now()")),
 	updatedAt: t.date().valueExpr("time::now()"),
 	completedAt: t.option(t.date()),
 })

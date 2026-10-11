@@ -1,11 +1,40 @@
 import { describe, expect, test } from "bun:test";
-import { Surreal, type SurrealSession } from "surrealdb";
+import {
+	BoundQuery,
+	RecordId,
+	Surreal,
+	type SurrealSession,
+	type TransactionOptions,
+} from "surrealdb";
 import { __display, displayContext, orm, t, table } from "../../../src";
 
-function mockSurrealQuery(results: unknown[]): SurrealSession {
-	return {
-		query: () => Promise.resolve(results),
-	} as unknown as SurrealSession;
+type TransactionCall = {
+	queries: readonly unknown[];
+	options: TransactionOptions | undefined;
+};
+
+/**
+ * A stand-in for the SDK's stateless `transaction()`, which resolves to one
+ * result per statement. `signals` records each `withSignal()` the connection is
+ * bound through before the transaction is sent.
+ */
+function mockSurrealTransaction(results: unknown[]) {
+	const calls: TransactionCall[] = [];
+	const signals: AbortSignal[] = [];
+	const surreal = {
+		transaction: (
+			queries: readonly unknown[],
+			options?: TransactionOptions,
+		) => {
+			calls.push({ queries, options });
+			return Promise.resolve(results);
+		},
+		withSignal: (signal: AbortSignal) => {
+			signals.push(signal);
+			return surreal;
+		},
+	};
+	return { surreal: surreal as unknown as SurrealSession, calls, signals };
 }
 
 describe("BATCH queries", () => {
@@ -120,10 +149,8 @@ describe("BATCH queries", () => {
 	});
 
 	test("reuses single-query parse behavior for RETURN DIFF", async () => {
-		const surreal = mockSurrealQuery([
-			{ status: "OK" },
+		const { surreal } = mockSurrealTransaction([
 			[{ op: "replace", path: "/age", value: 31 }],
-			{ status: "OK" },
 		]);
 		const batchDb = orm(surreal, user, post);
 
@@ -143,5 +170,147 @@ describe("BATCH queries", () => {
 	test("Orm has batch method", () => {
 		expect(db).toHaveProperty("batch");
 		expect(typeof db.batch).toBe("function");
+	});
+
+	describe("execution through the SDK's transaction()", () => {
+		test("sends the statements as one bound query, without BEGIN/COMMIT", async () => {
+			const { surreal, calls } = mockSurrealTransaction([[], []]);
+			const batchDb = orm(surreal, user, post);
+
+			await batchDb.batch(
+				batchDb.create("user").set({ name: "Alice", age: 30 }),
+				batchDb.create("user").set({ name: "Bob", age: 25 }),
+			);
+
+			expect(calls).toHaveLength(1);
+			const [sent] = calls[0]!.queries as [BoundQuery];
+			expect(calls[0]!.queries).toHaveLength(1);
+			expect(sent).toBeInstanceOf(BoundQuery);
+			// The SDK adds BEGIN/COMMIT itself; sending them too would nest.
+			expect(sent.query).not.toContain("BEGIN");
+			expect(sent.query).not.toContain("COMMIT");
+			// Two statements, with the bindings of both under distinct names.
+			expect(sent.query.split("; ")).toHaveLength(2);
+			expect(Object.values(sent.bindings)).toEqual(
+				expect.arrayContaining(["Alice", "Bob", 30, 25]),
+			);
+		});
+
+		test("maps results to queries positionally", async () => {
+			const { surreal } = mockSurrealTransaction([
+				[
+					{
+						id: new RecordId("user", "a"),
+						name: "Alice",
+						age: 30,
+						email: "a@x.io",
+					},
+				],
+				[],
+			]);
+			const batchDb = orm(surreal, user, post);
+
+			const [created, posts] = await batchDb.batch(
+				batchDb.create("user").set({ name: "Alice", age: 30 }),
+				batchDb.select("post"),
+			);
+
+			expect(created).toHaveLength(1);
+			expect(posts).toEqual([]);
+		});
+
+		test("an empty batch sends an empty list, not an empty statement", async () => {
+			const { surreal, calls } = mockSurrealTransaction([]);
+			const batchDb = orm(surreal, user, post);
+
+			expect(await batchDb.batch()).toEqual([]);
+			// The SDK resolves `[]` itself, and rejects an empty BoundQuery.
+			expect(calls).toHaveLength(1);
+			expect(calls[0]?.queries).toEqual([]);
+		});
+
+		test("sends no options by default", async () => {
+			const { surreal, calls } = mockSurrealTransaction([[]]);
+			const batchDb = orm(surreal, user, post);
+
+			await batchDb.batch(batchDb.select("user"));
+
+			expect(calls[0]!.options).toEqual({
+				retry: undefined,
+				requestTimeout: undefined,
+			});
+		});
+
+		test(".retry() and .requestTimeout() are forwarded to the transaction", async () => {
+			const { surreal, calls } = mockSurrealTransaction([[]]);
+			const batchDb = orm(surreal, user, post);
+
+			await batchDb
+				.batch(batchDb.select("user"))
+				.retry({ attempts: 3 })
+				.requestTimeout(500);
+			await batchDb.batch(batchDb.select("user")).retry();
+
+			expect(calls[0]!.options).toEqual({
+				retry: { attempts: 3 },
+				requestTimeout: 500,
+			});
+			expect(calls[1]!.options?.retry).toBe(true);
+		});
+
+		test(".signal() binds the connection to every signal, in order", async () => {
+			const { surreal, signals } = mockSurrealTransaction([[]]);
+			const batchDb = orm(surreal, user, post);
+			const first = new AbortController().signal;
+			const second = new AbortController().signal;
+
+			await batchDb.batch(batchDb.select("user")).signal(first).signal(second);
+
+			expect(signals).toEqual([first, second]);
+		});
+
+		test("a missing signal is ignored", async () => {
+			const { surreal, signals } = mockSurrealTransaction([[]]);
+			const batchDb = orm(surreal, user, post);
+
+			await batchDb.batch(batchDb.select("user")).signal(undefined);
+
+			expect(signals).toEqual([]);
+		});
+
+		test("request options are immutable: each call derives a new batch", async () => {
+			const { surreal, calls } = mockSurrealTransaction([[]]);
+			const batchDb = orm(surreal, user, post);
+
+			const base = batchDb.batch(batchDb.select("user"));
+			const retried = base.retry();
+			const timed = base.requestTimeout(250);
+
+			await base;
+			await retried;
+			await timed;
+
+			expect(calls[0]!.options?.retry).toBeUndefined();
+			expect(calls[1]!.options?.retry).toBe(true);
+			expect(calls[2]!.options?.retry).toBeUndefined();
+			expect(calls[2]!.options?.requestTimeout).toBe(250);
+			expect(base).not.toBe(retried);
+		});
+	});
+
+	test("batch() is rejected inside an interactive transaction", async () => {
+		const txn = {
+			query: () => Promise.resolve([]),
+			commit: () => Promise.resolve(),
+			cancel: () => Promise.resolve(),
+		};
+		const surreal = {
+			beginTransaction: () => Promise.resolve(txn),
+		} as unknown as SurrealSession;
+		const txDb = orm(surreal, user, post);
+
+		const tx = await txDb.transaction();
+
+		expect(() => tx.batch()).toThrow(/cannot be used inside a transaction/);
 	});
 });

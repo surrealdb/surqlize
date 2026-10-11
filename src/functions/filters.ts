@@ -22,6 +22,7 @@ export const ComparisonKind = t.union([
 	t.literal("*="),
 	t.literal("?~"),
 	t.literal("*~"),
+	t.literal("@@"),
 	t.literal("<"),
 	t.literal("<="),
 	t.literal(">"),
@@ -84,7 +85,9 @@ export function comparingFilter<
 		[__ctx]: ctx,
 		[__type]: t.bool(),
 		[__display](ctx) {
-			return `${l[__display](ctx)} ${kind} ${r[__display](ctx)}`;
+			const left = l[__display](ctx);
+			const field = kind === "@@" ? left.replace(/^\$this\./, "") : left;
+			return `${field} ${kind} ${r[__display](ctx)}`;
 		},
 	});
 }

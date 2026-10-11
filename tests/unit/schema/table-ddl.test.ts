@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RecordId } from "surrealdb";
-import { edge, orm, t, table } from "../../../src";
+import { edge, expr, orm, t, table } from "../../../src";
 import type { AbstractType } from "../../../src/types/classes";
 import { RecordType, UuidType } from "../../../src/types/classes";
 
@@ -69,7 +69,7 @@ describe("The id field", () => {
 	test("can be overridden by declaring one", () => {
 		// Useful when the table generates its own ids.
 		const doc = table("doc", {
-			id: t.uuid().default("rand::uuid::v7()").readonly(),
+			id: t.uuid().default(expr("rand::uuid::v7()")).readonly(),
 			title: t.string(),
 		});
 
@@ -77,6 +77,7 @@ describe("The id field", () => {
 		expect(doc.fields.id.ddl.default).toEqual({
 			value: "rand::uuid::v7()",
 			always: false,
+			expression: true,
 		});
 	});
 

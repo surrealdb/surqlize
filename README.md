@@ -42,8 +42,10 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Automatic type inference** - Get full TypeScript types without code generation
 - **Fluent query builder** - Chain `.select()`, `.where()`, `.return()` with full type safety
 - **Complete CRUD operations** - SELECT, CREATE, UPDATE, DELETE, and UPSERT queries
-- **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
+- **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications that survive reconnects
+- **Cancellation, timeouts and retries** - Abort queries with an `AbortSignal`, bound them with a request timeout, and retry them on transaction conflicts
 - **Graph relationships** - First-class support for edges and graph traversal
+- **Runtime validation** - Opt in to checking written data against the schema before it is sent, with every failing field reported
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
 - **Schema DDL** - Generate `DEFINE` statements from the same schema that types your queries
@@ -63,10 +65,26 @@ npm install surqlize
   features degrade or are unavailable on older servers; for example, filtering
   or projecting a live query relies on query parameters that require **server ≥
   3.0** (`FETCH` requires ≥ 2.2.0).
-- **`surrealdb` JavaScript SDK ≥ 2.0.0** — declared as a peer
+- **`surrealdb` JavaScript SDK ≥ 2.1.0 (2.x)** — declared as a peer
   dependency, so install it alongside surqlize. (The SDK and the server are
   versioned independently: the 2.x SDK is what connects to a 3.x server.)
-- **TypeScript ≥ 5.0** for full type inference.
+- **TypeScript 5 or 6** for full type inference.
+
+### One copy of `surrealdb`
+
+The connection you pass to surqlize and surqlize itself must resolve the **same
+copy** of the `surrealdb` package. The SDK encodes values with `instanceof`, so
+with two copies it fails to recognise the `Table` that surqlize binds as a
+query subject and sends an empty object, and the server answers with
+`Cannot execute CREATE statement using value: {  }`. surqlize detects this and
+throws a `DuplicateSurrealError` instead, which points back here.
+
+To fix it, check `npm ls surrealdb` (or `bun pm ls --all`), dedupe so a single
+version is installed (an `overrides` / `resolutions` entry helps), and avoid
+`file:` dependencies, which copy the package along with its own
+`node_modules`. In a symlinked setup where TypeScript reports `Property
+'#private' in type 'Surreal' refers to a different member`, set
+`preserveSymlinks: true`.
 
 ## Quick start
 
@@ -114,6 +132,7 @@ const user = table("user", {
   age: t.number(),
   isActive: t.bool(),
   created: t.date(),
+  duration: t.duration(),
   userId: t.uuid(),
 
   // Complex objects
@@ -149,6 +168,114 @@ const user = table("user", {
 ```
 
 **Note**: Every table automatically includes an `id` field of type `RecordId<TableName>`.
+
+### Default values
+
+Call `.default()` on any field type to give it a default. The field becomes optional when creating a record, while the type you read back stays non-optional:
+
+```typescript
+import { expr, t, table } from "surqlize";
+
+const user = table("user", {
+  name: t.string(),
+  isVerified: t.bool().default(false),             // static value
+  createdAt: t.date().default(() => new Date()),   // function, called each time a query is built
+  seenAt: t.date().default(expr("time::now()")),   // SurrealQL expression, evaluated by SurrealDB
+});
+
+await db.create("user").content({ name: "Ada" }); // isVerified, createdAt and seenAt are optional
+// Result type: { id, name: string, isVerified: boolean, createdAt: Date, seenAt: Date }
+```
+
+Defaults are applied by `CREATE` (`.content()`, `.merge()`, `.set()`, or no data) and `INSERT` (object and `.fields().values()` forms) whenever the field is omitted or `undefined`; an explicit value always wins. They are filled in by the query itself, so no `DEFINE FIELD ... DEFAULT` is needed. `UPSERT`, `UPDATE`, `RELATE`, `.replace()` and `.patch()` do not apply defaults. `.default()` returns a copy, so a shared field type is never mutated.
+
+`expr()` text is inserted into the query verbatim: only pass trusted, hard-coded SurrealQL, never user input.
+
+### Computed fields
+
+A computed field is read-only: SurrealDB derives its value from an expression each time the record is read (`DEFINE FIELD … COMPUTED`, which needs **SurrealDB ≥ 3.0**). Add one with `.computed(name, type, expression)`. The expression receives the row (rendered as `$this`) and the ORM, so it can run subqueries:
+
+```typescript
+import { type Orm, table, t } from "surqlize";
+
+const post = table("post", { title: t.string(), author: t.record("user") });
+
+const user = table("user", { first: t.string(), last: t.string() })
+  .computed("fullName", t.string(), (row) => row.first.concat(" ", row.last))
+  .computed("postCount", t.number(), (row, db: Orm<[typeof post]>) =>
+    db
+      .select("post")
+      .where((p) => p.author.eq(row.id))
+      .return((p) => p.id)
+      .wrap()
+      .len(),
+  );
+```
+
+Computed fields are part of the row type of selects, and can be used in `where`, `orderBy` and `return` like any other field. They are left out of the input types of `create`, `update`, `upsert`, `insert` and `relate`, so writing one is a compile-time error:
+
+```typescript
+const [u] = await db.select("user").where((u) => u.postCount.gt(0)); // u.fullName: string
+await db.create("user").set({ first: "Ada", last: "Lovelace" });
+await db.create("user").set({ fullName: "x" }); // type error
+```
+
+The field must exist in the database before it can be read. Create it with `db.defineComputed()` (all tables, or pass table names), or put the statements from `user.computedStatements(db)` into a migration:
+
+```typescript
+await db.defineComputed();
+// DEFINE FIELD OVERWRITE fullName ON TABLE user COMPUTED (string::concat($this.first, " ", $this.last))
+```
+
+Notes:
+
+- The `db` passed to the expression is untyped, because the tables are registered after they are defined. Annotate the parameter (`db: Orm<[typeof post]>`) to type the tables it queries.
+- Tables read by an expression must exist when a record is read, and the expression is inlined into the `DEFINE` statement, so it cannot use query parameters.
+
+### Linking a class to a table
+
+Pass a class as the third argument of `table()` to give rows methods and
+computed properties. Rows selected from (or returned by a write to) the table
+are instances of the class, and instances of the class are accepted as record
+content:
+
+```typescript
+class User {
+  given_name!: string;
+  family_name!: string;
+
+  get fullName() {
+    return `${this.given_name} ${this.family_name}`;
+  }
+}
+
+const user = table(
+  "user",
+  { given_name: t.string(), family_name: t.string() },
+  User,
+);
+
+const db = orm(surreal, user);
+
+const [ada] = await db.select("user", "ada");
+ada instanceof User; // true
+ada.fullName; // "Ada Lovelace" (typed as string)
+
+const input = Object.assign(new User(), { given_name: "Grace", family_name: "Hopper" });
+await db.create("user").content(input);
+```
+
+Type inference is unchanged and needs no code generation: the row type is the
+fields declared in the table plus the instance type of the class. Notes:
+
+- Rows are hydrated without running the class constructor, so declare fields
+  with `!` rather than initializers. Instances passed as content are sent as
+  their own enumerable properties; getters and methods are not stored.
+- Hydration also applies to rows resolved by `.fetch()`, each with its own class.
+  Queries with a `.return()` projection return plain objects.
+- Helpers that issue queries themselves (such as `this.update()` or static
+  `findByEmail()` methods) are not provided: write them against your `db`
+  instance, e.g. `db.select("user").where(...)`.
 
 ### Edges and graph relations
 
@@ -263,14 +390,60 @@ const specificUser = await db.select(new RecordId("user", "john")).then.val();
 // Or get a specific item:
 const specificUser = await db.select(new RecordId("user", "john")).then.at(0);
 
+// Use .only() to emit SurrealQL ONLY and return a single object instead of an array
+const user = await db.select("user", "john").only();
+// user: User  (not User[])
+
 // Nested queries (JOIN-like)
 const postsWithAuthors = db.select("post").return((post) => ({
   title: post.title,
-  author: post.authorId.select().return((author) => ({
+  author: post.authorId.select().only().return((author) => ({
     name: author.name,
     email: author.email,
   })),
 }));
+
+// Without .only(), post.authorId.select() returns an array per post.
+// With .only(), each post returns a single author object.
+```
+
+#### Using `.only()` for single-record queries
+
+By default surqlize queries always return arrays. The `.only()` modifier emits the SurrealQL `ONLY` clause and changes both the generated query and the TypeScript return type to a single object:
+
+```typescript
+// Without .only() — returns User[] (array with 0 or 1 item)
+const users = await db.select("user", "john");
+
+// With .only() — emits "SELECT * FROM ONLY user:john" and returns User
+const user = await db.select("user", "john").only();
+```
+
+This is different from `.then.val()` which extracts the first element client-side from an array result. `.only()` changes the query sent to SurrealDB.
+
+#### Nested record selects with `.only()`
+
+When selecting through a record link, omitting `.only()` returns an array per parent record. Use `.only()` when each parent has exactly one related record:
+
+```typescript
+// Without .only(): post.author.select() returns User[] per post → nested arrays
+const posts = await db.select("post").return((post) => ({
+  title: post.title,
+  author: post.author.select().return((author) => ({
+    id: author.id,
+    username: author.username,
+  })),
+}));
+
+// With .only(): each post returns a single author object
+const posts = await db.select("post").return((post) => ({
+  title: post.title,
+  author: post.author.select().only().return((author) => ({
+    id: author.id,
+    username: author.username,
+  })),
+}));
+// Result: Array<{ title: string; author: { id: RecordId<"user">; username: string } }>
 ```
 
 #### Sorting with ORDER BY
@@ -296,6 +469,10 @@ const numericSort = db.select("user")
 // Collation sorting
 const collateSort = db.select("user")
   .orderByCollate("name", "ASC");
+
+// Object form: field -> "asc" | "desc" (see "Object-based filters and sorting")
+const objectSort = db.select("user")
+  .orderBy({ age: "desc", name: { last: "asc" } });
 ```
 
 #### Grouping with GROUP BY
@@ -418,7 +595,28 @@ const user = await db.create("user", "alice123").set({
 const created = await db.create("user")
   .set({ name: "Bob" })
   .return("after"); // or "before", "none", "diff"
+
+// Use .only() to return a single object instead of an array
+const user = await db
+  .create("user", "john")
+  .only()
+  .set({ name: "John" });
+// user: User  (not User[])
 ```
+
+#### Which write method enforces required fields?
+
+Only `.content()` requires the full record on `CREATE`: its input type is the table's fields, minus those with a `.default()` or `option<…>` type, and minus `id` and computed fields. The other ways of writing are deliberately permissive, to mirror SurrealQL (and so that the database can supply the rest, for example through its own `DEFINE FIELD … DEFAULT`):
+
+| Method | Required fields | Type of the argument |
+| --- | --- | --- |
+| `.content()` | Enforced on `create`; optional on `update` / `upsert` | The record |
+| `.set()` | Not enforced | A partial record, per field (`+=` / `-=` and dotted paths work) |
+| `.merge()` | Not enforced | A partial record |
+| `.replace()` | Not enforced | A partial record |
+| `.patch()` | Not checked at all | JSON Patch operations, with the `path` as a plain string |
+
+Use `.content()` when you want the compiler to enforce required fields. With [runtime validation](#runtime-validation) enabled, `.content()` is checked as a full record, `.set()` field by field, and `.patch()` is not checked.
 
 ### INSERT statements
 
@@ -504,6 +702,13 @@ await db.upsert("user", "alice")
 await db.upsert("user")
   .where((u) => u.email.eq("alice@example.com"))
   .set({ lastSeen: new Date() });
+
+// Use .only() to return a single object instead of an array
+const upserted = await db
+  .upsert("user", "john")
+  .only()
+  .set({ name: "John" });
+// upserted: User  (not User[])
 ```
 
 ### UPDATE statements
@@ -557,6 +762,13 @@ const updated = await db.update("user")
   .where((u) => u.age.gt(65))
   .set({ status: "senior" })
   .return("after");
+
+// Use .only() to return a single object instead of an array
+const user = await db
+  .update("user", "john")
+  .only()
+  .set({ name: "Johnny" });
+// user: User  (not User[])
 ```
 
 ### RELATE statements
@@ -626,6 +838,12 @@ const edgeInfo = await db.relate(
 const userQuery = db.select("user", "alice");
 const postQuery = db.select("post", "hello");
 await db.relate("authored", userQuery, postQuery);
+
+// Use .only() to return a single edge object instead of an array
+const relation = await db
+  .relate("authored", new RecordId("user", "alice"), new RecordId("post", "hello-world"))
+  .only();
+// relation: Authored  (not Authored[])
 ```
 
 ### DELETE statements
@@ -647,6 +865,100 @@ const deleted = await db.delete("user")
 const deletedNames = await db.delete("user")
   .where((u) => u.email.endsWith("@spam.com"))
   .return((u) => ({ name: u.name }));
+
+// Use .only() to return a single object instead of an array.
+// DELETE ONLY is most useful with RETURN BEFORE when the deleted record should be returned.
+const deleted = await db
+  .delete("user", "alice")
+  .only()
+  .return("before");
+// deleted: User  (not User[])
+```
+
+## Runtime validation
+
+TypeScript checks your data at compile time, but data from a form, an API request or `JSON.parse` is only checked when you check it. Surqlize can validate the data a write carries against the table schema **before** it is sent to SurrealDB. It is off by default.
+
+### Validating every write
+
+`db.validated()` returns a view of the ORM (sharing the same connection, like `withSignal()`) in which `create`, `insert`, `update`, `upsert` and `relate` check their data first:
+
+```typescript
+const db = orm(surreal, user).validated();
+
+await db.create("user").content({ name: 42, address: { city: 1 }, tags: ["a", 2] });
+// Throws before anything is sent:
+// ValidationError: Invalid data for table "user": 4 validation errors
+//   - name: expected string, received 42
+//   - age: expected number, received undefined
+//   - address.city: expected string, received 1
+//   - tags[1]: expected string, received 2
+```
+
+A single query can opt in or out with `.validated()` / `.validated(false)`. Validation also applies in batches, inside transactions, to `.prepare()`, and survives `withSignal()`.
+
+`ValidationError` extends `OrmError`. It does not stop at the first problem: `error.issues` lists every failing field as `{ path, expected, received, message }`, where `path` looks like `address.city` or `tags[1]` (or `[2].age` for the third row of an `insert`), and `error.table` names the table.
+
+### What is checked
+
+| Data | Checked as |
+| --- | --- |
+| `create().content()`, `insert()` rows, `relate().content()` | the full input: every field must be present and valid, except `option<...>` fields, fields with a `.default()`, and `id` (and `in` / `out` on edges) |
+| `update` / `upsert` `.content()`, `.merge()`, `.replace()` | a partial record: only the fields present are checked |
+| `.set()`, `.onDuplicate()` | each assigned field, including dotted paths such as `"address.city"`. `+=` / `-=` operands are checked for number and array fields |
+
+- Nested objects, arrays, tuples, unions, record links (including the linked table) and tables linked to a class are all checked.
+- **Computed fields are read-only**: supplying a value for one is an issue.
+- Fields the schema does not declare are ignored, and so are `.patch()` operations.
+- Values SurrealDB evaluates itself, such as `expr(...)` defaults and subquery expressions, are not checked client-side.
+- Validation never changes your data: what is checked is what is sent. Defaults are still filled in by the query as before.
+
+### Validating data yourself
+
+Tables and edges have the same check as a standalone helper, for example at the edge of your API:
+
+```typescript
+const result = user.safeParse(body);            // mode "create" by default
+if (!result.success) return respond(400, result.error.issues);
+await db.create("user").content(result.data);   // result.data is typed as the create input
+
+const input = user.parse(body);                 // returns the typed data, or throws ValidationError
+user.safeParse(patch, { mode: "update" });      // a partial write
+user.safeParse(row, { mode: "row" });           // a whole stored record, id and computed fields included
+```
+
+`safeParse` never throws, and `parse` throws the same `ValidationError`. The `mode` option selects `"create"` (default), `"update"` or `"row"`, and the type of `data` follows it. The existing `table.validate(value)` type guard and the `t.*` types' `validate()` / `parse()` are unchanged.
+
+## Custom functions and API endpoints
+
+Describe a `DEFINE FUNCTION` with `fn(name, params, returns)` and call it with `db.run()`, or call a `DEFINE API` endpoint through a typed client from `db.api()`. Both are typed from the description, and results are parsed against the declared types. Define the function or endpoint in the database first; surqlize only calls it.
+
+```ts
+import { api, fn, orm, t } from "surqlize";
+
+const greet = fn("greet", [t.string()], t.string()); // fn::greet
+const greeting = await db.run(greet, ["world"]);     // string
+
+const echo = api("/echo", {
+  post: {
+    request: t.object({ text: t.string() }),
+    response: t.object({ text: t.string() }),
+  },
+});
+const res = await db.api(echo).post("/echo", { text: "hi" });
+res.body?.text; // string | undefined
+```
+
+A function is also callable inside a query: `db.select("user").return((u) => ({ hi: greet(u, u.name) }))`.
+
+On a [validated](#runtime-validation) ORM (`db.validated()`), `db.run()` checks its arguments against the parameter types, and API calls check the request body against the declared `request` type, before anything is sent. Every failing argument or field is reported in a single `ValidationError`. Arguments passed to a function inside a query are expressions evaluated by the database, so they are not checked.
+
+### Using a schema with the `surrealdb` SDK
+
+Every `t.*` type implements [Standard Schema](https://standardschema.dev), so a definition can validate in any library that accepts one, including the `surrealdb` SDK's `.args()`, `.returns()`, `.request()` and `.response()` call methods (in the first `surrealdb` release that includes them):
+
+```ts
+const sum = await surreal.run("fn::add", [1, 2]).returns(t.number());
 ```
 
 ## Batch
@@ -663,6 +975,17 @@ const [user, updated, allUsers] = await db.batch(
 // Results are fully typed as a tuple
 ```
 
+A batch is sent as one request using the SDK's stateless `transaction()`, so it works over HTTP as well as WebSockets. If it fails, the promise rejects with the error that made it fail, and none of its statements take effect.
+
+Because it is a single request, a batch is safe to replay. Use `.retry()` to re-send it when it fails because of a conflict with a concurrent transaction (see [Retrying conflicts](#retrying-conflicts)). A batch also takes `.signal()` and `.requestTimeout()`, as described in [Cancellation, timeouts and retries](#cancellation-timeouts-and-retries):
+
+```typescript
+const [created] = await db
+  .batch(db.create("user").set({ name: "Alice", age: 30 }))
+  .retry()
+  .requestTimeout(5_000);
+```
+
 You can also inspect the generated SurrealQL before executing:
 
 ```typescript
@@ -677,6 +1000,8 @@ console.log(b.toString());
 // Execute when ready
 const [created, updated] = await b;
 ```
+
+> A batch cannot be used inside an interactive [transaction](#transactions) — it is already atomic, and transactions cannot be nested. `tx.batch()` throws; run the queries on `tx` instead.
 
 ## Transactions
 
@@ -719,7 +1044,9 @@ try {
 }
 ```
 
-The transaction object (`tx`) has all the same query-builder methods as the main `db` instance — `select`, `create`, `insert`, `update`, `upsert`, `delete`, and `relate`.
+The transaction object (`tx`) has all the same query-builder methods as the main `db` instance — `select`, `create`, `insert`, `update`, `upsert`, `delete`, and `relate` — except `batch`, which is itself atomic and cannot be nested.
+
+To abandon the queries of a transaction when a request is aborted, use `tx.withSignal(signal)`. It returns a handle on the same transaction, so `commit()` and `cancel()` work on either. They are deliberately not bound to the signal: a request that is being abandoned cannot leave the outcome of a commit in doubt.
 
 ## Live queries
 
@@ -734,6 +1061,7 @@ const off = sub.subscribe((msg) => {
   // msg.action:   "CREATE" | "UPDATE" | "DELETE" | "KILLED"
   // msg.recordId: the affected RecordId
   // msg.value:    the affected record, parsed against the schema
+  if (msg.action === "KILLED") return; // see "Handling KILLED" below
   console.log(msg.action, msg.value);
 });
 
@@ -743,15 +1071,33 @@ off();
 await sub.kill();
 ```
 
-The notification `value` is parsed against the table schema, so it is fully typed:
+The notification `value` is parsed against the table schema, so it is fully typed once you have narrowed to a record change:
 
 ```typescript
 const sub = await db.live("user");
 sub.subscribe((msg) => {
+  if (msg.action === "KILLED") return;
   msg.value.name.first; // string
   msg.value.age; // number
 });
 ```
+
+### Handling `KILLED`
+
+`KILLED` means the server ended the subscription — for example because its table was removed. It is the last message a subscription emits, and it carries no record, so `recordId` and `value` only exist once you have ruled it out. `LiveMessage` is a union, so the compiler enforces this:
+
+```typescript
+sub.subscribe((msg) => {
+  if (msg.action === "KILLED") {
+    // msg.recordId and msg.value are undefined here
+    return;
+  }
+  msg.recordId; // RecordId
+  msg.value; // the record
+});
+```
+
+`sub.isAlive` turns `false` when a subscription is killed, by `kill()`, by the server, or because the request scope it was made through was aborted.
 
 A subscription is also async-iterable:
 
@@ -806,7 +1152,311 @@ const stop = await db
 stop();
 ```
 
-> Live subscriptions are **unmanaged** — they are not automatically restarted if the connection drops and reconnects. The table must also exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
+### Reconnecting
+
+A subscription to a table — with any of `.where()`, `.fetch()` and `.diff()` — is **managed** by the SDK. If the connection drops and comes back, the SDK registers the live query again, so notifications keep flowing. The subscription's `id` changes when that happens, and anything that changed while the connection was down is not replayed.
+
+A subscription with a `.return()` projection cannot be expressed that way and is **unmanaged**: it goes silent after a reconnect, and `isAlive` stays `true`. Check `sub.isManaged` if that matters to you, or subscribe to the whole record and project on the client.
+
+```typescript
+const sub = await db.live("user").where((user) => user.age.gte(18));
+sub.isManaged; // true
+
+const names = await db.live("user").return((user) => ({ name: user.name }));
+names.isManaged; // false
+```
+
+> The table must exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
+
+## Generating the database schema
+
+The tables, edges and fields you describe with `t.*` can be turned into `DEFINE` statements, so the database enforces the same types the client checks.
+
+```ts
+import { generateSchema, toSurql } from "surqlize";
+
+const schema = generateSchema(db);
+
+// Apply it...
+await surreal.query(schema.statements.map((s) => s.sql).join("\n"));
+
+// ...or write it for a tool that reads `.surql` files.
+await Bun.write("database/schema/surqlize.surql", toSurql(schema));
+```
+
+`generateSchema(db)` returns the tables before their fields, so the statements can run top to bottom. Each statement has a `kind`, a stable `name` (`user.address.city`, `post.items[*].k`) and its `sql`. It defines every table and edge (`TYPE RELATION IN … OUT …`), every field with its type and `DEFAULT`, indexes, events, and computed fields. Statements use `OVERWRITE` so they can be run again; pass `{ mode: "if-not-exists" }` to leave definitions that already exist.
+
+| Surqlize | SurrealQL |
+| --- | --- |
+| `t.string()`, `t.number()`, `t.int()`, `t.float()`, `t.bool()`, `t.uuid()`, `t.duration()`, `t.bytes()`, `t.any()` | `string`, `number`, `int`, `float`, `bool`, `uuid`, `duration`, `bytes`, `any` |
+| `t.date()`, `t.point()` | `datetime`, `geometry<point>` |
+| `t.option(x)` | `option<x>` |
+| `t.record("user")`, `t.record(["a", "b"])`, `t.record()` | `record<user>`, `record<a \| b>`, `record` |
+| `t.array(x)`, `t.array([x, y])` | `array<x>`, `[x, y]` |
+| `t.literal("a")`, `t.union([…])` | `'a'`, `a \| b` |
+| `t.object({ … })` | `object`, with each field defined as `parent.field` |
+
+- **Tables are `SCHEMAFULL` by default**: the database rejects a field the schema does not declare. Call `.schemaless()` on a table to keep fields it does not declare, as the client-side validation does.
+- **Defaults.** A static value or an `expr()` becomes `DEFAULT`; a string is always data, so `expr("time::now()")` calls the function and `"time::now()"` stores the text. A default that is a function (`() => new Date()`) can only run on the client, so it is left out of the statement and listed in `skipped` with the reason.
+- **Objects** are defined field by field, which lets them carry defaults, through options and arrays (`items[*].name`, `grid[*][*].v`). An object inside a union or a tuple is written out as a literal object type (`{ kind: 'a', n: number }`), which the database also holds to its exact keys.
+- **Names** that are not plain identifiers are escaped (`⟨order-item⟩`).
+
+Integration tests apply the statements to a real server and check that it accepts and rejects the same values as the client-side types, for each mapping above. `t.set()` is the one known exception: the database takes and returns a JavaScript `Set`, and the type models an array.
+
+## Migrations
+
+The `sur` command compares a schema with a database and works out what has to change. It is also available as a library from `surqlize/migrate`.
+
+```bash
+bunx sur init       # write surqlize.config.ts and a starter schema
+bunx sur plan       # show the statements that would run, without running them
+bunx sur migrate    # apply them, and record the migration
+bunx sur status     # list the migrations that have been applied
+bunx sur rollback   # undo the most recent migration
+```
+
+A schema is a module that exports the tables and edges to manage. Running `plan` again after `migrate` reports nothing to do, so a change that fails part-way is recovered by planning again. A field renamed with `.was("old")` is migrated by copying its values, not by dropping it. Database settings come from `surqlize.config.ts`, then `SURREAL_*` environment variables, then flags, and `-e <name>` selects a named environment.
+
+## Reactive store
+
+A store turns a query into a live value. It loads the result, keeps it current from live notifications, and exposes `subscribe` and `getSnapshot`, the shape that `useSyncExternalStore`, Svelte stores and similar bindings expect. It works with any framework and adds no dependency.
+
+```ts
+import { createStore } from "surqlize";
+
+const store = createStore(db);
+
+const all = store.query("task");                                   // every task
+const open = store.query("task", (q) => q.where({ done: false })); // a filtered, ordered or limited query
+
+const stop = open.subscribe(() => render(open.getSnapshot()));
+```
+
+A snapshot is one of:
+
+- `{ status: "loading" }` until the first result arrives
+- `{ status: "success", data, stale }`, where `stale` is `true` while the connection is down
+- `{ status: "error", error }` if loading failed or the server killed the subscription. Call `open.refetch()` to try again.
+
+`getSnapshot()` returns the same object until something changes.
+
+- **Sharing.** Asking for the same query again returns the same store, so every component that shows it shares one live subscription. The store starts with its first subscriber and stops shortly after the last one leaves (`idleMs`, 100 ms by default), so a component that unmounts and mounts again straight away does not restart it.
+- **No lost changes.** The store registers the live query before it reads, and applies the notifications that arrived in the meantime on top of the result.
+- **Reconnects.** A live subscription does not replay the changes made while the connection was down. When it returns, the store reads the query again. Pass `{ connection }` to `createStore()` if your ORM is not built on a `Surreal` instance.
+- **Filtered queries.** SurrealDB sends no notification when an update makes a record stop matching a live query's `WHERE`, so a filtered result cannot be kept current from notifications alone. A query built with a callback (filter, order, limit, projection, `FETCH`) therefore subscribes to the whole table and runs again, after `debounceMs` (20 by default), whenever the table changes. A query without a callback applies each notification as it arrives, and takes an optional `sort` function.
+
+### Optimistic and offline writes
+
+`store.table(name)` makes writes that show in every query of the table straight away, and are sent to the database in order.
+
+```ts
+const tasks = store.table("task");
+
+const { id, committed } = tasks.create({ title: "Write docs", done: false });
+tasks.update(id, { done: true });
+tasks.delete(id);
+
+await committed; // the stored record, once the database has accepted the write
+```
+
+- **The id is known at once.** `create()` generates a record id unless you pass `{ id }`, so the record can be used before the database has seen it.
+- **Shown on top of the database's state.** Pending writes are applied to the result of each query of the table. When the database accepts a write, its answer replaces the pending write in the result, so nothing flickers when the live notification for it arrives. See [Filtered queries](#filtered-queries-and-local-writes) for how a write enters or leaves a filtered result.
+- **A refusal is taken back.** If the database refuses a write (a failed assertion, a missing record for an update, a permissions error), the change disappears from the results and `committed` rejects with the error.
+- **A connection problem is not a refusal.** The write stays queued, is retried with a growing delay, and is sent as soon as the connection returns, before the queries read again. While offline, `committed` stays pending. `store.pending` has `subscribe` and `getSnapshot` for the writes that are waiting, for example to show an "unsaved changes" indicator.
+- **Merging.** Writes to the same record that have not been sent yet are combined, so editing a field repeatedly offline sends one write. Updates merge top-level fields: the last write to a field wins, and a nested object is replaced as a whole. Text is not merged.
+- **Safe to send twice.** A write that was sent but whose answer was lost is sent again. A create is an upsert of the whole record, an update is a merge, and deleting a missing record is not an error, so repeating any of them leaves the same record.
+
+#### Filtered queries and local writes
+
+When a query is a plain object filter, the store checks each local write against it, so a record enters or leaves the result at once:
+
+```ts
+const open = store.query("task", (q) => q.where({ done: false, priority: { gte: 2 } }));
+
+tasks.create({ title: "A", done: false, priority: 5 }); // appears now
+tasks.update(id, { done: true });                        // disappears now
+```
+
+The check understands `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `inside`, `notInside`, `contains`, `containsNot`, `containsAll`, `containsAny`, `containsNone`, `allInside`, `anyInside`, `noneInside`, `startsWith` and `endsWith`, nested object fields, and `and`, `or` and `not`. It is a prediction, and the database stays the authority: the answer to each write replaces it, and the refetch that follows corrects any mismatch.
+
+The store does not guess when it cannot be sure, and leaves the result as the database last reported it. That is the case when:
+
+- the filter is a callback (`q.where((r) => r.done.eq(false))`) rather than an object, because a callback builds a SurrealQL expression the client cannot evaluate;
+- the filter uses an operator not listed above, compares values it does not order, or reaches into a linked record;
+- a created record leaves out a field the filter reads, since the database may fill it in with a default;
+- the query has a `LIMIT`, `START`, `GROUP`, `SPLIT`, `FETCH`, a projection, or `.only()`, where it is not just a filter;
+- the query is ordered. An update still changes a row in place, but a created record is not added until the database has ordered it.
+
+A record that left the result and is updated back to matching is not shown until the database reports it, because the client holds only the fields of the write, not the whole record.
+
+By default pending writes are kept in memory, so they survive a dropped connection but not a reload. To keep them across reloads, pass an IndexedDB store, and wait for `store.ready` before relying on them:
+
+```ts
+import { createStore, indexedDbStorage } from "surqlize";
+
+const store = createStore(db, { storage: indexedDbStorage("my-app") });
+await store.ready; // writes left by an earlier session are sent from here
+```
+
+Values in a stored write can be strings, numbers, booleans, null, dates, record ids, uuids, durations, bigints, and arrays and plain objects of those. A write holding anything else is rejected when it is made, with the path of the value.
+
+### React
+
+`surqlize/react` binds a store to React 18 and 19 with `useSyncExternalStore`. `react` is an optional peer dependency, and the entry adds no code to the rest of the package.
+
+```tsx
+import { createStore } from "surqlize";
+import { StoreProvider, usePending, useQuery, useStore } from "surqlize/react";
+
+const store = createStore(db);
+
+function App() {
+  return (
+    <StoreProvider store={store}>
+      <Tasks />
+    </StoreProvider>
+  );
+}
+
+function Tasks() {
+  const store = useStore<typeof db>();
+  const tasks = store.query("task", (q) => q.where({ done: false }));
+  const open = useQuery(tasks);
+  const pending = usePending(store);
+
+  if (open.status === "loading") return <p>Loading…</p>;
+  if (open.status === "error") return <button onClick={() => tasks.refetch()}>Retry</button>;
+
+  return (
+    <>
+      {pending.length > 0 && <p>Saving {pending.length} changes…</p>}
+      <ul>
+        {open.data.map((task) => (
+          <li key={String(task.id)}>
+            <input
+              type="checkbox"
+              onChange={() => store.table("task").update(task.id, { done: true })}
+            />
+            {task.title}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+- `useQuery(query)` re-renders when the result changes and returns the same `StoreSnapshot` described above. `store.query()` returns the same object for the same query, so it can be called while rendering. Pass `null` or `undefined` to skip a query until its inputs are known; the result is then `{ status: "skipped" }`.
+- The live subscription starts with the first component that uses a query and stops shortly after the last one unmounts, so StrictMode's extra mount and unmount does not restart it.
+- On the server, and while hydrating, `useQuery` returns `{ status: "loading" }`; the query runs in the browser.
+- `usePending(store)` returns the writes the database has not accepted yet, for an "unsaved changes" indicator.
+- `StoreProvider` and `useStore<typeof db>()` pass the store down; you can also import the store directly.
+
+### Vue
+
+`surqlize/vue` binds a store to Vue 3 with composables that return refs. `vue` is an optional peer dependency.
+
+```vue
+<script setup lang="ts">
+import { useQuery, usePending } from "surqlize/vue";
+import { store } from "./store";
+
+const tasks = store.query("task", (q) => q.where({ done: false }));
+const open = useQuery(tasks);
+const pending = usePending(store);
+</script>
+
+<template>
+  <p v-if="open.status === 'loading'">Loading…</p>
+  <button v-else-if="open.status === 'error'" @click="tasks.refetch()">Retry</button>
+  <template v-else-if="open.status === 'success'">
+    <p v-if="pending.length > 0">Saving {{ pending.length }} changes…</p>
+    <ul>
+      <li v-for="task in open.data" :key="String(task.id)">{{ task.title }}</li>
+    </ul>
+  </template>
+</template>
+```
+
+- `useQuery(query)` returns a shallow ref of the snapshot. Pass a ref or a getter to change the query over time (use `shallowRef`, since a deep `ref` would wrap the store in a reactive proxy), and `null` or `undefined` to skip it (`{ status: "skipped" }`).
+- The live subscription starts with the first component that uses a query and stops shortly after the last one unmounts. Inside a component nothing is subscribed until it has mounted, so rendering on the server starts no live queries and the value stays `{ status: "loading" }`.
+- `usePending(store)` holds the writes the database has not accepted yet.
+- `provideStore(store)` and `useStore<typeof db>()` pass a store down, or `app.provide(storeKey, store)` on the app, with `storeKey` exported from `surqlize/vue`.
+### Svelte
+
+`surqlize/svelte` gives Svelte stores, in the store contract that Svelte 3, 4 and 5 all use, so a query works with `$`, `get()` and `derived()`. It needs nothing beyond Svelte itself.
+
+```svelte
+<script>
+  import { pendingStore, queryStore } from "surqlize/svelte";
+  import { store } from "./store";
+
+  const tasks = store.query("task", (q) => q.where({ done: false }));
+  const open = queryStore(tasks);
+  const pending = pendingStore(store);
+</script>
+
+{#if $open.status === "loading"}
+  <p>Loading…</p>
+{:else if $open.status === "error"}
+  <button onclick={() => tasks.refetch()}>Retry</button>
+{:else if $open.status === "success"}
+  {#if $pending.length > 0}<p>Saving {$pending.length} changes…</p>{/if}
+  <ul>
+    {#each $open.data as task (String(task.id))}
+      <li>{task.title}</li>
+    {/each}
+  </ul>
+{/if}
+```
+
+- `queryStore(query)` calls back at once with the current snapshot and again on each change. The live subscription starts with the first subscriber and stops shortly after the last one leaves. Pass `null` or `undefined` to skip a query; the value is then `{ status: "skipped" }`.
+- `pendingStore(store)` holds the writes the database has not accepted yet.
+### Solid
+
+`surqlize/solid` binds a store to Solid with primitives that return accessors. `solid-js` is an optional peer dependency.
+
+```tsx
+import { createPending, createQuery } from "surqlize/solid";
+import { store } from "./store";
+
+function Tasks() {
+  const tasks = store.query("task", (q) => q.where({ done: false }));
+  const open = createQuery(tasks);
+  const pending = createPending(store);
+
+  return (
+    <>
+      <Show when={pending().length > 0}>
+        <p>Saving {pending().length} changes…</p>
+      </Show>
+      <Switch>
+        <Match when={open().status === "loading"}>
+          <p>Loading…</p>
+        </Match>
+        <Match when={open().status === "error"}>
+          <button onClick={() => tasks.refetch()}>Retry</button>
+        </Match>
+        <Match when={open()}>
+          {(snap) => (
+            <ul>
+              <For each={snap().status === "success" ? (snap() as { data: Task[] }).data : []}>
+                {(task) => <li>{task.title}</li>}
+              </For>
+            </ul>
+          )}
+        </Match>
+      </Switch>
+    </>
+  );
+}
+```
+
+- `createQuery(query)` returns an accessor of the snapshot. Pass an accessor to change the query over time, and `null` or `undefined` to skip it (`{ status: "skipped" }`).
+- The live subscription starts with the first owner that uses a query and stops shortly after the last one is disposed.
+- Solid does not run effects when rendering on the server, so nothing is subscribed there and the value stays `{ status: "loading" }`; the query runs in the browser.
+- `createPending(store)` holds the writes the database has not accepted yet.
+- `StoreProvider` and `useStore<typeof db>()` pass a store down.
 
 ## Accessing Single Records
 
@@ -856,6 +1506,9 @@ db.select("user").where((user) =>
   user.age.gte(21)                  // >=
   user.age.lt(65)                   // <
   user.age.lte(64)                  // <=
+
+  // Full-text search
+  user.bio.search("typescript")     // @@
 
   // Array membership
   user.status.inside(["active", "pending"])    // IN
@@ -910,12 +1563,51 @@ db.select("user").where((user) =>
 
 Both `and()` and `or()` require at least two conditions and accept any number of additional conditions. Nesting them produces correctly parenthesized output, so precedence is always explicit.
 
+### Object-based filters and sorting
+
+`where()` and `orderBy()` also accept plain objects, which is convenient when filters come from data (a query string, a form, a JSON body) rather than code. Both compile to exactly the same SurrealQL as the fluent callbacks, and the two styles can be mixed freely. The objects are fully type-checked against your schema.
+
+```typescript
+const rows = await db.select("user")
+  .where({
+    name: { first: "Ada" },            // nested object field: name.first = "Ada"
+    email: { endsWith: "@example.com" },
+    age: { gte: 18, lt: 65 },          // several operators on a field are AND-ed
+    role: "admin",                     // a bare value is shorthand for { eq: value }
+  })
+  .orderBy({ age: "desc", name: { last: "asc" } })
+  .limit(20);
+```
+
+Keys at the same level are AND-ed together. Combine groups with `and`, `or` and `not`:
+
+```typescript
+db.select("user").where({
+  or: [{ role: "admin" }, { age: { gt: 65 } }],
+  not: { status: "banned" },
+});
+// WHERE ((role = "admin" OR age > 65) AND !(status = "banned"))
+```
+
+Available operators mirror the fluent methods: `eq`, `ne`, `ex`, `gt`, `gte`, `lt`, `lte`, `inside`, `notInside` on every field; `startsWith`, `endsWith`, `contains`, `search` on strings; and `contains`, `containsNot`, `containsAll`, `containsAny`, `containsNone`, `allInside`, `anyInside`, `noneInside` on arrays.
+
+Fields of an object, and fields of a record link, can be filtered or sorted by in place (`author: { age: { gt: 30 } }`, `orderBy({ author: { name: "asc" } })`).
+
+Notes:
+
+- A field whose value is `undefined` is skipped, and an object that imposes no condition (including empty `and` / `or` groups) produces no `WHERE` clause, so optional parameters can be passed straight through.
+- A key that names a field always wins over an operator or combinator of the same name.
+- Unknown fields, unsupported operators and invalid directions throw an `OrmError` (and are rejected by the type checker).
+- Directions are `"asc"` / `"desc"` (upper case also works) and are applied in key order. `orderByNumeric` and `orderByCollate` remain fluent-only and chain after an object `orderBy`.
+- Object filters are also accepted by `.where()` on `update`, `delete` and `live` queries.
+
 ## Type-specific functions
 
 ### String functions
 
 ```typescript
 db.select("user").where((user) =>
+  user.bio.search("typescript")
   user.email.startsWith("admin@")
   user.name.endsWith("son")
   user.email.contains("@example.com")
@@ -970,6 +1662,7 @@ db.select("post").return((post) => ({
   unique: post.tags.distinct(),    // Unique values
   flat: post.tags.flatten(),       // Flatten nested arrays
   reversed: post.tags.reverse(),   // Reverse array
+  map: post.tags.map((tag, index) => tag.uppercase()) // Map array
 }));
 ```
 
@@ -1064,6 +1757,34 @@ type Result = t.infer<typeof query>;
 // }>
 ```
 
+## Geospatial points
+
+```typescript
+import { GeometryPoint, Surreal } from "surrealdb";
+import { geo, orm, table, t, type_ } from "surqlize";
+
+const place = table("place", {
+  location: t.point(),
+  coordinates: t.array([t.number(), t.number()]),
+});
+const db = orm(new Surreal(), place);
+
+const center = new GeometryPoint([12.5, 41.9]);
+const nearby = db.select("place").where((place) =>
+  geo.distance(place.location, center).lt(5000),
+);
+const nearbyByCoordinates = db.select("place").where((place) =>
+  geo.distance(place.coordinates, [12.5, 41.9]).lt(5000),
+);
+```
+
+`t.point()` describes a native SurrealDB point value. For raw coordinate data,
+use `t.array([t.number(), t.number()])`. `type_.point(value)` explicitly emits
+`type::point(value)`, while `geo.distance()` automatically accepts a
+`GeometryPoint` or `[longitude, latitude]` and performs required coordinate
+casts in SurrealDB. Distances are returned by SurrealDB in metres. Coordinates
+are always ordered longitude first, latitude second.
+
 ## Standalone functions
 
 Standalone functions are not called on a field but used independently within query callbacks. Functions with value parameters extract the query context automatically from the first value. Zero-arg functions and constants require an explicit context source (any `Workable` from the callback).
@@ -1133,6 +1854,8 @@ const projection = await db.update("user", "alice")
 
 ### Query Timeouts
 
+`.timeout()` adds the SurrealQL `TIMEOUT` clause, which the **server** enforces:
+
 ```typescript
 const users = await db.select("user")
   .where((u) => u.age.gt(18))
@@ -1141,6 +1864,72 @@ const users = await db.select("user")
 await db.update("user", "alice")
   .set({ age: 31 })
   .timeout("10s");
+```
+
+To bound how long the **client** waits instead, see `.requestTimeout()` below.
+
+### Cancellation, timeouts and retries
+
+Every query, and every [batch](#batch), can be configured with how long and how hard the client waits for the answer. These options are applied by the SDK when the request is sent; they do not change the SurrealQL that is rendered.
+
+```typescript
+// Stop waiting when the signal aborts: the promise rejects with its reason
+await db.select("report").signal(AbortSignal.timeout(2_000));
+
+// Give up with a TimeoutError after 5s (0 waits without limit)
+await db.select("report").requestTimeout(5_000);
+
+// Re-send the query if it fails because of a transaction conflict
+await db.update("counter", "visits").set({ n: { "+=": 1 } }).retry();
+```
+
+Like the other builder methods, they return a new query and leave the original untouched, and signals combine: calling `.signal()` twice abandons the query when either aborts.
+
+> **Aborting means "stop waiting", and nothing more.** The server is not told, and may carry on. A write that was already sent may or may not have been applied. This holds for `.signal()` and for `.requestTimeout()`, which is not the same thing as the `TIMEOUT` clause above.
+
+#### Retrying conflicts
+
+When two transactions write to the same data, one of them fails with a conflict. `.retry()` re-sends the whole query, with exponential backoff, until it succeeds or the attempts run out. It defaults to the connection's retry settings; pass options to override them, or `false` to turn it off.
+
+```typescript
+await db.batch(
+  db.update("account", "a").set({ balance: { "-=": 10 } }),
+  db.update("account", "b").set({ balance: { "+=": 10 } }),
+).retry({ attempts: 5 });
+```
+
+Only re-send what is safe to replay: a single statement, or a [batch](#batch), which is applied atomically. Do not use it inside an interactive transaction, where a conflict has already failed the transaction.
+
+SurrealDB 3.1.0 and later report a conflict as a structured error, which is what `.retry()` recognises. For earlier servers, give it a predicate:
+
+```typescript
+.retry({
+  retryable: (error) =>
+    error instanceof Error && /conflict|can be retried/i.test(error.message),
+})
+```
+
+#### Tying a request to its signal
+
+In a request handler, `db.withSignal(signal)` returns a view of the ORM in which **every** query is abandoned when the signal aborts, so you don't pass it to each call. It shares the connection and session, so it is cheap to make one per request:
+
+```typescript
+export default {
+  async fetch(request: Request) {
+    const scoped = db.withSignal(request.signal);
+
+    const users = await scoped.select("user");
+    await scoped.batch(
+      scoped.create("audit").set({ action: "list" }),
+    );
+
+    // A live subscription made through the scope is killed when the
+    // request is aborted, so it cannot outlive its client.
+    const changes = await scoped.live("user");
+
+    return Response.json(users);
+  },
+};
 ```
 
 ### Operators
@@ -1333,6 +2122,96 @@ db.select("user").where((user) => user.out("authored").len().gt(0));
 db.select("user").where((user) => user.out("authored").isEmpty());
 ```
 
+### Recursive traversal
+
+Follow a step repeatedly with `recurse`, `collect` and `shortest` (SurrealQL
+recursive paths, `.{min..max}(…)`). The repeated step is a callback that receives
+the node being expanded and must land back on the **same table**, so every
+iteration is typed against one record type. They work on a select row
+(`person.recurse(…)`, rooted at its `id`) or on any record link.
+
+```typescript
+const person = table("person", { name: t.string() });
+const knows = edge("person", "knows", "person", { since: t.number() });
+const db = orm(new Surreal(), person, knows);
+
+// In the examples below, `step` stands for the callback
+// `(n) => n.out("knows").out("person")`. Write it inline so `n` is typed.
+```
+
+#### Depth ranges: `recurse(depth, step)`
+
+`depth` is a fixed count or a `{ min?, max? }` range (inclusive integers,
+`1..256`). A fixed depth returns the nodes exactly that many hops away; a range
+returns the nodes at the deepest level reached.
+
+```typescript
+db.select("person").return((p) => ({
+  friendsOfFriends: p.recurse(2, step),                 // .{2}(->knows->person)
+  between: p.recurse({ min: 2, max: 4 }, step),         // .{2..4}(…)
+  atLeast: p.recurse({ min: 2 }, step),                 // .{2..}(…)
+  atMost: p.recurse({ max: 3 }, step),                  // .{..3}(…)
+}));
+// each field: RecordId<"person">[]
+```
+
+Without a bound, a range on a graph that contains cycles does not terminate in a
+useful time. Bound it, or use `collect`.
+
+#### Flattened unique nodes: `collect([depth,] step, { inclusive? })`
+
+`collect` returns every distinct node reached within the depth, nearest first.
+It is cycle-safe, so the depth is optional (`{..+collect}`). `inclusive: true`
+adds the starting record (`+inclusive`).
+
+```typescript
+db.select("person").return((p) => ({
+  network: p.collect(step),                        // .{..+collect}(…)
+  nearby: p.collect({ max: 2 }, step),             // .{..2+collect}(…)
+  nearbyAndMe: p.collect({ max: 2 }, step, { inclusive: true }),
+  // Materialise the nodes like any other traversal:
+  names: p.collect({ max: 2 }, step).select().return((f) => ({ name: f.name })),
+}));
+```
+
+#### Shortest path: `shortest(target, step, { inclusive? })`
+
+`shortest` returns the nodes walked from the start to `target` (the start itself
+is only included with `inclusive: true`). The target is bound as a query
+parameter. When there is no path, SurrealDB returns `NONE`, so the result is
+typed `RecordId<"person">[] | undefined`. Use `.unwrap()` to materialise it:
+
+```typescript
+const route = await db
+  .select("person", "alice")
+  .return((p) => ({
+    path: p.shortest(new RecordId("person", "dave"), step), // RecordId[] | undefined
+    pathNames: p
+      .shortest(new RecordId("person", "dave"), step)
+      .unwrap()
+      .select()
+      .return((n) => ({ name: n.name })),
+  }))
+  .execute();
+```
+
+Edge filters and multi-edge steps work inside the step, e.g.
+`(n) => n.out((g) => g("knows").where((e) => e.since.gte(2015))).out("person")`.
+Because the step is typed against the table it starts from, stepping onto a
+different table (`n.out("wrote").out("post")`) is a compile error.
+
+Notes and limits:
+
+- Recursive paths need SurrealDB 2.1 or newer; the CI matrix (3.0.5 to 3.3.0) is
+  covered by the integration tests.
+- `shortest` is unbounded. If the target is the start record itself the result
+  is `NONE`, even with `inclusive`.
+- `+path` (every walked path) is not exposed yet.
+- On SurrealDB 3.0, a fixed-depth `collect(n, step)` (`{n+collect}`) returned only
+  the nodes first reached at depth `n`, where 3.1 and newer return every node
+  `n` hops away (observed on 3.0.5). Use a range or `recurse(n, step)` if you
+  need the same answer on 3.0.
+
 ### Edge adjacency metadata
 
 The `lookup` maps expose which edges connect which tables at runtime:
@@ -1403,7 +2282,7 @@ const posts = await db
 
 ## Multi-session support
 
-Surqlize accepts any `SurrealSession` (or `Surreal`, which extends it), enabling multiple ORM instances scoped to different sessions over a single connection. Each session maintains its own namespace, database, authentication state, and variables.
+Surqlize accepts any `SurrealSession` (or `Surreal`, which extends it) — or the request scope that `withSignal()` returns — enabling multiple ORM instances scoped to different sessions over a single connection. Each session maintains its own namespace, database, authentication state, and variables.
 
 ### Multiple databases over one connection
 
@@ -1470,6 +2349,17 @@ Since `SurrealSession` implements `Symbol.asyncDispose`, sessions work with `awa
 }
 ```
 
+### Connections and pooling
+
+Surqlize does not open, own or pool connections: you hand it a `Surreal` (or a session), and the SurrealDB SDK owns the connection, including reconnecting. A pool is not needed for concurrency, because the SDK multiplexes concurrent queries over a single connection, so queries from many `orm()` calls or request handlers can be in flight at once. Use these instead:
+
+- **One `Surreal` connection per process**, created at start-up and shared by every ORM instance.
+- **A session per tenant or per request** (`newSession()` / `forkSession()`, above) when you need isolated namespace, database, authentication or variables. Sessions share the connection, so they are cheap to create and close.
+- **`db.withSignal(signal)`** for per-request cancellation (see [Cancellation, timeouts and retries](#cancellation-timeouts-and-retries)).
+- **`db.batch()` or a transaction** when several statements must run together.
+
+Reach for several `Surreal` connections only when you want to spread load across servers or isolate failure domains, and manage them in your own code.
+
 ## Comparison with other ORMs
 
 | Feature | Surqlize | SurrealDB.js | Prisma | Drizzle | TypeORM |
@@ -1501,12 +2391,24 @@ This project is in active development. Planned features include:
 - [x] **Transaction support** - Batch and interactive transactions
 - [x] **Multi-session support** - Multiple sessions over a single connection
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
-- [ ] **Runtime validation** - Validate data at runtime using schema definitions
+- [x] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
+<<<<<<< HEAD
 - [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [ ] **Performance optimizations** - Query caching, connection pooling
 - [x] **Schema migrations** - Declare the schema, diff it against the database, and converge
+=======
+- [x] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
+- [x] **Performance optimizations** - Faster query construction (see [Performance](#performance)); connection pooling is left to the SDK, with sessions for isolation (see [Connections and pooling](#connections-and-pooling))
+- [ ] **Schema migrations** - Version control for database schemas
+>>>>>>> origin/main
 - [ ] **Documentation site** - Comprehensive guides and API reference
+
+## Performance
+
+Queries are built from immutable builders, and building and rendering one costs microseconds: a typical `select` with a `where`, `orderBy`, `fetch` and `return` builds and renders in about 10 µs, far below a network round trip. The library therefore does not cache rendered queries. To skip building altogether, build a query once and reuse it: builders are immutable, so a prebuilt query is safe to share and to execute repeatedly.
+
+The benchmarks in `benchmarks/` need no database. Run them with `bun run bench` (optionally a name filter, e.g. `bun run bench select`, and `--json file` to save the results).
 
 ## Development
 
@@ -1524,6 +2426,7 @@ bun run examples/demo.ts
 bun run test:unit          # Unit tests
 bun run test:integration   # Integration tests (requires SurrealDB)
 bun run type-check         # TypeScript type checking
+bun run bench              # Query construction benchmarks
 
 # Lint and format
 bun run qc   # Check for issues

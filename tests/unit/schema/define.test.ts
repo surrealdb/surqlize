@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { edge, t, table } from "../../../src";
+import { edge, expr, t, table } from "../../../src";
 import {
 	defineField,
 	defineSchema,
@@ -137,7 +137,7 @@ describe("DEFINE FIELD", () => {
 
 	test("carries DEFAULT ALWAYS", () => {
 		const schema = table("user", {
-			updatedAt: t.date().defaultAlways("time::now()"),
+			updatedAt: t.date().defaultAlways(expr("time::now()")),
 		});
 
 		expect(field(schema, "updatedAt")).toContain("DEFAULT ALWAYS time::now()");
@@ -392,7 +392,7 @@ describe("A whole schema", () => {
 	test("defines a declared id", () => {
 		const sql = defineSchema(
 			table("doc", {
-				id: t.uuid().default("rand::uuid::v7()"),
+				id: t.uuid().default(expr("rand::uuid::v7()")),
 				title: t.string(),
 			}),
 		).join("\n");

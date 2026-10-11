@@ -4,6 +4,7 @@ import { defineEvent } from "./event-ddl";
 import { type FlatField, flattenFields } from "./flatten";
 import { defineIndex } from "./index-ddl";
 import { printSurqlType } from "./print-type";
+import { fieldPath, ident, quote } from "./syntax";
 import type { TableDdl, TablePermissions } from "./table-ddl";
 
 /** Anything that can be rendered as a `DEFINE TABLE` plus its fields. */
@@ -34,7 +35,7 @@ export function defineField(
 	// SurrealDB errors with "The field 'x' already exists" rather than replacing,
 	// so changing a field means redefining it with OVERWRITE.
 	if (options.overwrite) parts.push("OVERWRITE");
-	parts.push(field.name, "ON TABLE", tableName);
+	parts.push(fieldPath(field.name), "ON TABLE", ident(tableName));
 	const ddl = field.ddl;
 
 	// FLEXIBLE follows the type — SurrealDB rejects it before with
@@ -45,7 +46,7 @@ export function defineField(
 	if (ddl.default !== undefined) {
 		parts.push(
 			ddl.default.always ? "DEFAULT ALWAYS" : "DEFAULT",
-			literal(ddl.default.value, ddl.default.literal),
+			literal(ddl.default.value, ddl.default.expression),
 		);
 	}
 
@@ -86,7 +87,7 @@ export function defineTable(
 	const ddl: Readonly<TableDdl> = schema.ddl;
 	const parts = ["DEFINE TABLE"];
 	if (options.overwrite) parts.push("OVERWRITE");
-	parts.push(schema.tb);
+	parts.push(ident(schema.tb));
 
 	if (schema instanceof EdgeSchema) {
 		parts.push(
@@ -128,21 +129,68 @@ export function defineSchema(
 	schema: DefinableSchema,
 	options: DefineOptions = {},
 ): string[] {
-	const statements = [defineTable(schema, options)];
+	return schemaStatements(schema, options).map((statement) => statement.sql);
+}
+
+/** What a statement defines. */
+export type StatementKind = "table" | "field" | "index" | "event";
+
+/** One `DEFINE` statement, and the thing it defines. */
+export interface SchemaStatement {
+	kind: StatementKind;
+	/**
+	 * The object it defines, stable across runs: the table (`user`), or the
+	 * field, index or event with its table (`user.address.city`, `post.items[*].k`).
+	 */
+	name: string;
+	/** The statement, ending with a semicolon. */
+	sql: string;
+}
+
+/**
+ * The statements {@link defineSchema} renders, each with what it defines, so
+ * that two generations can be compared by name.
+ *
+ * Computed fields (`TableSchema.computed()`) are left out: they have a
+ * statement of their own, rendered against an ORM.
+ */
+export function schemaStatements(
+	schema: DefinableSchema,
+	options: DefineOptions = {},
+): SchemaStatement[] {
+	const statements: SchemaStatement[] = [
+		{ kind: "table", name: schema.tb, sql: defineTable(schema, options) },
+	];
 	const declared = schema._fields;
+	const computed = new Set<string>(
+		"computedFields" in schema ? schema.computedFields : [],
+	);
 
 	for (const field of flattenFields(schema.fields)) {
 		if (isManagedBySurrealDB(schema, field.name, declared)) continue;
-		statements.push(defineField(schema.tb, field, options));
+		if (computed.has(field.name.split(/[.[]/)[0] as string)) continue;
+		statements.push({
+			kind: "field",
+			name: `${schema.tb}.${field.name}`,
+			sql: defineField(schema.tb, field, options),
+		});
 	}
 
 	// Indexes follow the fields they cover.
 	for (const [name, index] of Object.entries(schema.ddl.indexes ?? {})) {
-		statements.push(defineIndex(schema.tb, { name, ...index }, options));
+		statements.push({
+			kind: "index",
+			name: `${schema.tb}.${name}`,
+			sql: defineIndex(schema.tb, { name, ...index }, options),
+		});
 	}
 
 	for (const [name, event] of Object.entries(schema.ddl.events ?? {})) {
-		statements.push(defineEvent(schema.tb, { name, ...event }, options));
+		statements.push({
+			kind: "event",
+			name: `${schema.tb}.${name}`,
+			sql: defineEvent(schema.tb, { name, ...event }, options),
+		});
 	}
 
 	return statements;
@@ -248,52 +296,24 @@ function guard(rule: string): string {
 
 /** Render a table name, or a union of them, for an edge's `IN`/`OUT`. */
 function tableList(tables: string | readonly string[]): string {
-	return Array.isArray(tables) ? tables.join(" | ") : String(tables);
+	return (Array.isArray(tables) ? tables : [String(tables)])
+		.map(ident)
+		.join(" | ");
 }
 
 /**
- * Render a default value.
- *
- * Strings are ambiguous: `'active'` is a literal, but `time::now()` is an
- * expression that must not be quoted. Anything that looks like a call, a
- * variable, a block or a comparison is passed through untouched.
+ * Render a default value. A string is data and is quoted, unless it came from
+ * `expr()`, in which case it is SurrealQL and passes through untouched.
  */
-function literal(value: unknown, forceLiteral = false): string {
+function literal(value: unknown, expression = false): string {
 	if (typeof value === "string") {
-		return !forceLiteral && isExpression(value) ? value : quote(value, "'");
+		return expression ? value : quote(value, "'");
 	}
 	if (value === null) return "NULL";
 	if (value === undefined) return "NONE";
+	if (value instanceof Date) return `d'${value.toISOString()}'`;
 	if (Array.isArray(value) || typeof value === "object") {
 		return JSON.stringify(value);
 	}
 	return String(value);
-}
-
-/** Whether a string should be treated as SurrealQL rather than a literal. */
-function isExpression(value: string): boolean {
-	return (
-		value.includes("(") ||
-		value.startsWith("$") ||
-		value.startsWith("{") ||
-		value.startsWith("[")
-	);
-}
-
-/**
- * Quote a string for SurrealQL, escaping any embedded quotes.
- *
- * Single quotes are the default because that is how SurrealDB stores string
- * literals; emitting double quotes would make every commented field look
- * modified on the next diff.
- */
-function quote(value: string, mark = "'"): string {
-	// SurrealDB picks whichever quote avoids escaping: a string holding an
-	// apostrophe is stored double-quoted, and vice versa. Matching that keeps a
-	// declared default equal to the stored one.
-	if (mark === "'" && value.includes("'") && !value.includes('"')) {
-		return `"${value}"`;
-	}
-
-	return `${mark}${value.split(mark).join(`\\${mark}`)}${mark}`;
 }

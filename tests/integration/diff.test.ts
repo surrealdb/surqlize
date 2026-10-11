@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { edge, t, table } from "../../src";
+import { edge, expr, t, table } from "../../src";
 import { diff } from "../../src/migrator/diff";
 import { introspect } from "../../src/migrator/introspect";
 import type { DefinableSchema } from "../../src/schema/ddl/define";
@@ -39,7 +39,7 @@ describe("Diffing a schema against a database", () => {
 		const user = table("user", {
 			name: t.string().assert("string::len($value) > 2"),
 			age: t.int().default(0),
-			createdAt: t.date().defaultAlways("time::now()"),
+			createdAt: t.date().defaultAlways(expr("time::now()")),
 			bio: t.option(t.string()),
 			tags: t.array(t.string()),
 			address: t.object({ street: t.string(), city: t.string() }),
@@ -58,7 +58,7 @@ describe("Diffing a schema against a database", () => {
 		const user = table("user", { name: t.string() });
 		const post = table("post", { title: t.string() });
 		const authored = edge("user", "authored", "post", {
-			at: t.date().default("time::now()"),
+			at: t.date().default(expr("time::now()")),
 		}).enforced();
 
 		await migrate([user, post, authored]);

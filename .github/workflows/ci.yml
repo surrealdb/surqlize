@@ -64,6 +64,9 @@ jobs:
       - name: Run TypeScript type check
         run: bun run type-check
 
+      - name: Build and validate bundled type declarations
+        run: bun run build
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -96,11 +99,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `v3.1.0` is not a published release (latest stable is the 3.0.x line;
-        # 3.1.x is nightly-only and `setup-surreal` can only install release
-        # tags or `latest`), so the matrix spans the earliest 3.x stable, the
-        # newest 3.x stable, and `latest`.
-        surrealdb_version: [v3.0.0, v3.0.5, latest]
+        # The newest patch of each 3.x minor. Bump an entry when a newer patch
+        # ships, and add one when a new minor does. 3.1.0 is where transaction
+        # conflicts become a structured error that `.retry()` recognises by default.
+        surrealdb_version: [v3.0.5, v3.1.6, v3.2.5, v3.3.2]
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -140,9 +142,15 @@ jobs:
           SURREAL_URL: ws://localhost:8000
 
   smoke-tests:
-    name: Smoke Tests
+    name: Smoke Tests (TypeScript ${{ matrix.typescript }})
     runs-on: ubuntu-latest
     needs: [unit-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        # The `typescript` peer range of both surqlize and the `surrealdb` SDK.
+        # Installing it unpinned would resolve to a release outside that range.
+        typescript: ["5", "6"]
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -183,14 +191,14 @@ jobs:
           cp surqlize-*.tgz /tmp/smoke-test/
           cd /tmp/smoke-test
           npm init -y
-          npm install surqlize-*.tgz surrealdb typescript
+          npm install surqlize-*.tgz surrealdb@^2.1.0 typescript@${{ matrix.typescript }}
 
       - name: Copy smoke test scripts
         run: cp tests/smoke/* /tmp/smoke-test/
 
       - name: Smoke test - TypeScript declarations
         working-directory: /tmp/smoke-test
-        run: npx tsc --noEmit --skipLibCheck --module nodenext --moduleResolution nodenext type-check.mts
+        run: npx tsc --noEmit --skipLibCheck false --lib esnext,dom --module nodenext --moduleResolution nodenext type-check.mts
 
       - name: Smoke test - Node.js ESM
         run: node /tmp/smoke-test/node-esm.mjs

@@ -1,6 +1,14 @@
-import { Decimal, Duration, Geometry, Range, RecordId, Uuid } from "surrealdb";
+import {
+	Decimal,
+	Duration,
+	Geometry,
+	GeometryPoint,
+	Range,
+	RecordId,
+	Uuid,
+} from "surrealdb";
 import { TypeParseError } from "../error";
-import type { FieldDdl, OnDeleteAction } from "./ddl";
+import type { FieldDdl, FieldDefault, OnDeleteAction } from "./ddl";
 
 /** Matches strings usable as a bare SurrealQL identifier in an idiom path. */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -20,6 +28,30 @@ function pathSegment(prop: string | number): string {
 	return `[${JSON.stringify(prop)}]`;
 }
 
+/**
+ * A raw SurrealQL expression (e.g. `time::now()`), rendered verbatim rather
+ * than bound as a parameter. Use {@link expr} to create one. The text is
+ * interpolated into the query as-is, so it must come from trusted code (such as
+ * a schema definition), never from user input.
+ */
+export class SurqlExpression {
+	constructor(readonly sql: string) {}
+}
+
+/** Wrap a trusted SurrealQL expression for use as a field {@link AbstractType.default | default}. */
+export function expr(sql: string): SurqlExpression {
+	return new SurqlExpression(sql);
+}
+
+/**
+ * A field default: a static value, a function producing one (called each time
+ * a query is built), or a {@link SurqlExpression} evaluated by SurrealDB.
+ */
+export type DefaultValue<T = unknown> = T | (() => T) | SurqlExpression;
+
+/** Marks a type that carries a default, making it optional on create. */
+export type HasDefault = { readonly _default: DefaultValue };
+
 export abstract class AbstractType<T = unknown> {
 	abstract readonly name: string;
 	abstract readonly expected: string | [string, string, ...string[]];
@@ -27,6 +59,31 @@ export abstract class AbstractType<T = unknown> {
 	infer = undefined as unknown as T;
 	accept = undefined as unknown as T;
 	abstract validate(value: unknown): value is T;
+
+	/** The default applied on create when the field is absent. See {@link default}. */
+
+	/**
+	 * Give this field a default, applied by CREATE/INSERT when the field is
+	 * omitted (or `undefined`). The field becomes optional in create input while
+	 * its output type is unchanged. Accepts a static value, a function (e.g.
+	 * `() => new Date()`, evaluated per query), or an {@link expr} SurrealQL
+	 * expression evaluated by the database.
+	 *
+	 * Returns a copy; the original type is left untouched.
+	 */
+	default<Self extends AbstractType>(
+		this: Self,
+		value: DefaultValue<Self["infer"]>,
+	): Self & HasDefault {
+		// The same default is what the client fills in and what `DEFINE FIELD`
+		// carries, except a function, which only the client can run.
+		const copy = patchDdl(this, (d) => {
+			d.default = fieldDefault(value, false);
+			if (d.default === undefined) delete d.default;
+		}) as Self & HasDefault;
+		(copy as { _default?: DefaultValue })._default = value;
+		return copy;
+	}
 
 	/**
 	 * Schema metadata used to generate `DEFINE FIELD`. Empty unless one of the
@@ -74,29 +131,15 @@ export abstract class AbstractType<T = unknown> {
 		});
 	}
 
-	/** Set a `DEFAULT` value, applied when the field is absent on create. */
-	default<S extends AbstractType>(this: S, value: unknown): S {
-		return patchDdl(this, (d) => {
-			d.default = { value, always: false };
-		});
-	}
-
 	/**
-	 * Set a `DEFAULT` that is always data, even if it looks like SurrealQL.
-	 *
-	 * `default("time::now()")` calls the function, because a string carrying
-	 * parentheses is read as an expression. This stores the characters instead.
+	 * Set a `DEFAULT ALWAYS` value, re-applied on every update. As with
+	 * {@link default}, a string is data and SurrealQL is written with {@link expr}:
+	 * `t.date().defaultAlways(expr("time::now()"))`.
 	 */
-	defaultLiteral<S extends AbstractType>(this: S, value: string): S {
-		return patchDdl(this, (d) => {
-			d.default = { value, always: false, literal: true };
-		});
-	}
-
-	/** Set a `DEFAULT ALWAYS` value, re-applied on every update. */
 	defaultAlways<S extends AbstractType>(this: S, value: unknown): S {
 		return patchDdl(this, (d) => {
-			d.default = { value, always: true };
+			d.default = fieldDefault(value, true);
+			if (d.default === undefined) delete d.default;
 		});
 	}
 
@@ -170,6 +213,18 @@ export abstract class AbstractType<T = unknown> {
 			d.previousNames = [...(d.previousNames ?? []), ...names];
 		});
 	}
+}
+
+/** The `DEFAULT` clause a default value stands for, or `undefined` for one the database cannot run. */
+function fieldDefault(
+	value: unknown,
+	always: boolean,
+): FieldDefault | undefined {
+	if (typeof value === "function") return undefined;
+	if (value instanceof SurqlExpression) {
+		return { value: value.sql, always, expression: true };
+	}
+	return { value, always };
 }
 
 /** Clone `type`, applying `patch` to a copy of its DDL metadata. */
@@ -301,6 +356,34 @@ export class DateType extends AbstractType<Date> {
 	}
 }
 
+export class DurationType extends AbstractType<Duration> {
+	name = "duration" as const;
+	expected = "Duration";
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof Duration;
+	}
+
+	/**
+	 * Return an existing SurrealDB `Duration` instance.
+	 *
+	 * @throws {TypeParseError} If `value` is not a `Duration`.
+	 */
+	parse(value: unknown): this["infer"] {
+		if (value instanceof Duration) return value;
+		throw new TypeParseError(this.name, this.expected, value);
+	}
+}
+
+export class PointType extends AbstractType<GeometryPoint> {
+	name = "point" as const;
+	expected = "GeometryPoint";
+
+	validate(value: unknown): value is this["infer"] {
+		return value instanceof GeometryPoint;
+	}
+}
+
 export class UuidType extends AbstractType<Uuid> {
 	name = "uuid" as const;
 	expected = "Uuid";
@@ -406,7 +489,8 @@ export class GraphType<Tb extends string = string> extends AbstractType<
 
 export type ObjectTypeInner = Record<string, AbstractType>;
 export class ObjectType<
-	T extends ObjectTypeInner = ObjectTypeInner,
+	// biome-ignore lint/suspicious/noExplicitAny: a bare `ObjectType` must also match object types whose inferred value is a class instance (see `table()` linked to a class)
+	T extends ObjectTypeInner = any,
 > extends AbstractType<
 	{
 		[K in keyof T]: T[K]["infer"];
@@ -650,16 +734,6 @@ export class DecimalType extends AbstractType<Decimal | number> {
 
 	validate(value: unknown): value is this["infer"] {
 		return value instanceof Decimal || typeof value === "number";
-	}
-}
-
-/** A span of time. */
-export class DurationType extends AbstractType<Duration> {
-	name = "duration" as const;
-	expected = "Duration";
-
-	validate(value: unknown): value is this["infer"] {
-		return value instanceof Duration;
 	}
 }
 

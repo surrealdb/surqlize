@@ -1,5 +1,10 @@
-import type { SurrealSession } from "surrealdb";
-import { RecordId, type RecordIdValue, Uuid } from "surrealdb";
+import {
+	Duration,
+	GeometryPoint,
+	RecordId,
+	type RecordIdValue,
+	Uuid,
+} from "surrealdb";
 import { OrmError } from "../error";
 import type { Query } from "../query/abstract";
 import { ApiClient } from "../query/api";
@@ -9,6 +14,7 @@ import { DeleteQuery } from "../query/delete";
 import { InsertQuery } from "../query/insert";
 import { LiveQuery } from "../query/live";
 import { RelateQuery } from "../query/relate";
+import type { SurrealConnection } from "../query/request";
 import { SelectQuery } from "../query/select";
 import type { Transaction } from "../query/transaction";
 import { UpdateQuery } from "../query/update";
@@ -18,12 +24,14 @@ import {
 	type ArrayType,
 	type BoolType,
 	type DateType,
+	type DurationType,
 	type GraphType,
 	type NeverType,
 	type NoneType,
 	type NullType,
 	type NumberType,
 	type ObjectType,
+	type PointType,
 	type RecordType,
 	type StringType,
 	t,
@@ -37,6 +45,7 @@ import {
 	type WorkableContext,
 } from "../utils";
 import { type Actionable, actionable } from "../utils/actionable";
+import { checkArgs, throwIfInvalid } from "../validation.ts";
 import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
 import type { FunctionCallable, InferParams } from "./function";
@@ -59,6 +68,12 @@ export type MappedTables<T extends AnyTable[]> = {
  * container — tables are still addressed by their `tb` name in queries.
  */
 export type SchemaMap = Record<string, AnyTable>;
+
+/** Options an {@link Orm} is created with. */
+export type OrmOptions = {
+	/** Validate written data against the table schema before sending it. */
+	validate?: boolean;
+};
 
 // Convert the union of a schema map's values into a tuple so the object form of
 // `orm()` resolves to exactly the same `Orm<[...]>` type as the rest-param form.
@@ -115,23 +130,29 @@ export type ValueType<V> =
 						? BoolType
 						: V extends Date
 							? DateType
-							: V extends Uuid
-								? UuidType
-								: V extends null
-									? NullType
-									: V extends undefined
-										? NoneType
-										: V extends readonly unknown[]
-											? ValueArrayType<V>
-											: V extends Record<string, unknown>
-												? ObjectType<ValueObjectFields<V>>
-												: AbstractType;
+							: V extends Duration
+								? DurationType
+								: V extends Uuid
+									? UuidType
+									: V extends GeometryPoint
+										? PointType
+										: V extends null
+											? NullType
+											: V extends undefined
+												? NoneType
+												: V extends readonly unknown[]
+													? ValueArrayType<V>
+													: V extends Record<string, unknown>
+														? ObjectType<ValueObjectFields<V>>
+														: AbstractType;
 
 function typeFromValue(value: unknown): AbstractType {
 	if (isWorkable(value)) return value[__type];
 	if (value instanceof RecordId) return t.record(String(value.table));
 	if (value instanceof Date) return t.date();
+	if (value instanceof Duration) return t.duration();
 	if (value instanceof Uuid) return t.uuid();
+	if (value instanceof GeometryPoint) return t.point();
 	if (value === null) return t.null();
 	if (value === undefined) return t.none();
 
@@ -169,11 +190,40 @@ function typeFromValue(value: unknown): AbstractType {
  * calling the constructor directly.
  */
 export class Orm<T extends AnyTable[] = AnyTable[]> {
+	/**
+	 * Whether queries check the data they write against the table schema before
+	 * sending it. Off by default; see {@link Orm.validated}.
+	 */
+	readonly validation: boolean;
+
 	constructor(
-		public readonly surreal: SurrealSession,
+		public readonly surreal: SurrealConnection,
 		public readonly tables: MappedTables<T>,
 		public readonly lookup: CreateSchemaLookup<T>,
-	) {}
+		options: OrmOptions = {},
+	) {
+		this.validation = options.validate ?? false;
+	}
+
+	/**
+	 * A view of this ORM in which every query that writes data (create, insert,
+	 * update, upsert, relate) first checks it against the table schema, and
+	 * throws a {@link ValidationError} listing every failing field instead of
+	 * sending it. Like {@link Orm.withSignal}, it shares the connection and
+	 * changes nothing else. A single query can still opt out with
+	 * `.validated(false)`.
+	 *
+	 * @example
+	 * ```ts
+	 * const db = orm(surreal, user).validated();
+	 * await db.create("user").content({ name: 42 }); // throws ValidationError
+	 * ```
+	 */
+	validated(enabled = true): Orm<T> {
+		return new Orm<T>(this.surreal, this.tables, this.lookup, {
+			validate: enabled,
+		});
+	}
 
 	/**
 	 * Wrap a raw JavaScript value as an actionable SurrealQL expression. Record
@@ -192,6 +242,30 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 				value as ValueType<V>["infer"],
 			),
 		);
+	}
+
+	/**
+	 * Create (or overwrite) the computed fields of the registered tables in the
+	 * database, with `DEFINE FIELD OVERWRITE … COMPUTED …` (SurrealDB 3.0+). Pass
+	 * table names to restrict it to those tables. Safe to run repeatedly.
+	 *
+	 * @example
+	 * ```ts
+	 * await db.defineComputed();
+	 * ```
+	 */
+	async defineComputed(
+		...tables: (keyof this["tables"] & string)[]
+	): Promise<void> {
+		const names = tables.length > 0 ? tables : Object.keys(this.tables);
+		const statements = names.flatMap((name) => {
+			const schema = (this.tables as Record<string, AnyTable>)[name];
+			return schema instanceof TableSchema
+				? schema.computedStatements(this)
+				: [];
+		});
+		if (statements.length === 0) return;
+		await this.surreal.query(`${statements.join(";\n")};`);
 	}
 
 	/**
@@ -528,6 +602,13 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		args?: InferParams<P>,
 	): Promise<R["infer"]> {
 		const schema = fn.schema;
+		if (this.validation) {
+			throwIfInvalid(
+				checkArgs(schema.params, args ?? []),
+				undefined,
+				`arguments for fn::${schema.name}`,
+			);
+		}
 		const result = await this.surreal.run(
 			`fn::${schema.name}`,
 			args as unknown[] | undefined,
@@ -554,12 +635,44 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 	 * ```
 	 */
 	api<E extends ApiEndpointSchema[]>(...endpoints: E) {
-		return new ApiClient(this.surreal, endpoints);
+		return new ApiClient(this.surreal, endpoints, this.validation);
 	}
 
 	/**
-	 * Combine multiple queries into a single atomic batch operation wrapped in
-	 * `BEGIN TRANSACTION; ...; COMMIT TRANSACTION;`.
+	 * Create a view of this ORM in which every query is abandoned when `signal`
+	 * aborts, which is how the work of a request handler is tied to the signal of
+	 * the request without passing it to every query:
+	 *
+	 * ```ts
+	 * const scoped = db.withSignal(request.signal);
+	 * const users = await scoped.select("user");
+	 * ```
+	 *
+	 * The view shares the connection and session of this ORM and changes neither,
+	 * so it is cheap to make one per request. Batches, transactions and live
+	 * subscriptions made through it are bound to the signal as well; a live
+	 * subscription is killed when the signal aborts.
+	 *
+	 * Aborting means "stop waiting", and nothing more: a write that was already
+	 * sent may or may not have been applied.
+	 */
+	withSignal(signal: AbortSignal | undefined): Orm<T> {
+		return new Orm<T>(
+			this.surreal.withSignal(signal),
+			this.tables,
+			this.lookup,
+			{ validate: this.validation },
+		);
+	}
+
+	/**
+	 * Combine multiple queries into a single request that is applied atomically:
+	 * either every query takes effect or none does. Resolves to a tuple with the
+	 * result of each query.
+	 *
+	 * The batch runs as a stateless transaction, so it works over HTTP as well as
+	 * WebSockets, and can be configured with `.retry()`, `.signal()` and
+	 * `.requestTimeout()`.
 	 *
 	 * @param queries - The queries to batch together.
 	 * @returns A {@link BatchQuery} that can be awaited.
@@ -598,7 +711,9 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		// (Transaction extends Orm)
 		const { Transaction: Tx } = await import("../query/transaction");
 		const surrealTx = await this.surreal.beginTransaction();
-		const tx = new Tx<T>(surrealTx, this.tables, this.lookup);
+		const tx = new Tx<T>(surrealTx, this.tables, this.lookup, {
+			validate: this.validation,
+		});
 
 		if (!cb) return tx;
 
@@ -635,7 +750,8 @@ function isSchemaMap(value: unknown): value is SchemaMap {
  * object — both produce an identical, fully typed ORM. Tables are always
  * addressed by their `tb` name in queries, regardless of how they are passed.
  *
- * @param surreal - An active SurrealDB session.
+ * @param surreal - An active SurrealDB session, or a request scope made with
+ *   `withSignal()`.
  * @param tables - One or more {@link TableSchema} or {@link EdgeSchema} definitions.
  * @returns An {@link Orm} instance with query builders scoped to the provided schemas.
  *
@@ -658,15 +774,15 @@ function isSchemaMap(value: unknown): value is SchemaMap {
  * ```
  */
 export function orm<T extends AnyTable[]>(
-	surreal: SurrealSession,
+	surreal: SurrealConnection,
 	...tables: T
 ): Orm<T>;
 export function orm<S extends SchemaMap>(
-	surreal: SurrealSession,
+	surreal: SurrealConnection,
 	schema: S,
 ): Orm<SchemaMapTables<S>>;
 export function orm(
-	surreal: SurrealSession,
+	surreal: SurrealConnection,
 	...args: AnyTable[] | [SchemaMap]
 ): Orm {
 	const tables: AnyTable[] =
