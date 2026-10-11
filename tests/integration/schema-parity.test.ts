@@ -203,6 +203,12 @@ const cases: Case[] = [
 		bad: ["its", OMIT],
 	},
 	{
+		name: "set<string>",
+		type: t.set(t.string()),
+		ok: [new Set(["a", "b"]), new Set()],
+		bad: [["a", "b"], [], "a", null, {}, new Set([1]), OMIT],
+	},
+	{
 		name: "tuple with an object",
 		type: t.array([t.string(), t.object({ n: t.number() })]),
 		ok: [["a", { n: 1 }]],
@@ -223,7 +229,13 @@ const explain = (
 const show = (value: unknown): string =>
 	value === OMIT
 		? "(omitted)"
-		: JSON.stringify(value, (_, v) => (typeof v === "bigint" ? String(v) : v));
+		: JSON.stringify(value, (_, v) =>
+				typeof v === "bigint"
+					? String(v)
+					: v instanceof Set
+						? { Set: [...v] }
+						: v,
+			);
 
 describe("generated schema parity (integration)", () => {
 	const getTestDb = withTestDb({ perTest: true });
@@ -241,10 +253,6 @@ describe("generated schema parity (integration)", () => {
 			return false;
 		}
 	}
-
-	// The database wants, and returns, a JS `Set` for `set<T>`; `t.set()` models an
-	// array, so its inferred type and its validation disagree with the database.
-	test.skip("set<string>: t.set() models an array, the database a Set", () => {});
 
 	for (const c of cases) {
 		test(`${c.name}: the database and the client agree`, async () => {

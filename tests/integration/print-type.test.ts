@@ -37,6 +37,7 @@ describe("Generated type expressions are valid SurrealQL", () => {
 		["array (bounded)", t.array(t.int(), 10)],
 		["set", t.set(t.string())],
 		["set (bounded)", t.set(t.string(), 5)],
+		["set (of objects)", t.set(t.object({ a: t.string() }))],
 		["record (single)", t.record("user")],
 		["record (multi)", t.record(["post", "user"])],
 		["record (any)", t.record()],

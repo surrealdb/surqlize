@@ -149,6 +149,9 @@ const user = table("user", {
   // Mixed-type arrays (tuples)
   mixedData: t.array([t.string(), t.number(), t.bool()]),
 
+  // Sets: a JavaScript `Set` (not an array), stored as `set<string>`
+  labels: t.set(t.string()), // new Set(["a", "b"])
+
   // Optional fields
   bio: t.option(t.string()),
   
@@ -1193,15 +1196,17 @@ await Bun.write("database/schema/surqlize.surql", toSurql(schema));
 | `t.option(x)` | `option<x>` |
 | `t.record("user")`, `t.record(["a", "b"])`, `t.record()` | `record<user>`, `record<a \| b>`, `record` |
 | `t.array(x)`, `t.array([x, y])` | `array<x>`, `[x, y]` |
+| `t.set(x)`, `t.set(x, max)` | `set<x>`, `set<x, max>` |
 | `t.literal("a")`, `t.union([…])` | `'a'`, `a \| b` |
 | `t.object({ … })` | `object`, with each field defined as `parent.field` |
 
 - **Tables are `SCHEMAFULL` by default**: the database rejects a field the schema does not declare. Call `.schemaless()` on a table to keep fields it does not declare, as the client-side validation does.
 - **Defaults.** A static value or an `expr()` becomes `DEFAULT`; a string is always data, so `expr("time::now()")` calls the function and `"time::now()"` stores the text. A default that is a function (`() => new Date()`) can only run on the client, so it is left out of the statement and listed in `skipped` with the reason.
 - **Objects** are defined field by field, which lets them carry defaults, through options and arrays (`items[*].name`, `grid[*][*].v`). An object inside a union or a tuple is written out as a literal object type (`{ kind: 'a', n: number }`), which the database also holds to its exact keys.
+- **Sets.** `t.set(x)` is a JavaScript `Set`, not an array: it infers `Set<…>`, accepts and returns `Set` instances, and rejects a plain array, which is what the database does for `set<x>`. It has the `set::` functions (`add`, `union`, `len`, …), not the `array::` ones. `t.set(t.object({ … }))` defines its fields as `parent[*].field`, as an array does.
 - **Names** that are not plain identifiers are escaped (`⟨order-item⟩`).
 
-Integration tests apply the statements to a real server and check that it accepts and rejects the same values as the client-side types, for each mapping above. `t.set()` is the one known exception: the database takes and returns a JavaScript `Set`, and the type models an array.
+Integration tests apply the statements to a real server and check that it accepts and rejects the same values as the client-side types, for each mapping above.
 
 ## Migrations
 

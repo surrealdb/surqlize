@@ -87,6 +87,9 @@ describe("Generated and stored definitions canonicalise alike", () => {
 			table("colls", {
 				tags: t.array(t.string()),
 				uniq: t.set(t.string()),
+				capped: t.set(t.int(), 3),
+				maybeSet: t.option(t.set(t.string())),
+				setOfObjects: t.set(t.object({ name: t.string() })),
 				one: t.record("user"),
 				many: t.record(["post", "user"]),
 				anyLink: t.record(),
