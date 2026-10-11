@@ -157,9 +157,13 @@ describe("Typed permissions (integration)", () => {
 			.query<[string, string]>("RETURN session::ns(); RETURN session::db()")
 			.then((r) => [r[0], r[1]] as const);
 		await anonymous.use({ namespace: ns, database: db });
-		await anonymous.query(
-			"CREATE note:d SET title = 'D', owner = user:alice, secret = 's'",
-		);
+		// A server that does not allow guests (the default) refuses the session
+		// outright, and one that does leaves it to the create rule. Either way the
+		// record must not be created.
+		await anonymous
+			.query("CREATE note:d SET title = 'D', owner = user:alice, secret = 's'")
+			.collect()
+			.catch(() => undefined);
 		expect(await titleOf(surreal, "note:d")).toBeUndefined();
 	});
 
