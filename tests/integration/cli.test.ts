@@ -96,13 +96,6 @@ describe("Reporting for itself", () => {
 		expect(run.code).not.toBe(0);
 		expect(run.output).toContain("frobnicate");
 	});
-
-	test("fails on an invalid flag value, saying what is allowed", async () => {
-		const run = await sur("mermaid", "--level", "wat");
-
-		expect(run.code).toBe(1);
-		expect(run.output).toContain("minimal");
-	});
 });
 
 describe("Commands that need no database", () => {
@@ -111,35 +104,6 @@ describe("Commands that need no database", () => {
 
 		expect(run.code).toBe(0);
 		expect(run.output).toContain("user");
-	});
-
-	test("mermaid writes a diagram to a file", async () => {
-		const run = await sur("mermaid");
-
-		expect(run.code).toBe(0);
-
-		const diagram = await readFile(
-			join(dir, "schema-diagram.mermaid"),
-			"utf-8",
-		);
-		expect(diagram.startsWith("erDiagram")).toBe(true);
-		expect(diagram).toContain("user {");
-	});
-
-	test("mermaid --stdout prints instead of writing", async () => {
-		const run = await sur("mermaid", "--stdout", "-o", "unwanted.mermaid");
-
-		expect(run.stdout.startsWith("erDiagram")).toBe(true);
-		expect(existsSync(join(dir, "unwanted.mermaid"))).toBe(false);
-	});
-
-	test("mermaid --level detailed carries more than the default", async () => {
-		const minimal = await sur("mermaid", "--stdout");
-		const detailed = await sur("mermaid", "--stdout", "--level", "detailed");
-
-		expect(detailed.stdout.length).toBeGreaterThanOrEqual(
-			minimal.stdout.length,
-		);
 	});
 
 	test("reports a missing schema file rather than crashing", async () => {

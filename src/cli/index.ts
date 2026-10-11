@@ -3,8 +3,6 @@ import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { Surreal } from "surrealdb";
 import { applied, migrate, plan, rollback } from "../migrator";
-import type { DefinableSchema } from "../schema/ddl/define";
-import { type DiagramLevel, mermaid } from "../schema/mermaid";
 import { availableEnvironments, type CliConfig, loadConfig } from "./config";
 import { fail, info, printStatements, style, success, warn } from "./output";
 import { type Definition, loadDefinitions } from "./schema";
@@ -23,7 +21,6 @@ ${style.bold("Commands")}
   rollback    Undo the most recent migration
   validate    Load the schema and report what it declares, without connecting
   config      Show the settings in force, and the environments available
-  mermaid     Draw an ER diagram of the schema
 
 ${style.bold("Options")}
   -u, --url <url>              SurrealDB address
@@ -33,9 +30,6 @@ ${style.bold("Options")}
   -p, --password <pass>        Password
   -s, --schema <path>          Path to the schema module
   -e, --env <name>             Use a named environment from the config file
-      --level <minimal|detailed>  How much detail a diagram carries
-  -o, --output <path>          Where to write a diagram (default schema-diagram.mermaid)
-      --stdout                 Print the diagram instead of writing it
       --remove-missing         Drop tables and fields the schema no longer declares
       --yes                    Do not ask for confirmation
   -h, --help                   Show this message
@@ -135,15 +129,6 @@ async function dispatch(
 			return validateCommand(
 				await loadConfig(overrides, process.cwd(), environment),
 			);
-		case "mermaid":
-			return mermaidCommand(
-				await loadConfig(overrides, process.cwd(), environment),
-				{
-					level: flags.level as string | undefined,
-					output: flags.output as string | undefined,
-					stdout: flags.stdout === true,
-				},
-			);
 		case "plan":
 		case "diff":
 			return planCommand(
@@ -199,11 +184,6 @@ function names(definitions: Definition[]): string[] {
 	return definitions.map((definition) =>
 		"tb" in definition ? definition.tb : definition.name,
 	);
-}
-
-/** Whether a definition is a table or edge, which is all a diagram draws. */
-function isDefinable(definition: Definition): definition is DefinableSchema {
-	return "tb" in definition;
 }
 
 /** Connect a session, pointed at the configured namespace and database. */
@@ -312,43 +292,6 @@ async function configCommand(
 			: "\n  No environments defined",
 	);
 
-	return 0;
-}
-
-async function mermaidCommand(
-	config: CliConfig,
-	options: { level?: string; output?: string; stdout: boolean },
-): Promise<number> {
-	if (
-		options.level &&
-		options.level !== "minimal" &&
-		options.level !== "detailed"
-	) {
-		fail(`--level must be "minimal" or "detailed", not "${options.level}"`);
-		return 1;
-	}
-
-	const definitions = await loadDefinitions(config.schema);
-	const tables = definitions.filter(isDefinable);
-
-	const diagram = mermaid(tables, {
-		level: (options.level as DiagramLevel | undefined) ?? "minimal",
-	});
-
-	if (options.stdout) {
-		process.stdout.write(`${diagram}\n`);
-		return 0;
-	}
-
-	const path = options.output ?? "schema-diagram.mermaid";
-	await writeFile(path, `${diagram}\n`, "utf-8");
-
-	success(`Wrote ${path}`);
-	info(
-		style.dim(
-			"Paste it into any Mermaid viewer, or a Markdown ```mermaid block",
-		),
-	);
 	return 0;
 }
 

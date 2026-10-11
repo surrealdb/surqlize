@@ -46,8 +46,8 @@ A type-safe TypeScript ORM for SurrealDB that provides full type inference, a fl
 - **Graph relationships** - First-class support for edges and graph traversal
 - **Rich type system** - Objects, arrays, unions, literals, options, and more
 - **SurrealDB functions** - Integrated string, array, and record operations
-- **Schema DDL** - Generate `DEFINE` statements from the same schema that types your queries ([reference](README_SCHEMA.md))
-- **Migrations** - Diff a schema against a live database and converge it, with `sur plan` / `migrate` / `rollback` ([reference](README_MIGRATIONS.md))
+- **Schema DDL** - Generate `DEFINE` statements from the same schema that types your queries
+- **Migrations** - Diff a schema against a live database and converge it, with `sur plan` / `migrate` / `rollback`
 
 ## Installation
 
@@ -100,10 +100,6 @@ type Result = t.infer<typeof query>;
 ```
 
 ## Schema definition
-
-> **[README_SCHEMA.md](README_SCHEMA.md)** is the exhaustive reference — every
-> declaration and modifier, and the SurrealQL each one generates. This section
-> is the tour; that is the lookup table.
 
 ### Tables
 
@@ -1509,7 +1505,7 @@ This project is in active development. Planned features include:
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
 - [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [ ] **Performance optimizations** - Query caching, connection pooling
-- [x] **Schema migrations** - Declare the schema, diff it against the database, and converge — see [README_MIGRATIONS.md](README_MIGRATIONS.md)
+- [x] **Schema migrations** - Declare the schema, diff it against the database, and converge
 - [ ] **Documentation site** - Comprehensive guides and API reference
 
 ## Development
