@@ -270,6 +270,39 @@ describe("Typed permissions converge (integration)", () => {
 		expect(await applyTwice([user, probe])).toEqual([]);
 	});
 
+	test("string values of every shape", async () => {
+		// SurrealDB picks the quote mark that needs the fewest escapes, so each
+		// of these is stored differently from the way a naive writer would say it.
+		const values = [
+			"plain",
+			"it's",
+			'say "hi"',
+			`both ' and "`,
+			"back\\slash",
+			'a \\" mix',
+			"new\nline",
+			"tab\t",
+			"café ☃",
+		];
+		const probes = values.map((value, i) =>
+			table(`literal${i}`, { title: t.string() }).permissions({
+				select: where((row) => row.title.eq(value)),
+			}),
+		);
+		expect(await applyTwice(probes)).toEqual([]);
+	});
+
+	test("a negated group", async () => {
+		const probe = table("probe", { n: t.int() }).permissions({
+			select: where((row) => not(or(row.n.eq(1), row.n.eq(2)))),
+			create: where((row) => not(and(row.n.eq(1), row.n.eq(2)))),
+			update: where((row) =>
+				and(row.n.eq(0), not(or(row.n.eq(1), row.n.eq(2)))),
+			),
+		});
+		expect(await applyTwice([probe])).toEqual([]);
+	});
+
 	test("a rule written as a string, beside a typed one", async () => {
 		const probe = table("probe", { owner: t.record("user") }).permissions({
 			select: "$auth.id = owner",

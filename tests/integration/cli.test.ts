@@ -55,14 +55,19 @@ export const user = table("user", {
 });
 
 /** Run `surqlize` with `args` in the temp directory. */
-async function sur(...args: string[]): Promise<Run> {
+function sur(...args: string[]): Promise<Run> {
+	return surIn("cli", ...args);
+}
+
+/** Run `surqlize` against the database `database` of the test namespace. */
+async function surIn(database: string, ...args: string[]): Promise<Run> {
 	const proc = Bun.spawn(["bun", CLI, ...args], {
 		cwd: dir,
 		env: {
 			...process.env,
 			SURREAL_URL: URL_,
 			SURREAL_NAMESPACE: namespace,
-			SURREAL_DATABASE: "cli",
+			SURREAL_DATABASE: database,
 		},
 		stdout: "pipe",
 		stderr: "pipe",
@@ -119,6 +124,60 @@ describe("Commands that need no database", () => {
 
 		expect(run.code).not.toBe(0);
 		expect(run.output).toContain("nope.ts");
+	});
+});
+
+describe("Typed permissions", () => {
+	test("a plan after a migration finds nothing to do", async () => {
+		await writeFile(
+			join(dir, "guarded.ts"),
+			`import { authenticatedAs, or, t, table, where } from "${resolve(import.meta.dir, "../../dist/index.js")}";
+
+const user = table("user", { role: t.string() });
+const { where: asUser } = authenticatedAs(user);
+
+export const post = table("post", {
+  owner: t.record("user"),
+  secret: t.string().permissions({
+    select: where((row, { auth }) => row.owner.eq(auth.id)),
+    update: where((_row, { value }) => value.ne("forbidden")),
+  }),
+}).permissions({
+  select: "full",
+  update: asUser((row, { auth }) => or(row.owner.eq(auth.id), auth.role.eq("admin"))),
+  delete: "none",
+});
+export { user };
+`,
+			"utf-8",
+		);
+
+		const planned = await surIn(
+			"permissions",
+			"plan",
+			"--schema",
+			"./guarded.ts",
+		);
+		expect(planned.output).toContain(
+			"FOR update WHERE $this.owner = $auth.id OR $auth.role = 'admin'",
+		);
+
+		const applied = await surIn(
+			"permissions",
+			"migrate",
+			"--schema",
+			"./guarded.ts",
+		);
+		expect(applied.code).toBe(0);
+
+		const again = await surIn(
+			"permissions",
+			"plan",
+			"--schema",
+			"./guarded.ts",
+		);
+		expect(again.code).toBe(0);
+		expect(again.output).toContain("nothing to do");
 	});
 });
 

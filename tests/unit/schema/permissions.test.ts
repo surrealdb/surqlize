@@ -138,7 +138,7 @@ describe("typed field permissions", () => {
 		});
 
 		expect(field(post, "secret")).toBe(
-			'DEFINE FIELD secret ON TABLE post TYPE string PERMISSIONS FOR select WHERE $this.owner = $auth.id, FOR create FULL, FOR update WHERE $value != "x";',
+			"DEFINE FIELD secret ON TABLE post TYPE string PERMISSIONS FOR select WHERE $this.owner = $auth.id, FOR create FULL, FOR update WHERE $value != 'x';",
 		);
 	});
 
@@ -166,7 +166,7 @@ describe("typed field permissions", () => {
 			}),
 		});
 		expect(field(post, "n")).toContain(
-			'PERMISSIONS FOR select WHERE $session.ac = "account" AND $token.scope = "admin" AND $access = "account";',
+			"PERMISSIONS FOR select WHERE $session.ac = 'account' AND $token.scope = 'admin' AND $access = 'account';",
 		);
 	});
 
@@ -226,7 +226,7 @@ describe("typed auth", () => {
 			),
 		});
 		expect(defineTable(post)).toContain(
-			'FOR update WHERE $this.owner = $auth.id OR $auth.role = "admin" OR string::starts_with($auth.name, "a")',
+			"FOR update WHERE $this.owner = $auth.id OR $auth.role = 'admin' OR string::starts_with($auth.name, 'a')",
 		);
 	});
 
@@ -236,6 +236,20 @@ describe("typed auth", () => {
 		});
 		expect(defineTable(post)).toContain(
 			"FOR select WHERE $this.owner.name = $auth.name",
+		);
+	});
+
+	test("a table named after auth can be followed to others", () => {
+		const team = table("team", { name: t.string() });
+		const member = table("member", { team: t.record("team") });
+		const { where: asMember } = authenticatedAs(member, team);
+		const post = table("post", { owner: t.record("member") }).permissions({
+			select: asMember((row, { auth }) =>
+				row.owner.team.name.eq(auth.team.name),
+			),
+		});
+		expect(defineTable(post)).toContain(
+			"FOR select WHERE $this.owner.team.name = $auth.team.name",
 		);
 	});
 
@@ -263,6 +277,23 @@ describe("rendered values and conditions", () => {
 		);
 	});
 
+	test("strings are quoted the way SurrealDB stores them", () => {
+		const rule = (value: string) =>
+			defineTable(
+				table("t", { s: t.string() }).permissions({
+					select: where((row) => row.s.eq(value)),
+				}),
+			).replace(/^.*WHERE \$this\.s = /, "");
+
+		expect(rule("plain")).toBe("'plain';");
+		expect(rule("it's")).toBe('"it\'s";');
+		expect(rule('say "hi"')).toBe("'say \"hi\"';");
+		expect(rule(`both ' and "`)).toBe('"both \' and \\"";');
+		expect(rule("back\\slash")).toBe("'back\\\\slash';");
+		expect(rule('a \\" mix')).toBe("'a \\\\\" mix';");
+		expect(rule("new\nline")).toBe("'new\\nline';");
+	});
+
 	test("redundant parentheses are dropped, needed ones kept", () => {
 		const probe = table("probe", { n: t.int() }).permissions({
 			select: where((row) => or(row.n.eq(1), and(row.n.gt(3), row.n.lt(10)))),
@@ -286,7 +317,7 @@ describe("where generation", () => {
 		const { statements } = generateSchema(db);
 
 		expect(statements.find((s) => s.name === "post")?.sql).toBe(
-			'DEFINE TABLE OVERWRITE post TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select WHERE $this.owner.name = "x";',
+			"DEFINE TABLE OVERWRITE post TYPE NORMAL SCHEMAFULL PERMISSIONS FOR select WHERE $this.owner.name = 'x';",
 		);
 	});
 
@@ -318,6 +349,21 @@ describe("types", () => {
 		assertType<Equal<typeof guarded, typeof plain>>();
 		assertType<Equal<(typeof guarded)["infer"], string | undefined>>();
 		expect(guarded.name).toBe("option");
+	});
+
+	test("value, before and after are typed as the field", () => {
+		table("post", {
+			title: t.string().permissions({
+				update: where((_row, { value, before, after }) =>
+					and(value.ne("x"), before.ne(after)),
+				),
+			}),
+			count: t.int().permissions({
+				// @ts-expect-error value is a number, not a string
+				update: where((_row, { value }) => value.eq("x")),
+			}),
+		});
+		expect(true).toBe(true);
 	});
 
 	test("a table's rules are checked against its own fields", () => {

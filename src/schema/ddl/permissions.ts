@@ -308,16 +308,28 @@ const SESSION = t.object({
 });
 
 /**
- * A value written into a rule.
+ * A value written into a rule, the way SurrealDB stores it, so that a definition
+ * does not read back different.
  *
- * SurrealDB stores a record id in a condition as `(user:alice)`, parenthesised,
- * where the SDK writes it as `r"user:alice"`; writing it as stored keeps the
- * definition from reading back different.
+ * A record id is stored parenthesised (`(user:alice)`) where the SDK writes it
+ * as `r"user:alice"`. A string is single-quoted, unless it holds a single quote,
+ * when it is double-quoted instead.
  */
 function literal(value: unknown): string {
-	return value instanceof RecordId
-		? `(${value.toString()})`
-		: inlineValue(value);
+	if (value instanceof RecordId) return `(${value.toString()})`;
+	return typeof value === "string" ? stringLiteral(value) : inlineValue(value);
+}
+
+function stringLiteral(value: string): string {
+	const quoted = JSON.stringify(value);
+	if (value.includes("'")) return quoted;
+
+	// Single-quoted, so a double quote needs no escape, and the other escapes
+	// (`\\`, `\n`, `\t`) are the ones JSON writes.
+	const body = quoted
+		.slice(1, -1)
+		.replace(/\\\\|\\"/g, (pair) => (pair === '\\"' ? '"' : pair));
+	return `'${body}'`;
 }
 
 /** Run a typed rule and render the condition it builds. */
