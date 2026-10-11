@@ -1,6 +1,6 @@
 # Proposal: a reactive store with optimistic, offline-capable writes
 
-Status: draft for discussion. Nothing here is implemented.
+Status: layer 1 (the reactive store) is implemented; layers 2 to 5 are not.
 
 ## Why
 
@@ -28,7 +28,7 @@ informed by how `@ascua/surreal` (the Ember addon) handles local edits.
 
 Each layer is useful on its own and none requires the next.
 
-1. **Reactive store (framework-agnostic).** `store.query(builder)` returns
+1. **Reactive store (framework-agnostic). Implemented.** `store.query(builder)` returns
    `{ subscribe, getSnapshot }` with `status: loading | success | error`.
    Subscriptions are reference-counted so ten consumers share one
    `LIVE SELECT`, and the first render comes from a snapshot `SELECT`. Thin
@@ -45,6 +45,26 @@ Each layer is useful on its own and none requires the next.
 5. **Pluggable merge.** Make the merge function swappable. Ship
    last-writer-wins per field, plus text merge for strings. A CRDT can plug in
    here later without touching layers 1 to 4.
+
+## What building layer 1 showed
+
+- A live query with a `WHERE` sends nothing when an update makes a record stop
+  matching, so a filtered result goes stale if it follows notifications alone.
+  The store therefore subscribes to the whole table and, for any query with a
+  filter, order, limit or projection, runs the query again on a change. An
+  unfiltered table applies each notification directly.
+- A live subscription does not replay changes missed while disconnected, so the
+  store reads again on reconnect, and reports `stale` until then.
+- `LIVE SELECT` has no `ORDER BY` or `LIMIT`, which the refetch approach avoids.
+
+## Decisions for the next layers
+
+- Writes are explicit calls, not record proxies.
+- The view is the server's state with pending writes applied on top.
+- A network failure keeps a write in the outbox to retry; a server rejection
+  rolls it back and reports the error.
+- Merge is last-writer-wins per top-level field. Text merge and CRDTs are out of
+  scope for now.
 
 ## Open questions
 

@@ -35,6 +35,7 @@ export type {
 	StandardSchemaProps,
 	StandardSchemaV1,
 } from "./standard-schema";
+export * from "./store";
 // Type system: the `t.*` builders and the `*Type` classes
 export * from "./types";
 export type {

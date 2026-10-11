@@ -1166,6 +1166,34 @@ names.isManaged; // false
 
 > The table must exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
 
+## Reactive store
+
+A store turns a query into a live value. It loads the result, keeps it current from live notifications, and exposes `subscribe` and `getSnapshot`, the shape that `useSyncExternalStore`, Svelte stores and similar bindings expect. It works with any framework and adds no dependency.
+
+```ts
+import { createStore } from "surqlize";
+
+const store = createStore(db);
+
+const all = store.query("task");                                   // every task
+const open = store.query("task", (q) => q.where({ done: false })); // a filtered, ordered or limited query
+
+const stop = open.subscribe(() => render(open.getSnapshot()));
+```
+
+A snapshot is one of:
+
+- `{ status: "loading" }` until the first result arrives
+- `{ status: "success", data, stale }`, where `stale` is `true` while the connection is down
+- `{ status: "error", error }` if loading failed or the server killed the subscription. Call `open.refetch()` to try again.
+
+`getSnapshot()` returns the same object until something changes.
+
+- **Sharing.** Asking for the same query again returns the same store, so every component that shows it shares one live subscription. The store starts with its first subscriber and stops shortly after the last one leaves (`idleMs`, 100 ms by default), so a component that unmounts and mounts again straight away does not restart it.
+- **No lost changes.** The store registers the live query before it reads, and applies the notifications that arrived in the meantime on top of the result.
+- **Reconnects.** A live subscription does not replay the changes made while the connection was down. When it returns, the store reads the query again. Pass `{ connection }` to `createStore()` if your ORM is not built on a `Surreal` instance.
+- **Filtered queries.** SurrealDB sends no notification when an update makes a record stop matching a live query's `WHERE`, so a filtered result cannot be kept current from notifications alone. A query built with a callback (filter, order, limit, projection, `FETCH`) therefore subscribes to the whole table and runs again, after `debounceMs` (20 by default), whenever the table changes. A query without a callback applies each notification as it arrives, and takes an optional `sort` function.
+
 ## Accessing Single Records
 
 All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:
