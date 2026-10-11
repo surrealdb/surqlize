@@ -13,6 +13,8 @@
 	"files": [
 		"dist/index.d.ts",
 		"dist/index.d.cts",
+		"dist/svelte/index.d.ts",
+		"dist/svelte/index.d.cts",
 		"dist/react/index.d.ts",
 		"dist/react/index.d.cts",
 		"dist/solid/index.d.ts",
