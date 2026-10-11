@@ -1,4 +1,5 @@
 export * from "./api";
+export * from "./ddl";
 export * from "./edge";
 export * from "./function";
 export * from "./orm";

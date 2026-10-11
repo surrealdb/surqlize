@@ -1166,6 +1166,41 @@ names.isManaged; // false
 
 > The table must exist before subscribing (define it up front, e.g. with `DEFINE TABLE`).
 
+## Generating the database schema
+
+The tables, edges and fields you describe with `t.*` can be turned into `DEFINE` statements, so the database enforces the same types the client checks.
+
+```ts
+import { generateSchema, toSurql } from "surqlize";
+
+const { statements, skipped } = generateSchema(db);
+
+// Apply it...
+await surreal.query(statements.map((s) => `${s.sql};`).join("\n"));
+
+// ...or write it for a migration tool that reads `.surql` files.
+await Bun.write("database/schema/surqlize.surql", toSurql({ statements, skipped }));
+```
+
+`generateSchema(db)` returns the tables before their fields, so the statements can run top to bottom. Each statement has a `kind`, a stable `name` (`user.address.city`, `post.items[*].k`) and its `sql`. It defines every table and edge (`TYPE RELATION IN … OUT …`), every field with its type and `DEFAULT`, and computed fields. Statements use `OVERWRITE` so they can be run again; pass `{ mode: "if-not-exists" }` to leave definitions that already exist.
+
+| Surqlize | SurrealQL |
+| --- | --- |
+| `t.string()`, `t.number()`, `t.bool()`, `t.uuid()`, `t.duration()` | `string`, `number`, `bool`, `uuid`, `duration` |
+| `t.date()`, `t.point()` | `datetime`, `geometry<point>` |
+| `t.option(x)` | `option<x>` |
+| `t.record("user")`, `t.record(["a", "b"])`, `t.record()` | `record<user>`, `record<a \| b>`, `record` |
+| `t.array(x)`, `t.array([x, y])` | `array<x>`, `[x, y]` |
+| `t.literal("a")`, `t.union([…])` | `"a"`, `a \| b` |
+| `t.object({ … })` | `object`, with each field defined as `parent.field` |
+
+- **Tables are `SCHEMALESS` by default.** Declared fields are typed, and a field the schema does not declare is kept, as the client-side validation does. Pass `{ schemafull: true }` to have the database reject undeclared fields instead.
+- **Defaults.** A static value or an `expr()` becomes `DEFAULT`. A default that is a function (`() => new Date()`) can only run on the client, so it is left out of the statement and listed in `skipped` with the reason.
+- **Objects** are defined field by field, which lets them carry defaults and allows extra keys, through options and arrays (`items[*].name`). An object inside a union or a tuple becomes a literal object type (`{ kind: "a", n: number }`), which the database also holds to its exact keys.
+- **Nothing is guessed.** What has no SurrealQL type (a graph traversal, `t.never()`) is listed in `skipped` with its path and the reason.
+
+Integration tests apply the statements to a real server and check that it accepts and rejects the same values as the client-side types, for every mapping above.
+
 ## Reactive store
 
 A store turns a query into a live value. It loads the result, keeps it current from live notifications, and exposes `subscribe` and `getSnapshot`, the shape that `useSyncExternalStore`, Svelte stores and similar bindings expect. It works with any framework and adds no dependency.
