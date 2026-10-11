@@ -1,6 +1,7 @@
 # Proposal: a reactive store with optimistic, offline-capable writes
 
-Status: layer 1 (the reactive store) is implemented; layers 2 to 5 are not.
+Status: layers 1 to 4 are implemented, and layer 5 is partly done (merge is
+last-writer-wins per top-level field and is not yet pluggable).
 
 ## Why
 
@@ -33,16 +34,17 @@ Each layer is useful on its own and none requires the next.
    Subscriptions are reference-counted so ten consumers share one
    `LIVE SELECT`, and the first render comes from a snapshot `SELECT`. Thin
    adapters (`surqlize/react`, `/vue`, `/svelte`) wrap it.
-2. **Optimistic writes.** A write applies to the store immediately and is
+2. **Optimistic writes. Implemented.** A write applies to the store immediately and is
    rolled back on failure. This needs echo suppression so the live
    notification for our own write does not flicker the value.
-3. **Field-level diff and rebase.** Port the pure parts of ascua: diff, patch,
+3. **Field-level diff and rebase. Not needed.** Writes are explicit merges of
+   top-level fields, so there is nothing to diff. Port the pure parts of ascua: diff, patch,
    and the three-way rebase. Drive them from the table schema rather than
    decorators.
-4. **Durable outbox (offline).** Persist ordered ops, keyed by record, in
+4. **Durable outbox (offline). Implemented.** Persist ordered ops, keyed by record, in
    IndexedDB, and replay on reconnect. This is the part ascua does not have,
    and it is the biggest piece.
-5. **Pluggable merge.** Make the merge function swappable. Ship
+5. **Pluggable merge. Not implemented.** Make the merge function swappable. Ship
    last-writer-wins per field, plus text merge for strings. A CRDT can plug in
    here later without touching layers 1 to 4.
 
@@ -65,6 +67,22 @@ Each layer is useful on its own and none requires the next.
   rolls it back and reports the error.
 - Merge is last-writer-wins per top-level field. Text merge and CRDTs are out of
   scope for now.
+
+## What building layers 2 and 4 showed
+
+- Pending writes are kept in order in an outbox and shown on top of the
+  server's state. A write's answer is put into the base before the write leaves
+  the outbox, so the view does not change when the live notification for it
+  arrives.
+- Writes are sent as `UPSERT ... CONTENT` (create), `UPDATE ... MERGE` and
+  `DELETE`, not JSON Patch. This avoids the array-index and `/` or `.` key
+  problems of patches, and makes every write safe to send twice.
+- A refusal (a server error) removes the write; any other failure keeps it and
+  retries. On reconnect the outbox is flushed before queries read again.
+- Storage is pluggable: memory by default, IndexedDB on request, with a small
+  codec for dates, record ids and similar values.
+- A filtered query does not show locally created records until the database has
+  them, since the client cannot evaluate the filter.
 
 ## Open questions
 

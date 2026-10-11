@@ -1194,6 +1194,38 @@ A snapshot is one of:
 - **Reconnects.** A live subscription does not replay the changes made while the connection was down. When it returns, the store reads the query again. Pass `{ connection }` to `createStore()` if your ORM is not built on a `Surreal` instance.
 - **Filtered queries.** SurrealDB sends no notification when an update makes a record stop matching a live query's `WHERE`, so a filtered result cannot be kept current from notifications alone. A query built with a callback (filter, order, limit, projection, `FETCH`) therefore subscribes to the whole table and runs again, after `debounceMs` (20 by default), whenever the table changes. A query without a callback applies each notification as it arrives, and takes an optional `sort` function.
 
+### Optimistic and offline writes
+
+`store.table(name)` makes writes that show in every query of the table straight away, and are sent to the database in order.
+
+```ts
+const tasks = store.table("task");
+
+const { id, committed } = tasks.create({ title: "Write docs", done: false });
+tasks.update(id, { done: true });
+tasks.delete(id);
+
+await committed; // the stored record, once the database has accepted the write
+```
+
+- **The id is known at once.** `create()` generates a record id unless you pass `{ id }`, so the record can be used before the database has seen it.
+- **Shown on top of the database's state.** Pending writes are applied to the result of each query of the table. When the database accepts a write, its answer replaces the pending write in the result, so nothing flickers when the live notification for it arrives. A query with a filter does not show a record that was created or updated locally until the database has it, because the store cannot tell whether the record would match.
+- **A refusal is taken back.** If the database refuses a write (a failed assertion, a missing record for an update, a permissions error), the change disappears from the results and `committed` rejects with the error.
+- **A connection problem is not a refusal.** The write stays queued, is retried with a growing delay, and is sent as soon as the connection returns, before the queries read again. While offline, `committed` stays pending. `store.pending` has `subscribe` and `getSnapshot` for the writes that are waiting, for example to show an "unsaved changes" indicator.
+- **Merging.** Writes to the same record that have not been sent yet are combined, so editing a field repeatedly offline sends one write. Updates merge top-level fields: the last write to a field wins, and a nested object is replaced as a whole. Text is not merged.
+- **Safe to send twice.** A write that was sent but whose answer was lost is sent again. A create is an upsert of the whole record, an update is a merge, and deleting a missing record is not an error, so repeating any of them leaves the same record.
+
+By default pending writes are kept in memory, so they survive a dropped connection but not a reload. To keep them across reloads, pass an IndexedDB store, and wait for `store.ready` before relying on them:
+
+```ts
+import { createStore, indexedDbStorage } from "surqlize";
+
+const store = createStore(db, { storage: indexedDbStorage("my-app") });
+await store.ready; // writes left by an earlier session are sent from here
+```
+
+Values in a stored write can be strings, numbers, booleans, null, dates, record ids, uuids, durations, bigints, and arrays and plain objects of those. A write holding anything else is rejected when it is made, with the path of the value.
+
 ## Accessing Single Records
 
 All queries in Surqlize return arrays, even when selecting by a specific record ID. To access the first item from a query result, use `.val()` or `.at(index)`:

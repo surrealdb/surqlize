@@ -28,6 +28,8 @@ export type StoreMode = "direct" | "refetch";
 export type ConnectionSignal = "connected" | "disconnected";
 
 export type QueryStoreDeps<T> = {
+	/** The table the query reads, to know which writes concern it. */
+	table?: string;
 	/**
 	 * `direct`: every notification carries the full record, so it is applied to
 	 * the result as it is. Only valid when the result is every record of the
@@ -51,6 +53,20 @@ export type QueryStoreDeps<T> = {
 	sort?: (a: T, b: T) => number;
 	/** Tell the store when the connection drops and returns. */
 	onConnection?(listener: (signal: ConnectionSignal) => void): () => void;
+	/**
+	 * Writes that have been made locally and not yet accepted. They are shown on
+	 * top of what the database says, so a change appears at once.
+	 */
+	overlay?: {
+		/**
+		 * `rows` with the pending writes applied. `insert` is whether a pending
+		 * create may add a row: not when the result is filtered, as the store
+		 * cannot tell whether the new record would match.
+		 */
+		apply(rows: T[], insert: boolean): T[];
+		/** Call `listener` when the pending writes change. */
+		subscribe(listener: () => void): () => void;
+	};
 	/** Called once the store has no subscribers and has shut down. */
 	onDispose?(): void;
 	/** How long to keep running after the last subscriber leaves. */
@@ -78,6 +94,9 @@ export class QueryStore<T> {
 	#running = false;
 	#stopLive: (() => void) | undefined;
 	#stopConnection: (() => void) | undefined;
+	#stopOverlay: (() => void) | undefined;
+	/** The last result of a `refetch` query, before pending writes are applied. */
+	#base: T[] = [];
 	#idle: ReturnType<typeof setTimeout> | undefined;
 	#debounce: ReturnType<typeof setTimeout> | undefined;
 
@@ -90,6 +109,11 @@ export class QueryStore<T> {
 	#epoch = 0;
 
 	constructor(private readonly deps: QueryStoreDeps<T>) {}
+
+	/** The table this query reads. */
+	get table(): string | undefined {
+		return this.deps.table;
+	}
 
 	/** Subscribe to changes of the snapshot. Returns a function that unsubscribes. */
 	subscribe = (listener: () => void): (() => void) => {
@@ -116,9 +140,12 @@ export class QueryStore<T> {
 		for (const listener of [...this.#listeners]) listener();
 	}
 
-	#publishRows(): void {
-		const data = [...this.#rows.values()];
-		if (this.deps.sort) data.sort(this.deps.sort);
+	/** Publish the result, with the pending writes applied on top of it. */
+	#publishView(): void {
+		const direct = this.deps.mode === "direct";
+		let data = direct ? [...this.#rows.values()] : [...this.#base];
+		if (this.deps.overlay) data = this.deps.overlay.apply(data, direct);
+		if (direct && this.deps.sort) data.sort(this.deps.sort);
 		this.#publish(
 			Object.freeze({
 				status: "success",
@@ -128,14 +155,25 @@ export class QueryStore<T> {
 		);
 	}
 
-	#publishData(data: readonly T[]): void {
-		this.#publish(
-			Object.freeze({
-				status: "success",
-				data: Object.freeze([...data]),
-				stale: this.#stale,
-			}),
-		);
+	/**
+	 * The database accepted a write: record its result in the base, so that the
+	 * view does not change when the write leaves the pending ones. The caller
+	 * removes the write next, which publishes.
+	 */
+	acknowledge(change: { key: string; row?: unknown }): void {
+		if (change.row === undefined) {
+			this.#rows.delete(change.key);
+			this.#base = this.#base.filter((r) => this.deps.keyOf(r) !== change.key);
+			return;
+		}
+		const row = change.row as T;
+		if (this.deps.mode === "direct") {
+			this.#rows.set(change.key, row);
+		} else {
+			this.#base = this.#base.map((r) =>
+				this.deps.keyOf(r) === change.key ? row : r,
+			);
+		}
 	}
 
 	async #start(): Promise<void> {
@@ -154,6 +192,9 @@ export class QueryStore<T> {
 			this.#stopConnection = this.deps.onConnection?.((signal) =>
 				this.#onConnection(signal),
 			);
+			this.#stopOverlay = this.deps.overlay?.subscribe(() => {
+				if (this.#snapshot.status === "success") this.#publishView();
+			});
 			await this.#load();
 		} catch (error) {
 			if (epoch === this.#epoch)
@@ -190,13 +231,14 @@ export class QueryStore<T> {
 		this.#buffer = undefined;
 		this.#stale = false;
 		if (this.deps.mode === "refetch") {
-			this.#publishData(rows);
+			this.#base = rows;
+			this.#publishView();
 			return;
 		}
 		this.#rows.clear();
 		for (const row of rows) this.#rows.set(this.deps.keyOf(row), row);
 		for (const message of buffered) this.#apply(message);
-		this.#publishRows();
+		this.#publishView();
 	}
 
 	#failLoad(error: unknown): void {
@@ -229,7 +271,7 @@ export class QueryStore<T> {
 			this.#buffer.push(message);
 		} else {
 			this.#apply(message);
-			this.#publishRows();
+			this.#publishView();
 		}
 	}
 
@@ -278,6 +320,9 @@ export class QueryStore<T> {
 		this.#stopLive = undefined;
 		this.#stopConnection?.();
 		this.#stopConnection = undefined;
+		this.#stopOverlay?.();
+		this.#stopOverlay = undefined;
+		this.#base = [];
 		this.#rows.clear();
 		this.#buffer = undefined;
 		this.#loading = false;
