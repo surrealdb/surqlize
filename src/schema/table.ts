@@ -1,4 +1,4 @@
-import { escapeIdent, toSurqlString } from "surrealdb";
+import { escapeIdent } from "surrealdb";
 import { OrmError } from "../error";
 import type { CreateInput, WriteData } from "../query/modification-methods";
 import { type AbstractType, ObjectType, type RecordType, t } from "../types";
@@ -7,6 +7,7 @@ import {
 	__display,
 	__type,
 	displayContext,
+	inlineValue,
 	type Workable,
 	type WorkableContext,
 } from "../utils";
@@ -57,10 +58,6 @@ export type ComputedExpression<
 	// biome-ignore lint/suspicious/noExplicitAny: the expression may query any registered table
 	db: Orm<any>,
 ) => Workable<WorkableContext, T>;
-
-/** Render a value as a SurrealQL literal: a `DEFINE` statement takes no parameters. */
-const inlineValue = (value: unknown): string =>
-	typeof value === "string" ? JSON.stringify(value) : toSurqlString(value);
 
 type ComputedDefinition = {
 	readonly type: AbstractType;
@@ -357,10 +354,25 @@ export class TableSchema<
 		});
 	}
 
-	/** Set the table's `PERMISSIONS`, either one rule or one per operation. */
-	permissions(rules: TablePermissions): this {
+	/**
+	 * Set the table's `PERMISSIONS`: a SurrealQL clause as a string, or a rule per
+	 * operation. A rule is `"full"`, `"none"`, SurrealQL, or a typed condition
+	 * built with `where()`, checked against this table's fields.
+	 *
+	 * An operation left out takes SurrealDB's default for a table, which is
+	 * `NONE`.
+	 *
+	 * @example
+	 * ```ts
+	 * table("post", { owner: t.record("user") }).permissions({
+	 *   select: "full",
+	 *   update: where((row, { auth }) => row.owner.eq(auth.id)),
+	 * });
+	 * ```
+	 */
+	permissions(rules: TablePermissions<ObjectType<WithId<Tb, Fd>>>): this {
 		return patchTableDdl(this, (d) => {
-			d.permissions = rules;
+			d.permissions = rules as TablePermissions;
 		});
 	}
 

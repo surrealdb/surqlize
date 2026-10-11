@@ -1,11 +1,17 @@
+import type { FieldDdl } from "../../types/ddl";
 import { EdgeSchema } from "../edge";
 import type { TableSchema } from "../table";
 import { defineEvent } from "./event-ddl";
 import { type FlatField, flattenFields } from "./flatten";
 import { defineIndex } from "./index-ddl";
+import {
+	type RenderEnvironment,
+	type RenderTables,
+	renderPermissions,
+} from "./permissions";
 import { printSurqlType } from "./print-type";
 import { fieldPath, ident, quote } from "./syntax";
-import type { TableDdl, TablePermissions } from "./table-ddl";
+import type { TableDdl } from "./table-ddl";
 
 /** Anything that can be rendered as a `DEFINE TABLE` plus its fields. */
 export type DefinableSchema = TableSchema | EdgeSchema;
@@ -14,6 +20,40 @@ export type DefinableSchema = TableSchema | EdgeSchema;
 export interface DefineOptions {
 	/** Replace an existing definition rather than erroring. */
 	overwrite?: boolean;
+	/**
+	 * The tables of the schema, by name. A typed permission rule resolves record
+	 * links against them, so pass every table when generating a schema; a rule that
+	 * stays within its own table needs none.
+	 */
+	tables?: RenderTables;
+}
+
+/** What a permission rule on `tb` is rendered against. */
+function environment(
+	tb: string,
+	options: DefineOptions,
+	schema?: DefinableSchema,
+): RenderEnvironment {
+	return {
+		tb,
+		tables: { ...options.tables, ...(schema ? { [tb]: schema } : {}) },
+	};
+}
+
+/** A `PERMISSIONS` clause, or nothing when the rules name no operation. */
+function permissionsClause(
+	rules: NonNullable<TableDdl["permissions"] | FieldDdl["permissions"]>,
+	scope: "table" | "field",
+	tb: string,
+	options: DefineOptions,
+	schema?: DefinableSchema,
+): string[] {
+	const clause = renderPermissions(
+		rules,
+		scope,
+		environment(tb, options, schema),
+	);
+	return clause ? [clause] : [];
 }
 
 /**
@@ -68,7 +108,11 @@ export function defineField(
 		parts.push("ASSERT", joinAsserts(ddl.assert));
 	}
 
-	if (ddl.permissions) parts.push("PERMISSIONS", ddl.permissions);
+	if (ddl.permissions) {
+		parts.push(
+			...permissionsClause(ddl.permissions, "field", tableName, options),
+		);
+	}
 	if (ddl.comment) parts.push("COMMENT", quote(ddl.comment, "'"));
 
 	return `${parts.join(" ")};`;
@@ -113,7 +157,17 @@ export function defineTable(
 		if (ddl.changefeed.includeOriginal) parts.push("INCLUDE ORIGINAL");
 	}
 
-	if (ddl.permissions) parts.push(permissions(ddl.permissions));
+	if (ddl.permissions) {
+		parts.push(
+			...permissionsClause(
+				ddl.permissions,
+				"table",
+				schema.tb,
+				options,
+				schema,
+			),
+		);
+	}
 	if (ddl.comment) parts.push("COMMENT", quote(ddl.comment, "'"));
 
 	return `${parts.join(" ")};`;
@@ -172,7 +226,10 @@ export function schemaStatements(
 		statements.push({
 			kind: "field",
 			name: `${schema.tb}.${field.name}`,
-			sql: defineField(schema.tb, field, options),
+			sql: defineField(schema.tb, field, {
+				...options,
+				tables: environment(schema.tb, options, schema).tables,
+			}),
 		});
 	}
 
@@ -265,33 +322,6 @@ function maskNested(input: string): string {
 	}
 
 	return out.join("");
-}
-
-/** Render a `PERMISSIONS` clause from either form. */
-function permissions(rules: TablePermissions): string {
-	if (typeof rules === "string") return `PERMISSIONS ${rules}`;
-
-	const clauses = Object.entries(rules)
-		.filter(([, rule]) => rule !== undefined)
-		.map(([operation, rule]) => `FOR ${operation} ${guard(rule as string)}`);
-
-	return clauses.length ? `PERMISSIONS ${clauses.join(", ")}` : "";
-}
-
-/**
- * A permission rule, introduced the way SurrealQL needs it.
- *
- * `FULL` and `NONE` stand alone; anything else is a condition and must follow
- * `WHERE`. Without it the statement is rejected with "expected 'NONE', 'FULL',
- * or 'WHERE'" — a mistake worth not leaving to the caller, since a rule reads
- * as a condition and so should be allowed to be written as one.
- */
-function guard(rule: string): string {
-	const trimmed = rule.trim();
-	if (/^(FULL|NONE)$/i.test(trimmed)) return trimmed.toUpperCase();
-	if (/^WHERE\b/i.test(trimmed)) return trimmed;
-
-	return `WHERE ${trimmed}`;
 }
 
 /** Render a table name, or a union of them, for an edge's `IN`/`OUT`. */

@@ -1,5 +1,6 @@
 import {
 	type DefinableSchema,
+	type DefineOptions,
 	defineField,
 	defineTable,
 } from "../schema/ddl/define";
@@ -75,15 +76,20 @@ export function diff(
 	const schemas = definitions.filter(isTableSchema);
 	const entities = definitions.filter(isDatabaseEntity);
 	const declared = new Set(schemas.map((s) => s.tb));
+	// A typed permission rule resolves record links against the declared tables,
+	// as `generateSchema` does against the ORM's, so both render the same text.
+	const render: DefineOptions = {
+		tables: Object.fromEntries(schemas.map((s) => [s.tb, s])),
+	};
 
 	changes.push(...diffEntities(entities, current, options));
 
 	for (const schema of schemas) {
 		const table = current.tables[schema.tb];
 		if (table) {
-			changes.push(...diffTable(schema, table, options));
+			changes.push(...diffTable(schema, table, options, render));
 		} else {
-			changes.push(createTable(schema));
+			changes.push(createTable(schema, render));
 		}
 	}
 
@@ -109,8 +115,8 @@ export function diff(
 }
 
 /** Every statement needed to create a table that does not exist yet. */
-function createTable(schema: DefinableSchema): Change {
-	const up = defineSchemaStatements(schema);
+function createTable(schema: DefinableSchema, render: DefineOptions): Change {
+	const up = defineSchemaStatements(schema, render);
 
 	return {
 		kind: "table.create",
@@ -125,20 +131,21 @@ function diffTable(
 	schema: DefinableSchema,
 	current: CurrentTable,
 	options: DiffOptions,
+	render: DefineOptions,
 ): Change[] {
 	const changes: Change[] = [];
 
-	const desiredTable = defineTable(schema);
+	const desiredTable = defineTable(schema, render);
 	if (!same(desiredTable, current.definition)) {
 		changes.push({
 			kind: "table.modify",
 			target: schema.tb,
-			up: [defineTable(schema, { overwrite: true })],
+			up: [defineTable(schema, { ...render, overwrite: true })],
 			down: [`${current.definition};`],
 		});
 	}
 
-	changes.push(...diffFields(schema, current, options));
+	changes.push(...diffFields(schema, current, options, render));
 	changes.push(...diffAttachments(schema, current, options));
 	return changes;
 }
@@ -251,6 +258,7 @@ function diffFields(
 	schema: DefinableSchema,
 	current: CurrentTable,
 	options: DiffOptions,
+	render: DefineOptions,
 ): Change[] {
 	const changes: Change[] = [];
 	const fields = definableFields(schema);
@@ -264,7 +272,7 @@ function diffFields(
 		const oldName = renameSource(field, current);
 		if (oldName) {
 			renamedFrom.add(oldName);
-			changes.push(renameField(schema, field, oldName, current));
+			changes.push(renameField(schema, field, oldName, current, render));
 			continue;
 		}
 
@@ -272,18 +280,18 @@ function diffFields(
 			changes.push({
 				kind: "field.create",
 				target: `${schema.tb}.${field.name}`,
-				up: [defineField(schema.tb, field)],
+				up: [defineField(schema.tb, field, render)],
 				down: [`REMOVE FIELD ${field.name} ON TABLE ${schema.tb};`],
 			});
 			continue;
 		}
 
-		const desired = defineField(schema.tb, field);
+		const desired = defineField(schema.tb, field, render);
 		if (!same(desired, stored)) {
 			changes.push({
 				kind: "field.modify",
 				target: `${schema.tb}.${field.name}`,
-				up: [defineField(schema.tb, field, { overwrite: true })],
+				up: [defineField(schema.tb, field, { ...render, overwrite: true })],
 				down: [`${stored};`],
 			});
 		}
@@ -344,6 +352,7 @@ function renameField(
 	field: FlatField,
 	oldName: string,
 	current: CurrentTable,
+	render: DefineOptions,
 ): Change {
 	const tb = schema.tb;
 
@@ -351,7 +360,7 @@ function renameField(
 		kind: "field.rename",
 		target: `${tb}.${oldName} -> ${field.name}`,
 		up: [
-			defineField(tb, field),
+			defineField(tb, field, render),
 			`UPDATE ${tb} SET ${field.name} = ${oldName};`,
 			`REMOVE FIELD ${oldName} ON TABLE ${tb};`,
 			`UPDATE ${tb} UNSET ${oldName};`,
@@ -532,11 +541,14 @@ function removeNamed(entity: DatabaseEntity, name: string): string {
 }
 
 /** Every statement that creates a table from scratch. */
-function defineSchemaStatements(schema: DefinableSchema): string[] {
-	const statements = [defineTable(schema)];
+function defineSchemaStatements(
+	schema: DefinableSchema,
+	render: DefineOptions,
+): string[] {
+	const statements = [defineTable(schema, render)];
 
 	for (const field of definableFields(schema)) {
-		statements.push(defineField(schema.tb, field));
+		statements.push(defineField(schema.tb, field, render));
 	}
 	for (const [name, index] of Object.entries(schema.ddl.indexes ?? {})) {
 		statements.push(defineIndex(schema.tb, { name, ...index }));

@@ -8,6 +8,7 @@ import {
 	Uuid,
 } from "surrealdb";
 import { TypeParseError } from "../error";
+import type { FieldPermissions } from "../schema/ddl/permissions";
 import type { FieldDdl, FieldDefault, OnDeleteAction } from "./ddl";
 
 /** Matches strings usable as a bare SurrealQL identifier in an idiom path. */
@@ -176,10 +177,25 @@ export abstract class AbstractType<T = unknown> {
 		});
 	}
 
-	/** Set the field's `PERMISSIONS` clause. */
-	permissions<S extends AbstractType>(this: S, rule: string): S {
+	/**
+	 * Set the field's `PERMISSIONS`: a SurrealQL clause as a string, or a rule per
+	 * operation (`select`, `create` and `update`; a field has no `delete`). A rule
+	 * is `"full"`, `"none"`, SurrealQL, or a typed condition built with `where()`.
+	 *
+	 * An operation left out takes SurrealDB's default for a field, which is
+	 * `FULL`.
+	 *
+	 * @example
+	 * ```ts
+	 * t.string().permissions({
+	 *   select: where((row, { auth }) => row.owner.eq(auth.id)),
+	 *   update: "none",
+	 * });
+	 * ```
+	 */
+	permissions<S extends AbstractType>(this: S, rules: FieldPermissions<S>): S {
 		return patchDdl(this, (d) => {
-			d.permissions = rule;
+			d.permissions = rules as FieldPermissions;
 		});
 	}
 

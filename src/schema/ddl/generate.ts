@@ -56,9 +56,10 @@ export function generateSchema(
 
 	for (const schema of Object.values(orm.tables) as DefinableSchema[]) {
 		statements.push(
-			...schemaStatements(schema, { overwrite: true }).map((s) =>
-				retarget(s, overwrite),
-			),
+			...schemaStatements(schema, {
+				overwrite: true,
+				tables: orm.tables as Record<string, DefinableSchema>,
+			}).map((s) => retarget(s, overwrite)),
 		);
 		statements.push(...computedStatements(orm, schema, overwrite));
 		skip(schema, skipped);
