@@ -2671,15 +2671,9 @@ This project is in active development. Planned features include:
 - [x] **Live queries** - Real-time `LIVE SELECT` subscriptions with typed notifications
 - [x] **Runtime validation** - Validate data at runtime using schema definitions
 - [x] **Graph traversal** - Type-safe `.out()` / `.in()` edge navigation, multi-hop chaining, edge-field access, and edge filtering
-<<<<<<< HEAD
-- [ ] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
-- [ ] **Performance optimizations** - Query caching, connection pooling
-- [x] **Schema migrations** - Declare the schema, diff it against the database, and converge
-=======
 - [x] **Advanced graph traversal** - Recursive depth ranges, node collection (`collect`), and shortest-path finding (`shortest`)
 - [x] **Performance optimizations** - Faster query construction (see [Performance](#performance)); connection pooling is left to the SDK, with sessions for isolation (see [Connections and pooling](#connections-and-pooling))
-- [ ] **Schema migrations** - Version control for database schemas
->>>>>>> origin/main
+- [x] **Schema migrations** - Declare the schema, diff it against the database, and converge
 - [ ] **Documentation site** - Comprehensive guides and API reference
 
 ## Performance
