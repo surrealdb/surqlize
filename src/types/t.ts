@@ -4,6 +4,7 @@ import {
 	type AbstractType,
 	AnyType,
 	ArrayType,
+	BigIntType,
 	BoolType,
 	BytesType,
 	DateType,
@@ -118,6 +119,11 @@ export function never() {
 /** Create a datetime type. */
 export function date() {
 	return new DateType();
+}
+
+/** Create a bigint type, for integers too large for a JS `number`. */
+export function bigint() {
+	return new BigIntType();
 }
 
 /** Create a native SurrealDB point type. */

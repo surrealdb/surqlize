@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { expr, orm, t, table } from "../../src";
+import { RecordId } from "surrealdb";
+import { edge, expr, orm, t, table } from "../../src";
 import { withTestDb } from "./setup";
 
 const item = table("item", {
@@ -72,5 +73,126 @@ describe("field defaults integration tests", () => {
 			.execute();
 		expect(valued[0]!.label).toBe("untitled");
 		expect(valued[0]!.created).toBeInstanceOf(Date);
+	});
+});
+
+describe("field defaults on edges (RELATE)", () => {
+	const person = table("person", { name: t.string() });
+	const follows = edge("person", "follows", "person", {
+		weight: t.number().default(1),
+		label: t.string().default("follows"),
+	});
+
+	const getTestDb = withTestDb({
+		setup: async ({ surreal }) => {
+			await surreal.query(`
+				CREATE person:a SET name = "a";
+				CREATE person:b SET name = "b";
+			`);
+		},
+	});
+
+	test("RELATE with an empty CONTENT applies the edge defaults", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, person, follows);
+
+		const [edgeRow] = await db
+			.relate(
+				"follows",
+				new RecordId("person", "a"),
+				new RecordId("person", "b"),
+			)
+			.content({})
+			.execute();
+
+		expect(edgeRow?.weight).toBe(1);
+		expect(edgeRow?.label).toBe("follows");
+	});
+
+	test("RELATE with SET applies the edge defaults for the fields not set", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, person, follows);
+
+		const [edgeRow] = await db
+			.relate(
+				"follows",
+				new RecordId("person", "a"),
+				new RecordId("person", "b"),
+			)
+			.set({ label: "knows" })
+			.execute();
+
+		expect(edgeRow?.weight).toBe(1);
+		expect(edgeRow?.label).toBe("knows");
+	});
+
+	test("RELATE with CONTENT keeps explicit values over the defaults", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, person, follows);
+
+		const [edgeRow] = await db
+			.relate(
+				"follows",
+				new RecordId("person", "a"),
+				new RecordId("person", "b"),
+			)
+			.content({ weight: 5 })
+			.execute();
+
+		expect(edgeRow?.weight).toBe(5);
+		expect(edgeRow?.label).toBe("follows");
+	});
+});
+
+describe("defaults and undefined values", () => {
+	const getTestDb = withTestDb({ perTest: true });
+	const make = () => orm(getTestDb().surreal, item);
+
+	test(".content() with a key set to undefined applies the default", async () => {
+		const rec = await make()
+			.create("item")
+			.content({ name: "a", done: undefined })
+			.only()
+			.execute();
+		expect(rec.done).toBe(false);
+	});
+
+	test(".set() with a key set to undefined does not apply the default", async () => {
+		const rec = await make()
+			.create("item")
+			.set({ name: "a", done: undefined })
+			.only()
+			.execute();
+		expect(rec.done).toBeUndefined();
+	});
+
+	test(".merge() with a key set to undefined applies the default", async () => {
+		const rec = await make()
+			.create("item")
+			.merge({ name: "a", done: undefined })
+			.only()
+			.execute();
+		expect(rec.done).toBe(false);
+	});
+
+	test("INSERT object form with a key set to undefined applies the default", async () => {
+		const [rec] = await make()
+			.insert("item", [{ name: "a", done: undefined }])
+			.execute();
+		expect(rec?.done).toBe(false);
+	});
+
+	test("INSERT values form with an undefined cell applies the default", async () => {
+		const [rec] = await make()
+			.insert("item")
+			.fields(["name", "done"])
+			.values(["a", undefined])
+			.execute();
+		expect(rec?.done).toBe(false);
+	});
+
+	test(".set() with the key omitted applies the default", async () => {
+		const rec = await make().create("item").set({ name: "a" }).only().execute();
+		expect(rec.done).toBe(false);
 	});
 });

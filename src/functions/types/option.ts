@@ -16,6 +16,12 @@ import {
 import { type Actionable, actionable } from "../../utils/actionable";
 
 export const functions = {
+	/**
+	 * Apply `cb` to the present value, yielding `NONE` when the value is absent.
+	 * Renders `(IF <value> IS NONE THEN NONE ELSE <cb> END)`, so the value's
+	 * expression appears twice in the query. Keep it a field or other plain
+	 * expression rather than something costly or side-effecting.
+	 */
 	map<
 		C extends WorkableContext,
 		T extends AbstractType,
@@ -35,7 +41,11 @@ export const functions = {
 		return actionable({
 			[__ctx]: this[__ctx],
 			[__type]: t.option(res[__type]),
-			[__display]: (ctx) => `(${this[__display](ctx)}?${res[__display](ctx)})`,
+			// SurrealQL has no `?` mapping operator. Guard on NONE, so the callback
+			// only runs for a present value. Its expression is rendered again
+			// inside the branch, because `inner` is the option's own expression.
+			[__display]: (ctx) =>
+				`(IF ${this[__display](ctx)} IS NONE THEN NONE ELSE ${res[__display](ctx)} END)`,
 		});
 	},
 

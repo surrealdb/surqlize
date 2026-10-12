@@ -1,6 +1,11 @@
 import { OrmError } from "../error.ts";
 import type { ComputedKeys } from "../schema/table.ts";
-import type { AbstractType, HasDefault, ObjectType } from "../types";
+import type {
+	AbstractType,
+	HasDefault,
+	ObjectType,
+	OptionType,
+} from "../types";
 import type { DisplayContext } from "../utils/display.ts";
 import { renderData } from "./defaults.ts";
 import {
@@ -11,12 +16,100 @@ import {
 } from "./utils.ts";
 
 // Shared types
-/** The fields a write may set: every field except the computed (read-only) ones. */
+/**
+ * Every field path of a schema as a dotted string: each top-level field, and
+ * each field of a nested object (`name`, `name.first`).
+ */
+type FieldPath<S, Prefix extends string = ""> = {
+	[K in keyof S & string]:
+		| `${Prefix}${K}`
+		| (ObjectOf<S[K]> extends infer Inner
+				? [Inner] extends [never]
+					? never
+					: FieldPath<Inner, `${Prefix}${K}.`>
+				: never);
+}[keyof S & string];
+
+/**
+ * The fields of an object type, looking through one `option<…>` so that a
+ * nested `t.option(t.object(…))` can be set by its dotted paths too. `never` for
+ * anything that is not an object.
+ */
+type ObjectOf<T> =
+	T extends ObjectType<infer Inner>
+		? Inner
+		: T extends OptionType<infer Inner extends AbstractType>
+			? Inner extends ObjectType<infer Fields>
+				? Fields
+				: never
+			: never;
+
+/** The type of the field at a dotted `Path` in a schema, or `never` if there is none. */
+type PathType<S, Path extends string> = Path extends keyof S
+	? S[Path]
+	: Path extends `${infer Head}.${infer Rest}`
+		? Head extends keyof S
+			? ObjectOf<S[Head]> extends infer Inner
+				? [Inner] extends [never]
+					? never
+					: PathType<Inner, Rest>
+				: never
+			: never
+		: never;
+
+/**
+ * The dotted paths into nested object fields (`"name.first"`), each taking the
+ * value its field takes. Top-level fields are in {@link SetData} itself.
+ */
+type DottedSetData<S> = {
+	[P in Extract<FieldPath<S>, `${string}.${string}`>]?: PathType<
+		S,
+		P
+	> extends infer F extends AbstractType
+		? SetValue<F>
+		: never;
+};
+
+/**
+ * The dotted keys of `D` whose parent object is not also a key of `D`. Each maps
+ * to `never`, so `D & OrphanDottedKeys<D>` rejects them: a CREATE or RELATE
+ * would otherwise store a partial object that cannot be read back in full.
+ */
+export type OrphanDottedKeys<D> = {
+	[K in keyof D as K extends `${infer Root}.${string}`
+		? Root extends keyof D
+			? never
+			: K
+		: never]: never;
+};
+
+/**
+ * Throw if a dotted key in `data` has no parent object set in the same call. The
+ * runtime check behind {@link OrphanDottedKeys}, for data that is not typed.
+ *
+ * @throws {OrmError} Naming the key and the missing parent object.
+ */
+export function assertDottedRootsSupplied(data: Record<string, unknown>): void {
+	for (const key of Object.keys(data)) {
+		const dot = key.indexOf(".");
+		if (dot === -1) continue;
+		const root = key.slice(0, dot);
+		if (data[root] !== undefined) continue;
+		throw new OrmError(
+			`set() key "${key}" writes into "${root}", but "${root}" is not set in the same call. Set the parent object in full alongside it (for example .set({ ${root}: { … }, "${key}": … })): CREATE and RELATE would otherwise store a partial object that cannot be read back.`,
+		);
+	}
+}
+
+/**
+ * The fields a write may set: every field except the computed (read-only) ones,
+ * and the dotted paths into nested object fields.
+ */
 export type SetData<T extends ObjectType> = {
 	[K in Exclude<keyof T["schema"], ComputedKeys<T["schema"]>>]?: SetValue<
 		T["schema"][K]
 	>;
-};
+} & DottedSetData<T["schema"]>;
 
 /** A field that may be left out on create: it has a default or accepts `NONE`. */
 type OptionalOnCreate<F extends AbstractType> = F extends HasDefault

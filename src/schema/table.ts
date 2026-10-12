@@ -1,7 +1,12 @@
 import { escapeIdent } from "surrealdb";
 import { OrmError } from "../error";
 import type { CreateInput, WriteData } from "../query/modification-methods";
-import { type AbstractType, ObjectType, type RecordType, t } from "../types";
+import {
+	type AbstractType,
+	type ObjectType,
+	type RecordType,
+	t,
+} from "../types";
 import {
 	__ctx,
 	__display,
@@ -16,7 +21,6 @@ import { type ModelClass, registerModelClass } from "../utils/model";
 import {
 	type SafeParseResult,
 	safeParseWith,
-	throwIfInvalid,
 	type ValidationMode,
 } from "../validation";
 import type { EventOptions } from "./ddl/event-ddl";
@@ -26,6 +30,7 @@ import {
 	type TableDdl,
 	type TablePermissions,
 } from "./ddl/table-ddl";
+import { ModelType } from "./model-type";
 import type { Orm } from "./orm";
 
 export type { ModelClass } from "../utils/model";
@@ -54,7 +59,13 @@ export type ComputedExpression<
 	Fd extends TableFields,
 	T extends AbstractType,
 > = (
-	row: Actionable<WorkableContext, ObjectType<WithId<Tb, Fd>>>,
+	// A table whose fields are not known (an index signature: `TableFields`,
+	// `any`) gets an `unknown` row. This keeps `TableSchema<"user", {...}>`
+	// assignable to such a wider table: the callback takes the row, so a
+	// precisely typed row there would make the table invariant in its fields.
+	row: string extends keyof Fd
+		? unknown
+		: Actionable<WorkableContext, ObjectType<WithId<Tb, Fd>>>,
 	// biome-ignore lint/suspicious/noExplicitAny: the expression may query any registered table
 	db: Orm<any>,
 ) => Workable<WorkableContext, T>;
@@ -78,31 +89,6 @@ export type TableFields = Record<string, AbstractType>;
 type WithId<Tb extends string, Fd extends TableFields> = "id" extends keyof Fd
 	? Fd
 	: Fd & { id: RecordType<Tb> };
-
-/**
- * The object type of a table linked to a class: rows parse into instances of
- * the class, and the inferred type is the row fields plus the class instance.
- */
-export class ModelType<
-	Fd extends Record<string, AbstractType> = Record<string, AbstractType>,
-	I = unknown,
-> extends ObjectType<Fd> {
-	declare infer: ObjectType<Fd>["infer"] & I;
-	declare accept: ObjectType<Fd>["accept"] & I;
-
-	constructor(
-		fields: Fd,
-		readonly model: ModelClass,
-	) {
-		super(fields);
-	}
-
-	/** Parse a row, then hydrate it into an instance of the linked class. */
-	parse(value: unknown): this["infer"] {
-		const row = super.parse(value);
-		return Object.assign(Object.create(this.model.prototype), row);
-	}
-}
 
 type GetSchemaType<
 	Tb extends string,
@@ -129,7 +115,7 @@ type GetInferType<
  */
 export class TableSchema<
 	Tb extends string = string,
-	// biome-ignore lint/suspicious/noExplicitAny: widest default so any table is assignable to a bare `TableSchema`
+	// biome-ignore lint/suspicious/noExplicitAny: widest default so any table, class-linked or not, is assignable to a bare `TableSchema`
 	Fd extends TableFields = any,
 	// biome-ignore lint/suspicious/noExplicitAny: ditto
 	I = any,
@@ -278,7 +264,9 @@ export class TableSchema<
 	 * and computed fields are rejected; `"update"` is a partial write; `"row"` is a whole stored
 	 * record. On success, `data` is typed accordingly.
 	 *
-	 * The data is returned as given: validation does not convert it.
+	 * The data is returned as given: validation does not convert it. The one
+	 * exception is `"row"` mode on a table linked to a class, where the data is
+	 * hydrated into an instance of the class, as selects do.
 	 */
 	safeParse(
 		data: unknown,
@@ -296,14 +284,25 @@ export class TableSchema<
 		data: unknown,
 		options: { mode?: ValidationMode } = {},
 	): SafeParseResult<unknown> {
-		return safeParseWith(
+		const mode = options.mode ?? "create";
+		const result = safeParseWith(
 			this.schema,
 			data,
-			options.mode ?? "create",
+			mode,
 			this.tb,
 			["id"],
 			this.computedFields,
 		);
+		if (result.success && mode === "row" && this.model) {
+			return {
+				success: true,
+				data: Object.assign(
+					Object.create(this.model.prototype),
+					result.data as object,
+				),
+			};
+		}
+		return result;
 	}
 
 	/**
@@ -322,8 +321,8 @@ export class TableSchema<
 	parse(data: unknown, options: { mode: "row" }): GetInferType<Tb, Fd, I>;
 	parse(data: unknown, options: { mode?: ValidationMode } = {}): unknown {
 		const result = this.safeParse(data, options as { mode: "row" });
-		if (!result.success) throwIfInvalid(result.error.issues, this.tb);
-		return data;
+		if (!result.success) throw result.error;
+		return result.data;
 	}
 
 	// -------------------------------------------------------------------------
@@ -452,9 +451,9 @@ export function table<
 	fields: Fd,
 	model?: M,
 ): TableSchema<Tb, Fd, [M] extends [never] ? unknown : InstanceType<M>> {
-	return new TableSchema(tb, fields, model) as unknown as TableSchema<
+	return new TableSchema<
 		Tb,
 		Fd,
 		[M] extends [never] ? unknown : InstanceType<M>
-	>;
+	>(tb, fields, model);
 }

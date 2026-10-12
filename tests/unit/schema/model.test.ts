@@ -135,4 +135,35 @@ describe("table() linked to a class: types", () => {
 		// @ts-expect-error not a class
 		table("bad", fields, { not: "a class" });
 	});
+	test("parse and safeParse in row mode hydrate instances", () => {
+		const raw = {
+			id: new RecordId("user", "a"),
+			given_name: "Ada",
+			family_name: "Lovelace",
+		};
+
+		const parsed = user.parse(raw, { mode: "row" });
+		expect(parsed).toBeInstanceOf(User);
+		expect(parsed.fullName).toBe("Ada Lovelace");
+		expect(parsed.id.id).toBe("a");
+
+		const safe = user.safeParse(raw, { mode: "row" });
+		expect(safe.success).toBe(true);
+		if (safe.success) {
+			expect(safe.data).toBeInstanceOf(User);
+			expect(safe.data.greet("Bob")).toBe("Ada greets Bob");
+		}
+
+		// The input is left untouched, and invalid rows still fail.
+		expect(raw).not.toBeInstanceOf(User);
+		expect(
+			user.safeParse({ ...raw, given_name: 1 }, { mode: "row" }).success,
+		).toBe(false);
+	});
+
+	test("create and update modes return the data as given", () => {
+		const input = { given_name: "Ada", family_name: "Lovelace" };
+		expect(user.parse(input)).toBe(input);
+		expect(user.parse(input, { mode: "update" })).toBe(input);
+	});
 });

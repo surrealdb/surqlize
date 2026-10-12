@@ -28,5 +28,5 @@
 		// while resolving through node_modules for anyone who copies one out.
 		"paths": { "surqlize": ["./src/index.ts"] }
 	},
-	"exclude": ["dist", "examples", "tests/smoke"]
+	"exclude": ["dist", "examples", "tests/smoke", "tests/readme/.generated"]
 }

@@ -1,3 +1,4 @@
+import { andWhere } from "../query/utils.ts";
 import type { GraphType, OptionType, RecordType } from "../types";
 import type { IntoWorkable, Workable, WorkableContext } from "../utils";
 import type { Actionable } from "../utils/actionable";
@@ -34,9 +35,12 @@ export type GraphSegmentSpec<
 	readonly [GRAPH_SEGMENT]: true;
 	readonly target: Target;
 	readonly filter?: GraphFilter<C, Target>;
+	/** Filter the edge. Chained calls AND together, as they do on queries. */
 	where<NextC extends WorkableContext = C>(
 		cb: GraphFilter<NextC, Target>,
 	): GraphSegmentSpec<Target, NextC>;
+	/** Remove every condition set so far on this segment. */
+	clearWhere(): GraphSegmentSpec<Target, C>;
 };
 
 export function createGraphSegment<
@@ -50,8 +54,15 @@ export function createGraphSegment<
 		[GRAPH_SEGMENT]: true,
 		target,
 		filter,
-		where(cb) {
-			return createGraphSegment(target, cb);
+		where<NextC extends WorkableContext = C>(cb: GraphFilter<NextC, Target>) {
+			if (!filter) return createGraphSegment<Target, NextC>(target, cb);
+			const previous = filter as unknown as GraphFilter<NextC, Target>;
+			return createGraphSegment<Target, NextC>(target, (row) =>
+				andWhere(previous(row), cb(row)),
+			);
+		},
+		clearWhere() {
+			return createGraphSegment<Target, C>(target);
 		},
 	};
 }

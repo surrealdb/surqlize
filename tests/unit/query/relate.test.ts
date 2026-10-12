@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { RecordId, Surreal } from "surrealdb";
 import { __display, displayContext, edge, orm, t, table } from "../../../src";
 
+type Equal<A, B> =
+	(<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2
+		? true
+		: false;
+
 describe("RELATE queries", () => {
 	const user = table("user", {
 		name: t.string(),
@@ -259,5 +264,113 @@ describe("RELATE queries", () => {
 			)
 			.merge({ created: new Date() });
 		expect(() => query.replace({ created: new Date() })).toThrow();
+	});
+});
+
+describe("RELATE content typing", () => {
+	const user = table("user", { name: t.string() });
+	const knows = edge("user", "knows", "user", {
+		since: t.number(),
+		note: t.string().default(""),
+		tag: t.option(t.string()),
+	});
+	const db = orm(new Surreal(), user, knows);
+	const a = new RecordId("user", 1);
+	const b = new RecordId("user", 2);
+
+	test("follows the optionality rules of create().content()", () => {
+		const q = db.relate("knows", a, b);
+		type Content = Parameters<typeof q.content>[0];
+		// `in`, `out` and `id` are supplied by RELATE; defaults and options are optional.
+		const _shape: Equal<
+			{ [K in keyof Content]: Content[K] },
+			{ since: number; note?: string; tag?: string | undefined }
+		> = true;
+		expect(_shape).toBe(true);
+
+		const ctx = displayContext();
+		const sql = db.relate("knows", a, b).content({ since: 1 })[__display](ctx);
+		expect(sql).toContain("CONTENT");
+		db.relate("knows", a, b).content({ since: 1, note: "hi", tag: "x" });
+	});
+
+	test("still requires fields without a default", () => {
+		// @ts-expect-error `since` is required
+		db.relate("knows", a, b).content({ note: "hi" });
+		// @ts-expect-error `in` and `out` are supplied by RELATE
+		db.relate("knows", a, b).content({ since: 1, in: a });
+		expect(true).toBe(true);
+	});
+});
+
+describe("RELATE endpoints from queries", () => {
+	const user = table("user", { name: t.string() });
+	const post = table("post", { title: t.string() });
+	const authored = edge("user", "authored", "post", { created: t.date() });
+	const db = orm(new Surreal(), user, post, authored);
+
+	test("a select of rows, or a single row, is an endpoint", () => {
+		// Type-level: these compile. The function is never called.
+		const _usersToPost = () =>
+			db.relate("authored", db.select("user"), db.select("post", "p1"));
+		const _singleToSingle = () =>
+			db.relate(
+				"authored",
+				db.select("user", "alice").only(),
+				db.select("post").only(),
+			);
+		const _projectedId = () =>
+			db.relate(
+				"authored",
+				db.select("user").return((u) => ({ id: u.id })),
+				db.select("post"),
+			);
+		expect(typeof _usersToPost).toBe("function");
+		expect(typeof _singleToSingle).toBe("function");
+		expect(typeof _projectedId).toBe("function");
+	});
+
+	test("renders the query as a subquery on each side", () => {
+		const sql = db
+			.relate("authored", db.select("user", "alice"), db.select("post", "p1"))
+			[__display](displayContext());
+
+		expect(sql).toContain("RELATE (SELECT * FROM");
+		expect(sql).toContain(")->");
+		expect(sql).toContain("->(SELECT * FROM");
+	});
+
+	test("a query whose rows have no id is rejected", () => {
+		const nameOnly = db.select("user").return((u) => ({ name: u.name }));
+		// @ts-expect-error a row without an id is not a record, so it cannot be an endpoint
+		db.relate("authored", nameOnly, db.select("post"));
+		expect(true).toBe(true);
+	});
+
+	describe("RETURN BEFORE result parsing", () => {
+		const from = new RecordId("user", "a");
+		const to = new RecordId("post", "b");
+		const write = () =>
+			db.relate("authored", from, to).set({ created: new Date() });
+
+		test("a NONE entry (a new edge) parses to undefined, without throwing", () => {
+			expect(write().return("before").parseResult([undefined])).toEqual([
+				undefined,
+			]);
+			expect(
+				write().only().return("before").parseResult(undefined),
+			).toBeUndefined();
+		});
+
+		test("an existing edge's before-state parses leniently, as a partial row", () => {
+			// RELATE onto an edge that already exists returns its stored state. The
+			// fields this write did not set may be absent, which is not an error.
+			const id = new RecordId("authored", "x");
+			const before = { id, in: from, out: to };
+			const rows = write().return("before").parseResult([before]) as {
+				id: unknown;
+			}[];
+			expect(rows[0]?.id).toEqual(id);
+		});
 	});
 });

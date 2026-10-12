@@ -239,6 +239,52 @@ describe("graph traversal — edge filtering", () => {
 		expect(result).toEqual([{ authored: [{ title: "Authored" }] }]);
 	});
 
+	test("chained where() on an edge segment AND together", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		// Contradictory conditions match nothing only if they AND together; had the
+		// second replaced the first, the editor edge would have come back.
+		const result = await db
+			.select("user", "dave")
+			.return((u) => ({
+				authored: u.id
+					.out((g) =>
+						g("authored")
+							.where((e) => e.role.eq("author"))
+							.where((e) => e.role.eq("editor")),
+					)
+					.out("post")
+					.select()
+					.return((p) => ({ title: p.title })),
+			}))
+			.execute();
+
+		expect(result).toEqual([{ authored: [] }]);
+	});
+
+	test("chained where() on an edge segment keeps compatible conditions", async () => {
+		const { surreal } = getTestDb();
+		const db = orm(surreal, ...schema);
+
+		const result = await db
+			.select("user", "dave")
+			.return((u) => ({
+				authored: u.id
+					.out((g) =>
+						g("authored")
+							.where((e) => e.role.ne("reviewer"))
+							.where((e) => e.role.eq("author")),
+					)
+					.out("post")
+					.select()
+					.return((p) => ({ title: p.title })),
+			}))
+			.execute();
+
+		expect(result).toEqual([{ authored: [{ title: "Authored" }] }]);
+	});
+
 	test("without a filter, all edges traverse", async () => {
 		const { surreal } = getTestDb();
 		const db = orm(surreal, ...schema);

@@ -16,6 +16,7 @@ import {
 	type RequestOptions,
 	withSdkDiagnosis,
 } from "./request";
+import { parseWritten } from "./write-result";
 
 export type QueryResult<
 	E extends AbstractType,
@@ -42,6 +43,12 @@ export abstract class Query<
 	type = undefined as unknown as T["infer"];
 	/** When true, result parsing is skipped (used by RETURN DIFF). */
 	protected _skipParse = false;
+	/**
+	 * When true, the result of a partial write is parsed leniently: a field the
+	 * write did not set is not an error, since the record need not have it. See
+	 * `parseWritten`.
+	 */
+	protected _lenient = false;
 	/** Client-side options applied when the query is sent. */
 	protected _request: RequestOptions = {};
 	/** Per-query override of the ORM's input validation; `undefined` defers to the ORM. */
@@ -89,6 +96,7 @@ export abstract class Query<
 	 */
 	parseResult(value: unknown): T["infer"] {
 		if (this._skipParse) return value as T["infer"];
+		if (this._lenient) return parseWritten(this[__type], value) as T["infer"];
 		return this.parse(value);
 	}
 

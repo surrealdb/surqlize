@@ -181,6 +181,52 @@ describe("Live query integration tests", () => {
 		expect(sub.isAlive).toBe(false);
 	}, 15_000);
 
+	test("subscribe() on a killed subscription raises no unhandled rejection", async () => {
+		const { db } = getTestDb();
+
+		const sub = await db.live("user");
+		await sub.kill();
+
+		// The SDK's subscribe() runs its loop in an async IIFE with no catch, so
+		// subscribing to a killed subscription used to reject with nothing to
+		// handle it, which crashes a Node process.
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => {
+			unhandled.push(reason);
+		};
+		process.on("unhandledRejection", onUnhandled);
+		try {
+			const off = sub.subscribe(() => {});
+			off();
+			// Let any rejection from the subscription settle before judging.
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+
+		expect(unhandled).toEqual([]);
+	}, 15_000);
+
+	test("killing a subscription straight after subscribe() raises no unhandled rejection", async () => {
+		const { db } = getTestDb();
+
+		const sub = await db.live("user");
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => {
+			unhandled.push(reason);
+		};
+		process.on("unhandledRejection", onUnhandled);
+		try {
+			sub.subscribe(() => {});
+			await sub.kill();
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+
+		expect(unhandled).toEqual([]);
+	}, 15_000);
+
 	test("the .subscribe() shortcut starts the query and returns a stop function", async () => {
 		const { db } = getTestDb();
 
