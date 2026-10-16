@@ -1,6 +1,6 @@
 import { describe, test } from "bun:test";
-import { type Duration, Surreal, type Uuid } from "surrealdb";
-import { __type, duration, orm, rand, vector } from "../../../src";
+import { type Duration, type RecordId, Surreal, type Uuid } from "surrealdb";
+import { __type, duration, orm, rand, session, vector } from "../../../src";
 
 // Type-level checks: each assertion fails `tsc` if the declared return type of
 // a standalone function drifts from what SurrealDB returns for it. The runtime
@@ -42,5 +42,42 @@ describe("standalone function return types", () => {
 		const normalized = vector.normalize(vec);
 		assertType<Equal<InferOf<typeof sum>, number[]>>();
 		assertType<Equal<InferOf<typeof normalized>, number[]>>();
+	});
+});
+
+describe("session function return types", () => {
+	// Each follows `$session`, and is optional where a session can lack the
+	// thing. The values are checked against a live server in
+	// tests/integration/session.test.ts.
+	test("session.id() is a uuid, not a string", () => {
+		const id = session.id(src);
+		assertType<Equal<InferOf<typeof id>, Uuid>>();
+	});
+
+	test("what a system user has none of is optional", () => {
+		const ac = session.ac(src);
+		const rd = session.rd(src);
+		const origin = session.origin(src);
+		assertType<Equal<InferOf<typeof ac>, string | undefined>>();
+		assertType<Equal<InferOf<typeof rd>, RecordId<string> | undefined>>();
+		assertType<Equal<InferOf<typeof origin>, string | undefined>>();
+	});
+
+	test("the namespace and database are absent until one is selected", () => {
+		const ns = session.ns(src);
+		const db = session.db(src);
+		assertType<Equal<InferOf<typeof ns>, string | undefined>>();
+		assertType<Equal<InferOf<typeof db>, string | undefined>>();
+	});
+
+	test("session.token() is the claims, absent for a session with no token", () => {
+		const token = session.token(src);
+		// biome-ignore lint/complexity/noBannedTypes: the claims are an object type with no known properties, which infers as `{}`
+		assertType<Equal<InferOf<typeof token>, {} | undefined>>();
+	});
+
+	test("session.ip() is still a string", () => {
+		const ip = session.ip(src);
+		assertType<Equal<InferOf<typeof ip>, string>>();
 	});
 });

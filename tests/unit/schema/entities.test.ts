@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { OrmError } from "../../../src/error";
 import {
 	access,
 	analyzer,
@@ -163,6 +164,43 @@ describe("DEFINE ACCESS, other types", () => {
 		expect(sql).not.toContain("ALGORITHM");
 	});
 
+	test("a key set states the session duration SurrealDB reports back", () => {
+		// It reads back `DURATION FOR SESSION NONE` whatever was written, so a
+		// definition that stated none would look modified on every run.
+		const url = "https://issuer/.well-known/jwks.json";
+
+		expect(access("api", { type: "JWT", url }).define()).toBe(
+			`DEFINE ACCESS api ON DATABASE TYPE JWT URL '${url}' DURATION FOR SESSION NONE;`,
+		);
+		expect(
+			access("api", { type: "JWT", url, duration: { session: "2h" } }).define(),
+		).toContain("DURATION FOR SESSION 2h");
+	});
+
+	test("a key set takes no token duration, as the server drops it", () => {
+		const sql = access("api", {
+			type: "JWT",
+			url: "https://issuer/jwks",
+			duration: { token: "15m", session: "2h" },
+		}).define();
+
+		expect(sql).toContain("DURATION FOR SESSION 2h;");
+		expect(sql).not.toContain("FOR TOKEN");
+	});
+
+	test("a JWT with a key still states only what was asked for", () => {
+		expect(
+			access("api", {
+				type: "JWT",
+				key: "k",
+				duration: { token: "15m" },
+			}).define(),
+		).toContain("DURATION FOR TOKEN 15m;");
+		expect(access("api", { type: "JWT", key: "k" }).define()).not.toContain(
+			"DURATION",
+		);
+	});
+
 	test("BEARER names what a grant authenticates", () => {
 		expect(access("g", { type: "BEARER", for: "USER" }).define()).toContain(
 			"TYPE BEARER FOR USER",
@@ -186,6 +224,50 @@ describe("DEFINE ACCESS, other types", () => {
 		expect(access("j", { type: "JWT", key: "s" }).opaque).toBe(true);
 		expect(access("u", { type: "JWT", url: "https://x" }).opaque).toBe(false);
 		expect(access("b", { type: "BEARER", for: "USER" }).opaque).toBe(false);
+	});
+});
+
+describe("A grant duration", () => {
+	test("is part of a BEARER access", () => {
+		expect(
+			access("g", {
+				type: "BEARER",
+				for: "USER",
+				duration: { grant: "30d" },
+			}).define(),
+		).toContain("FOR GRANT 30d");
+	});
+
+	test("throws on any other type, naming the access, rather than being dropped", () => {
+		const duration = { grant: "1d" };
+
+		expect(() => access("rec", { signin: "SELECT 1", duration })).toThrow(
+			/Access rec is a RECORD access/,
+		);
+		expect(() =>
+			access("rec2", { type: "RECORD", signin: "SELECT 1", duration }),
+		).toThrow(/grant duration only applies to a BEARER/);
+		expect(() => access("jw", { type: "JWT", key: "k", duration })).toThrow(
+			/Access jw is a JWT access/,
+		);
+		expect(() =>
+			access("jwks", { type: "JWT", url: "https://issuer/jwks", duration }),
+		).toThrow(/Access jwks is a JWT access/);
+	});
+
+	test("throws as an OrmError, so it can be told from a server failure", () => {
+		expect(() =>
+			access("jw", { type: "JWT", key: "k", duration: { grant: "1d" } }),
+		).toThrow(OrmError);
+	});
+
+	test("does not throw for the other two durations", () => {
+		expect(() =>
+			access("rec", {
+				signin: "SELECT * FROM user",
+				duration: { token: "15m", session: "12h" },
+			}),
+		).not.toThrow();
 	});
 });
 

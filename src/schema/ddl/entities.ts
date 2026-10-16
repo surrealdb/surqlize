@@ -1,3 +1,4 @@
+import { OrmError } from "../../error";
 import { quote } from "./syntax";
 
 /**
@@ -233,8 +234,12 @@ export function sequence(
 
 /** How long a grant, a token and a session stay valid. */
 export interface AccessDuration {
-	/** How long a bearer grant stays valid. `BEARER` only. */
+	/** How long a bearer grant stays valid. `BEARER` only: any other type throws. */
 	grant?: string;
+	/**
+	 * How long a token stays valid. A `JWT` access that fetches a key set from a
+	 * `url` takes it from the issuer's `exp` claim instead, and ignores this.
+	 */
 	token?: string;
 	session?: string;
 }
@@ -336,6 +341,14 @@ const BEARER_DURATION = {
 export function access(name: string, options: AccessOptions): DatabaseEntity {
 	const type = options.type ?? "RECORD";
 
+	// SurrealDB accepts a grant duration on any access and then drops it, so the
+	// definition would quietly not mean what it says.
+	if (type !== "BEARER" && options.duration?.grant !== undefined) {
+		throw new OrmError(
+			`Access ${name} is a ${type} access, and a grant duration only applies to a BEARER one. Remove it from the duration.`,
+		);
+	}
+
 	// A shared secret is redacted on read-back; a published key set is not.
 	const opaque =
 		type === "RECORD" ||
@@ -359,7 +372,7 @@ export function access(name: string, options: AccessOptions): DatabaseEntity {
 				parts.push("FOR", (options as BearerAccessOptions).for);
 			}
 
-			const durations = durationClauses(options.duration, type);
+			const durations = durationClauses(options, type);
 			if (durations) parts.push("DURATION", durations);
 
 			if (options.comment) parts.push("COMMENT", quote(options.comment));
@@ -403,14 +416,21 @@ function jwtClauses(options: JwtAccessOptions): string[] {
  *
  * A `BEARER` access reads back with every duration filled in, so all three are
  * emitted with the values SurrealDB would have supplied — otherwise it would
- * look modified on every run. The other types are opaque and only need to carry
- * what was asked for.
+ * look modified on every run. So does a `JWT` access backed by a key set, but
+ * with only the session duration: the issuer sets how long a token lives, and
+ * a token duration is dropped. The other types are opaque and only need to
+ * carry what was asked for.
  */
 function durationClauses(
-	duration: AccessDuration | undefined,
+	options: AccessOptions,
 	type: "RECORD" | "JWT" | "BEARER",
 ): string {
+	const { duration } = options;
 	const parts: string[] = [];
+
+	if (type === "JWT" && (options as JwtAccessOptions).url) {
+		return `FOR SESSION ${duration?.session ?? "NONE"}`;
+	}
 
 	if (type === "BEARER") {
 		parts.push(`FOR GRANT ${duration?.grant ?? BEARER_DURATION.grant}`);
