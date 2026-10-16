@@ -1,4 +1,9 @@
-import { RecordId, type RecordIdValue, ServerError } from "surrealdb";
+import {
+	RecordId,
+	type RecordIdValue,
+	ServerError,
+	toSurqlString,
+} from "surrealdb";
 import { OrmError } from "../error";
 import type { LiveMessage } from "../query/live";
 import type { CreateInput } from "../query/modification-methods";
@@ -78,15 +83,67 @@ const isConnectionEvents = (value: unknown): value is ConnectionEvents =>
 
 /** A stable key for a query: its text and what it binds. */
 function keyOf(text: string, bindings: unknown): string {
-	return `${text}\u0000${JSON.stringify(bindings, (_, value) =>
-		typeof value === "object" &&
-		value !== null &&
-		!Array.isArray(value) &&
-		Object.getPrototypeOf(value) !== Object.prototype
-			? String(value)
-			: value,
-	)}`;
+	return `${text}\u0000${keyOfValue(bindings, [])}`;
 }
+
+/**
+ * A string for a binding, different for values that differ. Each kind of
+ * container is tagged, so that a `Set` and an array of the same items do not
+ * share a key, and bytes are written out. A value of the SDK (a record id, a
+ * decimal, a datetime) is written as SurrealQL, which keeps it apart from the
+ * text and the number it prints as, and does not depend on a class name that a
+ * bundler may have changed. Any other instance of a class is told apart by its
+ * class name only, so two of one class share a key. Never throws.
+ */
+function keyOfValue(value: unknown, parents: object[]): string {
+	switch (typeof value) {
+		case "string":
+			return JSON.stringify(value);
+		case "bigint":
+			return `${value}n`;
+		case "symbol":
+			return `symbol(${value.description ?? ""})`;
+		case "function":
+			return `function(${value.name})`;
+		case "object":
+			break;
+		default:
+			return String(value);
+	}
+	if (value === null) return "null";
+	if (parents.includes(value)) return "[circular]";
+	const inner = [...parents, value];
+	const each = (items: Iterable<unknown>) =>
+		[...items].map((item) => keyOfValue(item, inner)).join(",");
+
+	if (Array.isArray(value)) return `[${each(value)}]`;
+	if (value instanceof Set) return `set[${each(value)}]`;
+	if (value instanceof Map)
+		return `map[${[...value].map(([k, v]) => `${keyOfValue(k, inner)}=>${keyOfValue(v, inner)}`).join(",")}]`;
+	if (value instanceof ArrayBuffer) return `buffer(${hex(value)})`;
+	if (ArrayBuffer.isView(value))
+		return `${value.constructor.name}(${hex(value.buffer, value.byteOffset, value.byteLength)})`;
+	if (value instanceof Date) return `date(${value.getTime()})`;
+	const proto = Object.getPrototypeOf(value);
+	if (proto === Object.prototype || proto === null) {
+		const entries = Object.entries(value).map(
+			([k, v]) => `${JSON.stringify(k)}:${keyOfValue(v, inner)}`,
+		);
+		return `{${entries.join(",")}}`;
+	}
+	try {
+		const text = toSurqlString(value);
+		if (!text.startsWith("[object ")) return text;
+	} catch {
+		// No form of its own: told apart by its class below.
+	}
+	return `class(${(value as object).constructor?.name ?? "unknown"})`;
+}
+
+const hex = (buffer: ArrayBufferLike, offset = 0, length?: number): string =>
+	Array.from(new Uint8Array(buffer, offset, length), (byte) =>
+		byte.toString(16).padStart(2, "0"),
+	).join("");
 
 /**
  * Live views of queries. Ask for a query with {@link Store.query} and
@@ -102,7 +159,10 @@ function keyOf(text: string, bindings: unknown): string {
  * ```
  */
 export class Store<O extends Orm> {
-	readonly #stores = new Map<string, QueryStore<unknown>>();
+	readonly #stores = new Map<
+		string,
+		{ query: QueryStore<unknown>; stop: () => void }
+	>();
 	readonly #idleMs: number;
 	readonly #debounceMs: number;
 	readonly #connection: ConnectionEvents | undefined;
@@ -146,20 +206,41 @@ export class Store<O extends Orm> {
 	}
 
 	#online = true;
+	#unwatch: (() => void)[] = [];
 
 	/** Keep track of the connection, and send waiting writes when it returns. */
 	#watchConnection(): void {
 		const connection = this.#connection;
 		if (!connection) return;
-		connection.subscribe("connected", () => {
-			this.#online = true;
-			void this.#outbox.flush();
-		});
+		this.#unwatch.push(
+			connection.subscribe("connected", () => {
+				this.#online = true;
+				void this.#outbox.flush();
+			}),
+		);
 		for (const event of ["reconnecting", "disconnected"] as const) {
-			connection.subscribe(event, () => {
-				this.#online = false;
-			});
+			this.#unwatch.push(
+				connection.subscribe(event, () => {
+					this.#online = false;
+				}),
+			);
 		}
+	}
+
+	/**
+	 * Stop everything the store started: its listeners on the connection, the
+	 * sending of the writes that are still waiting, and every running query, even
+	 * one that is subscribed. For a store made for a short-lived scope, such as a
+	 * request or a test, so that it does not outlive it. A write that is on its
+	 * way ends as the database answers, but none is sent or retried after it.
+	 * Writes that are waiting stay in storage, and are sent when a store starts
+	 * over it again.
+	 */
+	dispose(): void {
+		for (const off of this.#unwatch) off();
+		this.#unwatch = [];
+		this.#outbox.dispose();
+		for (const { stop } of [...this.#stores.values()]) stop();
 	}
 
 	async #send(op: OutboxOp): Promise<unknown> {
@@ -196,8 +277,8 @@ export class Store<O extends Orm> {
 	/** Record the result of an accepted write in every running query of its table. */
 	#acknowledge(op: OutboxOp, row: unknown): void {
 		const key = String(new RecordId(op.table, op.id as never));
-		for (const store of this.#stores.values()) {
-			if (store.table === op.table) store.acknowledge({ key, row });
+		for (const { query } of this.#stores.values()) {
+			if (query.table === op.table) query.acknowledge({ key, row });
 		}
 	}
 
@@ -260,8 +341,9 @@ export class Store<O extends Orm> {
 		const key = `${build ? "refetch" : "direct"}\u0000${keyOf(prepared.query, prepared.bindings)}`;
 
 		const existing = this.#stores.get(key);
-		if (existing) return existing;
+		if (existing) return existing.query;
 
+		let stop = () => {};
 		const store = new QueryStore<unknown>({
 			table: tb,
 			mode: build ? "refetch" : "direct",
@@ -302,11 +384,18 @@ export class Store<O extends Orm> {
 			keyOfId: (id) => String(id),
 			sort: options.sort as ((a: unknown, b: unknown) => number) | undefined,
 			onConnection: this.#connection && ((listener) => this.#listen(listener)),
-			onDispose: () => this.#stores.delete(key),
+			// A query that was stopped and replaced can still stop again, when a holder
+			// of it subscribes and leaves: it must not forget the one that replaced it.
+			onDispose: () => {
+				if (this.#stores.get(key)?.query === store) this.#stores.delete(key);
+			},
+			registerStop: (stopQuery) => {
+				stop = stopQuery;
+			},
 			idleMs: this.#idleMs,
 			debounceMs: this.#debounceMs,
 		});
-		this.#stores.set(key, store);
+		this.#stores.set(key, { query: store, stop });
 		return store;
 	}
 

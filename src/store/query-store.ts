@@ -77,6 +77,12 @@ export type QueryStoreDeps<T> = {
 	insertable?: boolean;
 	/** Called once the store has no subscribers and has shut down. */
 	onDispose?(): void;
+	/**
+	 * Called once, as the store is made, with a function that stops it at once,
+	 * whether or not anything is still subscribed. For `Store.dispose()` only: a
+	 * store otherwise stops itself when the last subscriber leaves.
+	 */
+	registerStop?(stop: () => void): void;
 	/** How long to keep running after the last subscriber leaves. */
 	idleMs: number;
 	/** How long to wait for further changes before running a `refetch` query again. */
@@ -116,7 +122,9 @@ export class QueryStore<T> {
 	/** Distinguishes a load that was superseded by a restart. */
 	#epoch = 0;
 
-	constructor(private readonly deps: QueryStoreDeps<T>) {}
+	constructor(private readonly deps: QueryStoreDeps<T>) {
+		deps.registerStop?.(() => this.#stop());
+	}
 
 	/** The table this query reads. */
 	get table(): string | undefined {
@@ -328,6 +336,7 @@ export class QueryStore<T> {
 	}
 
 	#stop(): void {
+		clearTimeout(this.#idle);
 		this.#idle = undefined;
 		this.#running = false;
 		this.#epoch++;

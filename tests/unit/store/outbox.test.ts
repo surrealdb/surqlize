@@ -259,6 +259,45 @@ describe("Outbox", () => {
 		expect((await storage.load()).length).toBe(0);
 	});
 
+	test("a disposed outbox sends nothing more, even when a send that was on its way fails", async () => {
+		const { outbox, sent, storage } = make({
+			send: async () => {
+				await tick(30);
+				throw new Error("socket closed");
+			},
+		});
+		void outbox.enqueue(create("a")).catch(() => {});
+		await tick(10);
+		expect(sent).toHaveLength(1);
+
+		// The send is still pending: it fails after the outbox was disposed.
+		outbox.dispose();
+		await tick(80);
+		expect(sent).toHaveLength(1);
+		expect(outbox.getSnapshot()).toHaveLength(1);
+		expect(await storage.load()).toHaveLength(1);
+	});
+
+	test("a disposed outbox finishes the send that was on its way, and no other", async () => {
+		const { outbox, sent, acked, storage } = make({
+			send: async () => {
+				await tick(30);
+				return {};
+			},
+		});
+		const first = outbox.enqueue(create("a"));
+		void outbox.enqueue(create("b"));
+		await tick(10);
+		expect(sent).toHaveLength(1);
+
+		outbox.dispose();
+		await first;
+		await tick(60);
+		expect(sent.map((o) => o.id)).toEqual(["a"]);
+		expect(acked.map((o) => o.id)).toEqual(["a"]);
+		expect((await storage.load()).length).toBe(1);
+	});
+
 	test("a write that cannot be stored is rejected and not shown", async () => {
 		const storage = memoryStorage();
 		storage.put = async () => {
