@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { DateTime, Decimal, RecordId, Surreal, Uuid } from "surrealdb";
+import {
+	DateTime,
+	Decimal,
+	QueryError,
+	RecordId,
+	ServerError,
+	Surreal,
+	Uuid,
+} from "surrealdb";
 import { createStore, orm, t, table } from "../../../src";
 import type { ConnectionEvents } from "../../../src/store";
 
@@ -119,17 +127,21 @@ function countingConnection() {
 
 /**
  * An ORM that answers from memory: no rows, a live query that can be counted,
- * and writes that fail as a dropped connection does.
+ * and writes that fail as `failure` says, by default as a dropped connection does.
  */
-function fakeDb() {
+function fakeDb(
+	failure: (attempt: number) => Error | undefined = () =>
+		new Error("socket closed"),
+) {
 	const state = { liveOpened: 0, liveClosed: 0, writes: 0 };
 	const write = () => {
 		const chain = {
 			content: () => chain,
 			merge: () => chain,
 			execute: async () => {
-				state.writes++;
-				throw new Error("socket closed");
+				const error = failure(++state.writes);
+				if (error) throw error;
+				return [{ id: "x" }];
 			},
 		};
 		return chain;
@@ -233,5 +245,43 @@ describe("Store.dispose", () => {
 		expect(state.writes).toBe(writes);
 		// The write is not lost: it is still pending.
 		expect(store.pending.getSnapshot()).toHaveLength(1);
+	});
+});
+
+const conflict = () =>
+	new QueryError({
+		kind: "Query",
+		message: "Transaction conflict: Write conflict, retry the transaction",
+		details: { kind: "TransactionConflict" },
+	});
+
+describe("Store write failures", () => {
+	const write = (db: never) =>
+		createStore(db, { retry: { minMs: 5, maxMs: 5 } })
+			.table("doc" as never)
+			.update("x", {} as never) as { committed: Promise<unknown> };
+
+	test("a retryable conflict is not a refusal: the write is sent again", async () => {
+		const { db, state } = fakeDb((attempt) =>
+			attempt < 3 ? conflict() : undefined,
+		);
+		await expect(write(db).committed).resolves.toEqual({ id: "x" });
+		expect(state.writes).toBe(3);
+	});
+
+	test("any other refusal from the database still drops the write", async () => {
+		for (const error of [
+			new ServerError({ kind: "Thrown", message: "refused" }),
+			new QueryError({
+				kind: "Query",
+				message: "x",
+				details: { kind: "NotExecuted" },
+			}),
+			new QueryError({ kind: "Query", message: "Transaction conflict: retry" }),
+		]) {
+			const { db, state } = fakeDb(() => error);
+			await expect(write(db).committed).rejects.toBe(error);
+			expect(state.writes).toBe(1);
+		}
 	});
 });

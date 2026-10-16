@@ -1,4 +1,5 @@
 import {
+	isRetryableConflict,
 	RecordId,
 	type RecordIdValue,
 	ServerError,
@@ -192,8 +193,12 @@ export class Store<O extends Orm> {
 			storage: options.storage ?? memoryStorage(),
 			send: (op) => this.#send(op),
 			acknowledge: (op, row) => this.#acknowledge(op, row),
+			// A write that lost a race with another one was not applied, and sending it
+			// again cannot count it twice, so it is not a refusal. Only a server that
+			// reports the conflict in a structured way (3.1.0 or later) is recognised.
 			isPermanent: (error) =>
-				error instanceof ServerError || error instanceof OrmError,
+				!isRetryableConflict(error) &&
+				(error instanceof ServerError || error instanceof OrmError),
 			isOnline: () => this.#connection === undefined || this.#online,
 			retry: {
 				minMs: options.retry?.minMs ?? 500,

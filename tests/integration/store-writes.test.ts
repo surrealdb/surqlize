@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { RecordId, Surreal } from "surrealdb";
 import {
 	createStore,
@@ -9,8 +9,14 @@ import {
 	table,
 } from "../../src";
 import { encode } from "../../src/store/codec";
+import { atLeast, serverVersion } from "../helpers/db";
 import { startProxy } from "../helpers/proxy";
 import { withTestDb } from "./setup";
+
+// SurrealDB 3.1.0 started reporting a transaction conflict as a structured
+// error, which is what the store recognises as retryable. Earlier servers keep
+// the behaviour of a refusal until the text they send has been checked.
+const structuredConflicts = atLeast(await serverVersion(), 3, 1);
 
 const task = table("task", {
 	title: t.string(),
@@ -346,4 +352,60 @@ describe("Store writes (integration)", () => {
 			store.table("task").delete("ghost").committed,
 		).resolves.toBeUndefined();
 	});
+});
+
+describe("Store writes that conflict (integration)", () => {
+	const contended = table("contended", { n: t.number(), slow: t.bool() });
+	const getTestDb = withTestDb({
+		perTest: true,
+		setup: async ({ surreal }) => {
+			// The event holds a write that sets `slow` open, so while it waits another
+			// write to the record commits first and the held one is the one that conflicts.
+			await surreal.query(`
+				DEFINE TABLE contended SCHEMALESS;
+				DEFINE EVENT held ON contended WHEN $after.slow = true THEN { sleep(500ms); };
+				CREATE contended:c SET n = 0, slow = false;
+			`);
+		},
+	});
+
+	test.skipIf(!structuredConflicts)(
+		"a write that conflicts with a concurrent one is sent again, not dropped",
+		async () => {
+			const { surreal } = getTestDb();
+			const other = new Surreal();
+			const db = orm(surreal, contended);
+			// Every attempt to send the write goes through `update`.
+			const attempts = spyOn(db, "update");
+			const store = createStore(db, { retry: { minMs: 10, maxMs: 50 } });
+			try {
+				await other.connect(process.env.SURREAL_URL || "ws://localhost:8000");
+				await other.signin({ username: "root", password: "root" });
+				await other.use({
+					namespace: surreal.namespace,
+					database: surreal.database,
+				});
+
+				const write = store
+					.table("contended")
+					.update("c", { n: 1, slow: true });
+				// By now the write is inside the database, held open by the event.
+				await new Promise((r) => setTimeout(r, 200));
+				await other.query("UPDATE contended:c SET n = 2, slow = false");
+
+				await expect(write.committed).resolves.toMatchObject({ n: 1 });
+				const [stored] = await surreal.query<[{ n: number }[]]>(
+					"SELECT * FROM contended",
+				);
+				expect(stored?.map((r) => r.n)).toEqual([1]);
+				expect(store.pending.getSnapshot()).toHaveLength(0);
+				// The first attempt lost the race, so a test that sends once has not
+				// seen a conflict at all.
+				expect(attempts.mock.calls.length).toBeGreaterThanOrEqual(2);
+			} finally {
+				store.dispose();
+				await other.close();
+			}
+		},
+	);
 });
