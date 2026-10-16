@@ -24,6 +24,11 @@ const task = table("task", {
 	priority: t.number(),
 });
 
+const note = table("note", {
+	title: t.string(),
+	body: t.option(t.string()),
+});
+
 async function waitFor(check: () => boolean, ms = 10_000, label = "the store") {
 	const deadline = Date.now() + ms;
 	while (!check()) {
@@ -49,12 +54,13 @@ describe("Store writes (integration)", () => {
 		setup: async ({ surreal }) => {
 			await surreal.query("DEFINE TABLE task SCHEMALESS");
 			await surreal.query("DEFINE FIELD priority ON task TYPE number");
+			await surreal.query("DEFINE TABLE note SCHEMALESS");
 		},
 	});
 
 	function connect() {
 		const { surreal } = getTestDb();
-		const db = orm(surreal, task);
+		const db = orm(surreal, task, note);
 		return {
 			surreal,
 			db,
@@ -201,6 +207,102 @@ describe("Store writes (integration)", () => {
 			"SELECT * FROM task WHERE done = false",
 		);
 		expect(stored).toHaveLength(2);
+		stop();
+	});
+
+	test("a field the projection does not select shows while its write is pending and goes when the database accepts it", async () => {
+		const { db } = connect();
+		const store = createStore(db, { idleMs: 20, debounceMs: 400 });
+		const writes = store.table("task");
+		const { id, committed } = writes.create({
+			title: "Rust",
+			done: false,
+			priority: 1,
+		});
+		await committed;
+
+		const projected = store.query("task", (q) =>
+			q.return((r) => ({ id: r.id, title: r.title })),
+		);
+		const stop = projected.subscribe(() => {});
+		const keys = () => {
+			const snap = projected.getSnapshot();
+			return snap.status === "success"
+				? Object.keys(snap.data[0] ?? {}).sort()
+				: [];
+		};
+		await waitFor(() => keys().length > 0);
+		expect(keys()).toEqual(["id", "title"]);
+
+		const edit = writes.update(id, { done: true });
+		// A pending write is shown on top of the row, whatever the query selects.
+		expect(keys()).toEqual(["done", "id", "title"]);
+		await edit.committed;
+		// The answer updates only the keys the row has, so the field goes again.
+		expect(keys()).toEqual(["id", "title"]);
+		stop();
+	});
+
+	test("known limitation: a cleared optional field shows its old value from the acknowledgement until the refetch", async () => {
+		const { db } = connect();
+		const store = createStore(db, { idleMs: 20, debounceMs: 400 });
+		const writes = store.table("note");
+		const { id, committed } = writes.create({ title: "A", body: "text" });
+		await committed;
+
+		// Whole table rows, but not a plain filter, so an answer is merged into them.
+		const ordered = store.query("note", (q) => q.orderBy("title").limit(10));
+		const body = () => {
+			const snap = ordered.getSnapshot();
+			return snap.status === "success" ? snap.data[0]?.body : "loading";
+		};
+		const stop = ordered.subscribe(() => {});
+		await waitFor(() => body() === "text");
+
+		const clear = writes.update(id, { body: undefined });
+		expect(body()).toBeUndefined();
+		const stored = await clear.committed;
+		// The answer leaves out a field that is NONE, and the row still holds the
+		// old value of a key the answer does not name, so it shows again.
+		expect(stored).not.toHaveProperty("body");
+		expect(body()).toBe("text");
+		// The refetch then reads the field as it is.
+		await waitFor(() => body() === undefined);
+		stop();
+	});
+
+	test("a projected query keeps its shape when the database accepts the caller's own write", async () => {
+		const { db } = connect();
+		// A long debounce, so the answer to the write is what is read, not the refetch after it.
+		const store = createStore(db, { idleMs: 20, debounceMs: 400 });
+		const writes = store.table("task");
+		const { id, committed } = writes.create({
+			title: "Rust",
+			done: false,
+			priority: 1,
+		});
+		await committed;
+
+		const projected = store.query("task", (q) =>
+			q.return((r) => ({ id: r.id, title: r.title, extra: r.title.len() })),
+		);
+		const stop = projected.subscribe(() => {});
+		const row = () => {
+			const snap = projected.getSnapshot();
+			return snap.status === "success" ? snap.data[0] : undefined;
+		};
+		await waitFor(() => row() !== undefined);
+		expect(row()).toMatchObject({ title: "Rust", extra: 4 });
+
+		await writes.update(id, { title: "Rust edited" }).committed;
+		// The written field shows, the computed column keeps its last value, and
+		// the fields the projection left out do not appear.
+		expect(Object.keys(row() ?? {}).sort()).toEqual(["extra", "id", "title"]);
+		expect(row()).toMatchObject({ title: "Rust edited", extra: 4 });
+
+		// The refetch then brings the column up to date.
+		await waitFor(() => row()?.extra === 11);
+		expect(Object.keys(row() ?? {}).sort()).toEqual(["extra", "id", "title"]);
 		stop();
 	});
 

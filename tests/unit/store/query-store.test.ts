@@ -6,7 +6,7 @@ import {
 	type QueryStoreDeps,
 } from "../../../src";
 
-type Row = { id: string; n: number };
+type Row = { id: string; n: number; extra?: number };
 
 /** A table that tests drive by hand: its rows, its live handler, its connection. */
 function fake(options: Partial<QueryStoreDeps<Row>> = {}) {
@@ -335,6 +335,59 @@ describe("QueryStore", () => {
 			send("UPDATE", { id: "a", n: 2 });
 			await tick(20);
 			expect(data(store)).toEqual([{ id: "b", n: 1 }]);
+		});
+
+		describe("acknowledging a write", () => {
+			/**
+			 * A store over a query that returns `rows`, with its first result loaded.
+			 * `settle` is what the outbox does after it acknowledges a write: it
+			 * removes the write, which publishes the view.
+			 */
+			async function loaded(
+				rows: Row[],
+				options: Partial<QueryStoreDeps<Row>>,
+			) {
+				let settle: () => void = () => {};
+				const made = fake({
+					mode: "refetch",
+					overlay: {
+						apply: (all) => all,
+						subscribe: (listener) => {
+							settle = listener;
+							return () => {};
+						},
+					},
+					...options,
+				});
+				made.state.rows = rows;
+				made.store.subscribe(() => {});
+				await tick();
+				return { ...made, settle: () => settle() };
+			}
+
+			// What the database returns for a write is the whole table row.
+			const answer = { id: "a", n: 2, secret: "x" } as unknown as Row;
+
+			test("a result that is not a plain filter keeps its shape", async () => {
+				const { store, settle } = await loaded(
+					[{ id: "a", n: 1, extra: 20 }],
+					{},
+				);
+				store.acknowledge({ key: "a", row: answer });
+				settle();
+				// The written field shows; the computed column stays; what the query
+				// did not select does not appear.
+				expect(data(store)).toEqual([{ id: "a", n: 2, extra: 20 }]);
+			});
+
+			test("a plain filter takes the whole row, as its rows are whole rows", async () => {
+				const { store, settle } = await loaded([{ id: "a", n: 1 }], {
+					membership: () => true,
+				});
+				store.acknowledge({ key: "a", row: answer });
+				settle();
+				expect(data(store)).toEqual([answer]);
+			});
 		});
 
 		test("a notification during a read triggers another read", async () => {

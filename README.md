@@ -1476,6 +1476,10 @@ The store does not guess when it cannot be sure, and leaves the result as the da
 
 A record that left the result and is updated back to matching is not shown until the database reports it, because the client holds only the fields of the write, not the whole record.
 
+When the database accepts a write, a query that is not a plain filter (a projection, `LIMIT`, `START` or a callback filter) keeps the keys of its rows. The answer updates the fields a row already has and adds none, so a written field shows at once, a computed column keeps its last value until the query reads again, and a field the query did not select does not appear once the database has accepted the write. While the write is pending, the result shows every field the write sets, including one the query did not select, and that field goes when the database accepts the write. A field the query computes or fetches under the name of a stored field shows the stored value until the query reads again.
+
+Known limitation: a field that a write clears to `NONE` is left out of the database's answer. A query that is not a plain filter (a projection that selects the field, `LIMIT`, `START`, `FETCH`, or a callback filter) then shows the field's old value from the moment the database accepts the write until the query reads again. The field is absent while the write is pending, and absent again once the query has read. A plain filter replaces its rows with the answer and is not affected.
+
 By default pending writes are kept in memory, so they survive a dropped connection but not a reload. To keep them across reloads, pass an IndexedDB store, and wait for `store.ready` before relying on them:
 
 ```ts
