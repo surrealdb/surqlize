@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { t, table } from "../../src";
 import { diff } from "../../src/migrator/diff";
 import { introspect } from "../../src/migrator/introspect";
-import { migrate, plan } from "../../src/migrator/migrate";
+import { migrate, plan, rollback } from "../../src/migrator/migrate";
 import {
 	access,
 	analyzer,
@@ -99,6 +99,134 @@ describe("Database-level definitions", () => {
 		// The analyzer has to exist before the index that names it
 		await migrate(db().surreal, defs);
 		expect((await plan(db().surreal, defs)).up).toEqual([]);
+	});
+
+	describe("an analyzer that an index uses", () => {
+		// The server refuses to remove an analyzer while an index names it, so the
+		// index has to move first.
+		const tokenizers = ["BLANK"];
+		const posts = (using: string) =>
+			table("post", { body: t.string() }).index("body_ft", {
+				fields: ["body"],
+				fulltext: { analyzer: using },
+			});
+
+		/** The analyzer names the database has. */
+		async function analyzers(): Promise<string[]> {
+			const [info] =
+				await db().surreal.query<[{ analyzers: Record<string, string> }]>(
+					"INFO FOR DB;",
+				);
+			return Object.keys(info.analyzers).sort();
+		}
+
+		test("is renamed once the index has moved to the new name", async () => {
+			await migrate(db().surreal, [
+				analyzer("before", { tokenizers }),
+				posts("before"),
+			]);
+
+			const defs = [
+				analyzer("after", { tokenizers, previousNames: ["before"] }),
+				posts("after"),
+			];
+			await migrate(db().surreal, defs);
+
+			expect(await analyzers()).toEqual(["after"]);
+			expect((await plan(db().surreal, defs)).up).toEqual([]);
+		});
+
+		test("is removed once the index has moved to another", async () => {
+			await migrate(db().surreal, [
+				analyzer("keep", { tokenizers }),
+				analyzer("drop", { tokenizers }),
+				posts("drop"),
+			]);
+
+			const defs = [analyzer("keep", { tokenizers }), posts("keep")];
+			await migrate(db().surreal, defs, { removeMissing: true });
+
+			expect(await analyzers()).toEqual(["keep"]);
+			expect(
+				(await plan(db().surreal, defs, { removeMissing: true })).up,
+			).toEqual([]);
+		});
+
+		test("is removed once the index is gone", async () => {
+			await migrate(db().surreal, [
+				analyzer("keep", { tokenizers }),
+				analyzer("drop", { tokenizers }),
+				posts("drop"),
+			]);
+
+			const defs = [
+				analyzer("keep", { tokenizers }),
+				table("post", { body: t.string() }),
+			];
+			await migrate(db().surreal, defs, { removeMissing: true });
+
+			expect(await analyzers()).toEqual(["keep"]);
+		});
+
+		test("is removed once the table that holds the index is gone", async () => {
+			await migrate(db().surreal, [
+				analyzer("keep", { tokenizers }),
+				analyzer("drop", { tokenizers }),
+				posts("drop"),
+			]);
+
+			await migrate(db().surreal, [analyzer("keep", { tokenizers })], {
+				removeMissing: true,
+			});
+
+			expect(await analyzers()).toEqual(["keep"]);
+		});
+
+		// A rollback replays the stored `DEFINE` of whatever was changed. For an
+		// index changed in place that is refused, as the index exists, so these
+		// two put the index through a create or a remove instead.
+		test("rolls a rename back to the old name and its index", async () => {
+			const before = [
+				analyzer("before", { tokenizers }),
+				table("post", { body: t.string() }).index("body_ft", {
+					fields: ["body"],
+					fulltext: { analyzer: "before" },
+				}),
+			];
+			await migrate(db().surreal, before);
+			await migrate(db().surreal, [
+				analyzer("after", { tokenizers, previousNames: ["before"] }),
+				table("post", { body: t.string() }).index("body_search", {
+					fields: ["body"],
+					fulltext: { analyzer: "after" },
+					previousNames: ["body_ft"],
+				}),
+			]);
+
+			await rollback(db().surreal);
+
+			expect(await analyzers()).toEqual(["before"]);
+			expect((await plan(db().surreal, before)).up).toEqual([]);
+		});
+
+		test("rolls a removal back to the analyzer and its index", async () => {
+			const before = [
+				analyzer("keep", { tokenizers }),
+				analyzer("drop", { tokenizers }),
+				posts("drop"),
+			];
+			await migrate(db().surreal, before);
+			await migrate(
+				db().surreal,
+				[analyzer("keep", { tokenizers }), table("post", { body: t.string() })],
+				{ removeMissing: true },
+			);
+
+			await rollback(db().surreal);
+
+			expect(await analyzers()).toEqual(["drop", "keep"]);
+			expect((await plan(db().surreal, before)).up).toEqual([]);
+		});
 	});
 
 	test("an access method is created but never re-applied", async () => {
