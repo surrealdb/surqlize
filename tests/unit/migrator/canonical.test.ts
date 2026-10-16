@@ -108,6 +108,32 @@ describe("Spelling differences that mean nothing", () => {
 		).toBe(true);
 	});
 
+	test("a set default is stored with a space after the cast", () => {
+		// `DEFAULT <set>[]` reads back as `DEFAULT <set> []`, and a populated one
+		// as `<set> ['a', 'b']`. Without this a field with such a default is
+		// reported as changed by every plan.
+		expect(
+			equivalent(
+				"DEFINE FIELD OVERWRITE tags ON TABLE t TYPE set<string> DEFAULT <set>[];",
+				"DEFINE FIELD tags ON t TYPE set<string> DEFAULT <set> [] PERMISSIONS FULL",
+			),
+		).toBe(true);
+
+		expect(
+			equivalent(
+				`DEFINE FIELD tags ON TABLE t TYPE set<string> DEFAULT <set>["a","b"];`,
+				"DEFINE FIELD tags ON t TYPE set<string> DEFAULT <set> ['a', 'b'] PERMISSIONS FULL",
+			),
+		).toBe(true);
+
+		expect(
+			equivalent(
+				"DEFINE FIELD tags ON TABLE t TYPE set<string> DEFAULT ALWAYS <set>[];",
+				"DEFINE FIELD tags ON t TYPE set<string> DEFAULT ALWAYS <set> [] PERMISSIONS FULL",
+			),
+		).toBe(true);
+	});
+
 	test("a duration is stored decomposed, however it was written", () => {
 		// 30d reads back as 4w2d, 90m as 1h30m, 400d as 1y5w — a year being 365
 		// days and a week seven.
@@ -329,6 +355,22 @@ describe("Genuine differences survive", () => {
 			equivalent(
 				"DEFINE FIELD a ON t TYPE int DEFAULT 0",
 				"DEFINE FIELD a ON t TYPE int DEFAULT 1",
+			),
+		).toBe(false);
+	});
+
+	test("a set default is not an array default, and its members count", () => {
+		expect(
+			equivalent(
+				"DEFINE FIELD a ON t TYPE set<string> DEFAULT <set>[]",
+				"DEFINE FIELD a ON t TYPE set<string> DEFAULT []",
+			),
+		).toBe(false);
+
+		expect(
+			equivalent(
+				"DEFINE FIELD a ON t TYPE set<string> DEFAULT <set>['a']",
+				"DEFINE FIELD a ON t TYPE set<string> DEFAULT <set> ['b']",
 			),
 		).toBe(false);
 	});

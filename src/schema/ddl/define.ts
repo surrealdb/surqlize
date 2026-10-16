@@ -342,6 +342,11 @@ function literal(value: unknown, expression = false): string {
 	if (value === null) return "NULL";
 	if (value === undefined) return "NONE";
 	if (value instanceof Date) return `d'${value.toISOString()}'`;
+	// JSON has no set, so one would print as `{}`, which a set field refuses. A set
+	// is written as a cast array, since a bare array is only coerced from 3.3.
+	if (value instanceof Set) {
+		return `<set>[${[...value].map((member) => literal(member)).join(", ")}]`;
+	}
 	if (Array.isArray(value) || typeof value === "object") {
 		return JSON.stringify(value);
 	}

@@ -113,6 +113,51 @@ describe("Collections", () => {
 	});
 });
 
+describe("Sets", () => {
+	// JSON has no set, so a `Set` serialised that way is `{}`: the members are
+	// lost, and the server refuses every create that relies on the default
+	// because an object is not a set.
+	const tags = t.set(t.string());
+
+	test("an empty set is emitted as a cast empty array", () => {
+		expect(defaultClause(new Set<string>(), tags)).toBe("<set>[]");
+	});
+
+	test("string members are quoted", () => {
+		expect(defaultClause(new Set(["a", "b"]), tags)).toBe("<set>['a', 'b']");
+	});
+
+	test("number members are not", () => {
+		expect(defaultClause(new Set([1, 2]), t.set(t.int()))).toBe("<set>[1, 2]");
+	});
+
+	test("members are rendered as they would be on their own", () => {
+		const at = new Date("2024-01-02T03:04:05.000Z");
+
+		expect(defaultClause(new Set([at]), t.set(t.date()))).toBe(
+			"<set>[d'2024-01-02T03:04:05.000Z']",
+		);
+		expect(defaultClause(new Set([{ n: 1 }]), t.set(t.object({})))).toBe(
+			'<set>[{"n":1}]',
+		);
+	});
+
+	test("an optional set takes the same default", () => {
+		expect(defaultClause(new Set(["a"]), t.option(tags))).toBe("<set>['a']");
+	});
+
+	test("DEFAULT ALWAYS takes one too", () => {
+		const schema = table("probe", { f: tags.defaultAlways(new Set(["a"])) });
+		const flat = flattenFields(schema.fields).find((f) => f.name === "f");
+
+		expect(defineField("probe", flat!)).toContain("DEFAULT ALWAYS <set>['a']");
+	});
+
+	test("expr() still passes through untouched", () => {
+		expect(defaultClause(expr("<set>[]"), tags)).toBe("<set>[]");
+	});
+});
+
 describe("Absence", () => {
 	test("no default means no clause", () => {
 		expect(defaultClause(undefined)).toBeNull();

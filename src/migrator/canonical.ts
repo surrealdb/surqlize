@@ -108,6 +108,9 @@ const RULES: [RegExp, string][] = [
 	// A non-integer literal reads back with a float suffix, whatever the field's
 	// declared type: `DEFAULT 1.5` on a decimal is stored as `DEFAULT 1.5f`.
 	[/(\d+\.\d+)f\b/g, "$1"],
+	// A set default reads back with a space after the cast: `DEFAULT <set>[]` is
+	// stored as `DEFAULT <set> []`. Applied before whitespace is collapsed.
+	[/<set>\s+\[/g, "<set>["],
 	// A function body reads back without the semicolon before its closing brace
 	[/;\s*\}/g, " }"],
 	// Whitespace carries no meaning between tokens
