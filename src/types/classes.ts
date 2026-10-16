@@ -781,13 +781,25 @@ export class DecimalType extends AbstractType<Decimal | number> {
 	}
 }
 
-/** Raw binary data. */
+/**
+ * Raw binary data.
+ *
+ * Reads and writes use different shapes: the SDK sends a `Uint8Array` but
+ * returns the stored bytes as an `ArrayBuffer`. Only {@link parse} accepts the
+ * latter, so `validate` keeps describing what a write may carry.
+ */
 export class BytesType extends AbstractType<Uint8Array> {
 	name = "bytes" as const;
 	expected = "Uint8Array";
 
 	validate(value: unknown): value is this["infer"] {
 		return value instanceof Uint8Array;
+	}
+
+	/** Returns a `Uint8Array` over the bytes, without copying an `ArrayBuffer`. */
+	parse(value: unknown): this["infer"] {
+		if (value instanceof ArrayBuffer) return new Uint8Array(value);
+		return super.parse(value);
 	}
 }
 

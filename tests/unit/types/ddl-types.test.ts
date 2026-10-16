@@ -7,6 +7,7 @@ import {
 	Range,
 } from "surrealdb";
 import { ArrayType, t } from "../../../src";
+import { TypeParseError } from "../../../src/error";
 
 describe("Numeric widths", () => {
 	test("int() rejects fractional values", () => {
@@ -56,6 +57,45 @@ describe("bytes()", () => {
 		expect(type.validate(new Uint8Array([1, 2, 3]))).toBe(true);
 		expect(type.validate("abc")).toBe(false);
 		expect(type.name).toBe("bytes");
+	});
+
+	test("parse accepts the ArrayBuffer the SDK returns", () => {
+		const buffer = new Uint8Array([1, 2, 3]).buffer;
+		const out = t.bytes().parse(buffer);
+		expect(out).toBeInstanceOf(Uint8Array);
+		expect([...out]).toEqual([1, 2, 3]);
+		// A view over the same memory, not a copy.
+		expect(out.buffer).toBe(buffer);
+	});
+
+	test("parse returns a Uint8Array unchanged", () => {
+		const bytes = new Uint8Array([1, 2, 3]);
+		expect(t.bytes().parse(bytes)).toBe(bytes);
+	});
+
+	test("parse accepts an empty ArrayBuffer", () => {
+		expect(t.bytes().parse(new ArrayBuffer(0)).byteLength).toBe(0);
+	});
+
+	test("parse still rejects other values", () => {
+		expect(() => t.bytes().parse("abc")).toThrow(TypeParseError);
+		expect(() => t.bytes().parse([1, 2])).toThrow(TypeParseError);
+		expect(() => t.bytes().parse(undefined)).toThrow(TypeParseError);
+	});
+
+	test("validate stays strict, since it also checks what a write carries", () => {
+		expect(t.bytes().validate(new ArrayBuffer(1))).toBe(false);
+	});
+
+	test("parse reaches bytes inside an option, an array and an object", () => {
+		const buffer = () => new Uint8Array([5]).buffer;
+		const nested = t.object({
+			one: t.option(t.bytes()),
+			many: t.array(t.bytes()),
+		});
+		const out = nested.parse({ one: buffer(), many: [buffer(), buffer()] });
+		expect(out.one).toBeInstanceOf(Uint8Array);
+		expect(out.many.every((b) => b instanceof Uint8Array)).toBe(true);
 	});
 });
 
