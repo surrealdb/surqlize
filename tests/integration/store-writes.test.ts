@@ -306,6 +306,64 @@ describe("Store writes (integration)", () => {
 		stop();
 	});
 
+	test("rows of a projection with no id are kept, not merged, while a write is pending", async () => {
+		const { store } = connect();
+		const writes = store.table("task");
+		const a = writes.create({ title: "A", done: false, priority: 1 });
+		const b = writes.create({ title: "B", done: false, priority: 1 });
+		const c = writes.create({ title: "C", done: false, priority: 1 });
+		await Promise.all([a.committed, b.committed, c.committed]);
+
+		const named = store.query("task", (q) =>
+			q.return((r) => ({ title: r.title })),
+		);
+		const bare = store.query("task", (q) => q.return((r) => r.title));
+		const values = () => {
+			const snap = bare.getSnapshot();
+			return snap.status === "success" ? [...snap.data].sort().join() : "";
+		};
+		const stops = [named.subscribe(() => {}), bare.subscribe(() => {})];
+		await waitFor(() => titles(named) === "A,B,C" && values() === "A,B,C");
+
+		// A pending write applies to the result as it is made. No row says which
+		// record it came from, so none is changed and none is taken for another.
+		const edit = writes.update(a.id, { priority: 2 });
+		expect(titles(named)).toBe("A,B,C");
+		expect(values()).toBe("A,B,C");
+
+		await edit.committed;
+		await new Promise((r) => setTimeout(r, 200));
+		expect(titles(named)).toBe("A,B,C");
+		expect(values()).toBe("A,B,C");
+		for (const stop of stops) stop();
+	});
+
+	test("a projection that has no value for some records does not break writes", async () => {
+		const { store } = connect();
+		const writes = store.table("note");
+		const a = writes.create({ title: "A" });
+		const b = writes.create({ title: "B", body: "text" });
+		await Promise.all([a.committed, b.committed]);
+
+		// On 3.2.3 the record with no `body` is a row that is `undefined`, not an
+		// object. Whatever the server returns, the rows must survive a write.
+		const bodies = store.query("note", (q) => q.return((r) => r.body));
+		const count = () => {
+			const snap = bodies.getSnapshot();
+			return snap.status === "success" ? snap.data.length : -1;
+		};
+		const stop = bodies.subscribe(() => {});
+		await waitFor(() => count() > 0);
+		const rows = count();
+
+		const edit = writes.update(a.id, { title: "A2" });
+		expect(count()).toBe(rows);
+		// The answer to the write is recorded without being matched to any row.
+		await edit.committed;
+		expect(count()).toBe(rows);
+		stop();
+	});
+
 	test("a query with a callback filter does not show a created record until the database has it", async () => {
 		const { store } = connect();
 		const open = store.query("task", (q) => q.where((r) => r.done.eq(false)));

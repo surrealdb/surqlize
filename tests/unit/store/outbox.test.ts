@@ -140,6 +140,28 @@ describe("applyOverlay", () => {
 		expect(out.map((r) => r.title)).toEqual(["D2"]);
 	});
 
+	test("keeps rows that have no key where they are, and never takes one for another", () => {
+		type Shown = { id?: RecordId; title: string };
+		const bare = (title: string): Shown => ({ title });
+		const keyOrNone = (r: Shown) => (r.id ? String(r.id) : undefined);
+		const rows: Shown[] = [bare("x"), row("a", "A"), bare("y"), bare("z")];
+		const ops = [
+			update("a", { title: "A2" }),
+			update("other", { title: "O" }),
+			create("d", { title: "D" }),
+			{ table: "task", id: "gone", kind: "delete" } as OutboxOp,
+		];
+
+		const out = applyOverlay(rows, ops, keyOrNone, false);
+		expect(out.map((r) => r.title)).toEqual(["x", "A2", "y", "z"]);
+		expect(out[0]).toBe(rows[0] as Shown);
+		expect(out[2]).toBe(rows[2] as Shown);
+		expect(out[3]).toBe(rows[3] as Shown);
+
+		const inserted = applyOverlay(rows, ops, keyOrNone, true);
+		expect(inserted.map((r) => r.title)).toEqual(["x", "A2", "y", "z", "D"]);
+	});
+
 	test("returns the same array when nothing is pending", () => {
 		const rows = [row("a", "A")];
 		expect(applyOverlay(rows, [], key, true)).toBe(rows);

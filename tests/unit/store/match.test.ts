@@ -56,6 +56,25 @@ describe("matchesWhere", () => {
 		expect(m({ priority: { ne: 3 } })).toBe(false);
 	});
 
+	test("strings are ordered by code point, as the database orders them", () => {
+		const s = (value: string) => ({ s: value });
+		// U+1F600 is two UTF-16 code units, D83D DE00, which sort before U+FFFD
+		// by code unit. It is the greater code point, and the database compares
+		// the UTF-8 bytes, which agree with code points.
+		expect(m({ s: { gt: "\uFFFD" } }, s("\u{1F600}"))).toBe(true);
+		expect(m({ s: { lt: "\u{1F600}" } }, s("\uFFFD"))).toBe(true);
+		expect(m({ s: { gt: "a\uE000" } }, s("a\u{10000}"))).toBe(true);
+		expect(m({ s: { lt: "\u{1F601}" } }, s("\u{1F600}"))).toBe(true);
+		// Everywhere else the order is the one a plain comparison gives.
+		expect(m({ s: { lt: "b" } }, s("a"))).toBe(true);
+		expect(m({ s: { gt: "Z" } }, s("a"))).toBe(true);
+		expect(m({ s: { gt: "ab" } }, s("abc"))).toBe(true);
+		expect(m({ s: { lt: "ab" } }, s("abc"))).toBe(false);
+		expect(m({ s: { gte: "ab" } }, s("ab"))).toBe(true);
+		expect(m({ s: { gt: "ab" } }, s("ab"))).toBe(false);
+		expect(m({ s: { gt: "" } }, s("\u{1F600}"))).toBe(true);
+	});
+
 	test("inside, contains and string operators", () => {
 		expect(m({ priority: { inside: [1, 3] } })).toBe(true);
 		expect(m({ priority: { notInside: [1, 3] } })).toBe(false);

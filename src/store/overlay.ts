@@ -13,23 +13,27 @@ import type { OutboxOp } from "./outbox";
  *
  * Rows keep their order, and created rows go at the end. The result is a new
  * array; rows that no write touches are the same objects.
+ *
+ * A row that `keyOf` gives no key for, such as a projection that leaves out
+ * `id`, is not the record of any write. It stays where it is, and it is never
+ * taken for another row.
  */
 export function applyOverlay<T>(
 	rows: T[],
 	ops: readonly OutboxOp[],
-	keyOf: (row: T) => string,
+	keyOf: (row: T) => string | undefined,
 	insert: boolean | ((row: T) => boolean),
 	stays: (row: T) => boolean = () => true,
 ): T[] {
 	if (ops.length === 0) return rows;
-	const map = new Map<string, T>();
-	for (const row of rows) map.set(keyOf(row), row);
+	const map = new Map<string | symbol, T>();
+	for (const row of rows) map.set(keyOf(row) ?? Symbol(), row);
 	for (const op of ops) applyOp(map, op, insert, stays);
 	return [...map.values()];
 }
 
 function applyOp<T>(
-	map: Map<string, T>,
+	map: Map<string | symbol, T>,
 	op: OutboxOp,
 	insert: boolean | ((row: T) => boolean),
 	stays: (row: T) => boolean,
