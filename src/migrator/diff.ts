@@ -12,6 +12,7 @@ import { defineIndex } from "../schema/ddl/index-ddl";
 import { EdgeSchema } from "../schema/edge";
 import { canonicalise } from "./canonical";
 import type { CurrentSchema, CurrentTable } from "./introspect";
+import { redactSecrets, restoreStatement } from "./secrets";
 
 /** One change a migration makes, with the statements to apply and undo it. */
 export interface Change {
@@ -34,15 +35,26 @@ export interface Change {
 		| "entity.remove";
 	/** What changed, e.g. `user` or `user.email`. */
 	target: string;
+	/** The statements that apply it. These are what runs, so they hold any key. */
 	up: string[];
+	/**
+	 * `up` in the form that is safe to print and to record: a signing key is
+	 * replaced by a placeholder, and everything else is as it is in `up`.
+	 */
+	display: string[];
 	down: string[];
 }
+
+/** A change before its display form is worked out. */
+type Draft = Omit<Change, "display">;
 
 /** The result of comparing a schema against a database. */
 export interface Diff {
 	changes: Change[];
 	/** Every `up` statement, in order. */
 	up: string[];
+	/** Every `display` statement, in the same order, for printing and recording. */
+	display: string[];
 	/** Every `down` statement, in reverse order. */
 	down: string[];
 }
@@ -72,7 +84,7 @@ export function diff(
 	current: CurrentSchema,
 	options: DiffOptions = {},
 ): Diff {
-	const changes: Change[] = [];
+	const drafts: Draft[] = [];
 	const schemas = definitions.filter(isTableSchema);
 	const entities = definitions.filter(isDatabaseEntity);
 	const declared = new Set(schemas.map((s) => s.tb));
@@ -82,21 +94,21 @@ export function diff(
 		tables: Object.fromEntries(schemas.map((s) => [s.tb, s])),
 	};
 
-	changes.push(...diffEntities(entities, current, options));
+	drafts.push(...diffEntities(entities, current, options));
 
 	for (const schema of schemas) {
 		const table = current.tables[schema.tb];
 		if (table) {
-			changes.push(...diffTable(schema, table, options, render));
+			drafts.push(...diffTable(schema, table, options, render));
 		} else {
-			changes.push(createTable(schema, render));
+			drafts.push(createTable(schema, render));
 		}
 	}
 
 	if (options.removeMissing) {
 		for (const name of Object.keys(current.tables)) {
 			if (declared.has(name)) continue;
-			changes.push({
+			drafts.push({
 				kind: "table.remove",
 				target: name,
 				up: [`REMOVE TABLE ${name};`],
@@ -107,15 +119,22 @@ export function diff(
 		}
 	}
 
+	// Worked out here, once, so that no kind of change can leave a key in the
+	// text that is printed and recorded.
+	const changes = drafts.map(
+		(draft): Change => ({ ...draft, display: draft.up.map(redactSecrets) }),
+	);
+
 	return {
 		changes,
 		up: changes.flatMap((c) => c.up),
+		display: changes.flatMap((c) => c.display),
 		down: [...changes].reverse().flatMap((c) => c.down),
 	};
 }
 
 /** Every statement needed to create a table that does not exist yet. */
-function createTable(schema: DefinableSchema, render: DefineOptions): Change {
+function createTable(schema: DefinableSchema, render: DefineOptions): Draft {
 	const up = defineSchemaStatements(schema, render);
 
 	return {
@@ -132,8 +151,8 @@ function diffTable(
 	current: CurrentTable,
 	options: DiffOptions,
 	render: DefineOptions,
-): Change[] {
-	const changes: Change[] = [];
+): Draft[] {
+	const changes: Draft[] = [];
 
 	const desiredTable = defineTable(schema, render);
 	if (!same(desiredTable, current.definition)) {
@@ -160,7 +179,7 @@ function diffAttachments(
 	schema: DefinableSchema,
 	current: CurrentTable,
 	options: DiffOptions,
-): Change[] {
+): Draft[] {
 	return [
 		...diffNamed(
 			schema.ddl.indexes ?? {},
@@ -194,8 +213,8 @@ function diffNamed<T extends { previousNames?: string[] }>(
 	define: (name: string, spec: T, overwrite: boolean) => string,
 	remove: (name: string) => string,
 	options: DiffOptions,
-): Change[] {
-	const changes: Change[] = [];
+): Draft[] {
+	const changes: Draft[] = [];
 	const renamedFrom = new Set<string>();
 
 	for (const [name, spec] of Object.entries(declared)) {
@@ -259,8 +278,8 @@ function diffFields(
 	current: CurrentTable,
 	options: DiffOptions,
 	render: DefineOptions,
-): Change[] {
-	const changes: Change[] = [];
+): Draft[] {
+	const changes: Draft[] = [];
 	const fields = definableFields(schema);
 	const renamedFrom = new Set<string>();
 
@@ -320,8 +339,8 @@ function removeUndeclaredFields(
 	current: CurrentTable,
 	declaredNames: Set<string>,
 	renamedFrom: Set<string>,
-): Change[] {
-	const changes: Change[] = [];
+): Draft[] {
+	const changes: Draft[] = [];
 
 	for (const [name, stored] of Object.entries(current.fields)) {
 		if (declaredNames.has(name) || renamedFrom.has(name)) continue;
@@ -353,7 +372,7 @@ function renameField(
 	oldName: string,
 	current: CurrentTable,
 	render: DefineOptions,
-): Change {
+): Draft {
 	const tb = schema.tb;
 
 	return {
@@ -432,8 +451,8 @@ function diffEntities(
 	entities: DatabaseEntity[],
 	current: CurrentSchema,
 	options: DiffOptions,
-): Change[] {
-	const changes: Change[] = [];
+): Draft[] {
+	const changes: Draft[] = [];
 	const seen = new Map<string, Set<string>>();
 
 	for (const entity of entities) {
@@ -460,7 +479,7 @@ function diffEntities(
 function diffEntity(
 	entity: DatabaseEntity,
 	stored: Record<string, string>,
-): { change: Change; renamedFrom?: string } | null {
+): { change: Draft; renamedFrom?: string } | null {
 	const existing = stored[entity.key];
 
 	if (!existing) {
@@ -473,7 +492,7 @@ function diffEntity(
 					kind: "entity.modify",
 					target: `${entity.kind} ${oldName} -> ${entity.name}`,
 					up: [entity.define(), removeNamed(entity, oldName)],
-					down: [`${stored[oldName]};`, entity.remove()],
+					down: [restoreStatement(stored[oldName] ?? ""), entity.remove()],
 				},
 			};
 		}
@@ -501,7 +520,7 @@ function diffEntity(
 			kind: "entity.modify",
 			target: `${entity.kind} ${entity.name}`,
 			up: [entity.define({ overwrite: true })],
-			down: [`${existing};`],
+			down: [restoreStatement(existing)],
 		},
 	};
 }
@@ -511,8 +530,8 @@ function removeUndeclaredEntities(
 	entities: DatabaseEntity[],
 	current: CurrentSchema,
 	seen: Map<string, Set<string>>,
-): Change[] {
-	const changes: Change[] = [];
+): Draft[] {
+	const changes: Draft[] = [];
 
 	for (const [kind, stored] of Object.entries(current.entities)) {
 		// Only kinds the schema uses at all are managed; a database may hold
@@ -527,7 +546,7 @@ function removeUndeclaredEntities(
 				kind: "entity.remove",
 				target: `${kind} ${name}`,
 				up: [removeNamed(entity, name)],
-				down: [`${existing};`],
+				down: [restoreStatement(existing)],
 			});
 		}
 	}

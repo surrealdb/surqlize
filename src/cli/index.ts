@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { Surreal } from "surrealdb";
 import { applied, migrate, plan, rollback } from "../migrator";
+import { assertRollbackable } from "../migrator/migrate";
 import { availableEnvironments, type CliConfig, loadConfig } from "./config";
 import { fail, info, printStatements, style, success, warn } from "./output";
 import { type Definition, loadDefinitions } from "./schema";
@@ -321,7 +322,7 @@ async function planCommand(
 
 		info("");
 		info(style.bold("Statements:"));
-		printStatements(pending.up);
+		printStatements(pending.display);
 
 		return 0;
 	});
@@ -340,7 +341,7 @@ async function migrateCommand(
 		}
 
 		info(style.bold("Statements to apply:"));
-		printStatements(pending.up);
+		printStatements(pending.display);
 		info("");
 
 		// Dropping things is the only destructive path, so it is the only one
@@ -400,6 +401,9 @@ async function rollbackCommand(
 			warn("No migrations to roll back");
 			return 0;
 		}
+
+		// Refused here rather than after the prompt: there is nothing to confirm
+		assertRollbackable(last);
 
 		info(style.bold("Statements to apply:"));
 		printStatements(last.down);

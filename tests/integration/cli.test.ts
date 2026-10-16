@@ -265,6 +265,65 @@ describe("The migration lifecycle", () => {
 	}, 20_000);
 });
 
+describe("Access keys", () => {
+	const KEY = "cli-signing-key-9120";
+
+	test("plan and migrate never print the key", async () => {
+		await writeFile(
+			join(dir, "keyed.ts"),
+			`import { access } from "${resolve(import.meta.dir, "../../src")}";
+
+export const jw = access("jw", { type: "JWT", key: "${KEY}" });
+export const grants = access("grants", { type: "BEARER", for: "USER" });
+`,
+			"utf-8",
+		);
+		await writeFile(
+			join(dir, "bearer.ts"),
+			`import { access } from "${resolve(import.meta.dir, "../../src")}";
+
+export const grants = access("grants", { type: "BEARER", for: "USER" });
+`,
+			"utf-8",
+		);
+
+		const planned = await surIn("keys", "plan", "--schema", "./keyed.ts");
+		expect(planned.code).toBe(0);
+		expect(planned.output).toContain("DEFINE ACCESS jw");
+		expect(planned.output).not.toContain(KEY);
+
+		const applied = await surIn("keys", "migrate", "--schema", "./keyed.ts");
+		expect(applied.code).toBe(0);
+		expect(applied.output).not.toContain(KEY);
+	});
+
+	test("a rollback of its removal is refused", async () => {
+		// Dropping the access from the schema removes it from the database
+		const removed = await surIn(
+			"keys",
+			"migrate",
+			"--schema",
+			"./bearer.ts",
+			"--remove-missing",
+			"--yes",
+		);
+		expect(removed.code).toBe(0);
+
+		// The way back would recreate it under a key anyone could sign for
+		const rolledBack = await surIn(
+			"keys",
+			"rollback",
+			"--schema",
+			"./bearer.ts",
+			"--yes",
+		);
+		expect(rolledBack.code).toBe(1);
+		expect(rolledBack.output).toContain("jw");
+		expect(rolledBack.output).not.toContain("Statements to apply");
+		expect(rolledBack.output).not.toContain(KEY);
+	});
+});
+
 describe("init", () => {
 	test("writes a schema that validates", async () => {
 		const fresh = await mkdtemp(join(tmpdir(), "surqlize-init-"));
