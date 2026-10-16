@@ -13,7 +13,10 @@ export type VectorType = "F64" | "F32" | "I64" | "I32" | "I16";
 
 /** Full-text search options. */
 export interface FulltextOptions {
-	/** The analyzer that tokenises the column. Omitted means the built-in `like`. */
+	/**
+	 * The analyzer that tokenises the column. Required: SurrealDB has no analyzer
+	 * of its own to fall back to, so an index that names none is refused.
+	 */
 	analyzer?: string;
 	/** BM25 relevance scoring, optionally tuned. */
 	bm25?: boolean | { k1: number; b: number };
@@ -108,8 +111,9 @@ export function defineIndex(
 
 	if (index.count) parts.push("COUNT");
 	else if (index.hnsw) parts.push(...hnswClause(index.hnsw));
-	else if (index.fulltext) parts.push(...fulltextClause(index.fulltext));
-	else if (index.unique) parts.push("UNIQUE");
+	else if (index.fulltext) {
+		parts.push(...fulltextClause(index.name, index.fulltext));
+	} else if (index.unique) parts.push("UNIQUE");
 
 	if (index.concurrently) parts.push("CONCURRENTLY");
 	if (index.comment) parts.push("COMMENT", quote(index.comment));
@@ -173,14 +177,27 @@ function requireHnswFloors(index: IndexDefinition): void {
 	);
 }
 
-/** The `FULLTEXT …` portion of an index definition. */
-function fulltextClause(fulltext: true | FulltextOptions): string[] {
+/**
+ * The `FULLTEXT …` portion of an index definition.
+ *
+ * Omitting ANALYZER is accepted, and SurrealDB stores `ANALYZER like`. There is
+ * no analyzer of that name, so every write to the table then fails with `The
+ * analyzer 'like' does not exist`. Failing here names the index instead.
+ */
+function fulltextClause(
+	name: string,
+	fulltext: true | FulltextOptions,
+): string[] {
 	const options = fulltext === true ? {} : fulltext;
-	const parts = ["FULLTEXT"];
+	if (!options.analyzer) {
+		throw new Error(
+			`Index '${name}' is full-text but names no analyzer. ` +
+				"SurrealDB would fall back to one called 'like', which does not exist, so every write to the table would fail. " +
+				'Name one with `fulltext: { analyzer: "…" }` and define it with analyzer().',
+		);
+	}
 
-	// Omitting ANALYZER is valid, but SurrealDB fills in the built-in `like` and
-	// reports it, so the declared index has to name it too or it never converges.
-	parts.push("ANALYZER", options.analyzer ?? "like");
+	const parts = ["FULLTEXT", "ANALYZER", options.analyzer];
 
 	// SurrealDB reports BM25 on every full-text index, tuned or not, so it is
 	// always emitted with the parameters it would fill in.

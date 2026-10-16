@@ -167,6 +167,20 @@ describe("generateSchema", () => {
 		).toBe(true);
 	});
 
+	test("a full-text index must name an analyzer", () => {
+		const bare = table("post", { body: t.string() }).index("body_idx", {
+			fields: ["body"],
+			fulltext: true,
+		});
+		expect(() => sql(bare)).toThrow(/'body_idx'.*no analyzer/);
+
+		const named = table("post", { body: t.string() }).index("body_idx", {
+			fields: ["body"],
+			fulltext: { analyzer: "english" },
+		});
+		expect(sql(named).at(-1)).toContain("FULLTEXT ANALYZER english");
+	});
+
 	test("tables are schemaless only when they say so, and if-not-exists leaves definitions", () => {
 		const user = table("user", { name: t.string() }).schemaless();
 		const db = orm(new Surreal(), user);

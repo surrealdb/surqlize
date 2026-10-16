@@ -227,16 +227,23 @@ describe("DEFINE INDEX", () => {
 		expect(sql).toContain("HIGHLIGHTS");
 	});
 
-	test("full-text names the built-in analyzer when given none", () => {
-		// SurrealDB fills in `like` and reports it, so an index that stayed silent
-		// would look modified on every run
-		const sql = defineIndex("post", {
-			name: "s",
-			fields: ["c"],
-			fulltext: true,
-		});
+	test("a full-text index with no analyzer is refused", () => {
+		// SurrealDB would fill in an analyzer called `like`, which it does not have,
+		// so the index is stored and then every write to the table fails.
+		const fulltext = (options: Parameters<typeof defineIndex>[1]["fulltext"]) =>
+			defineIndex("post", { name: "s", fields: ["c"], fulltext: options });
 
-		expect(sql).toContain("FULLTEXT ANALYZER like");
+		expect(() => fulltext(true)).toThrow(/'s'.*no analyzer/);
+		expect(() => fulltext({})).toThrow(/no analyzer/);
+		expect(() => fulltext({ highlights: true })).toThrow(/no analyzer/);
+		expect(() => fulltext({ bm25: { k1: 1.2, b: 0.75 } })).toThrow(
+			/no analyzer/,
+		);
+		expect(() => fulltext({ analyzer: "" })).toThrow(/no analyzer/);
+
+		expect(fulltext({ analyzer: "english" })).toContain(
+			"FULLTEXT ANALYZER english",
+		);
 	});
 
 	test("BM25 is emitted tuned or at its defaults", () => {
@@ -244,7 +251,7 @@ describe("DEFINE INDEX", () => {
 			defineIndex("post", {
 				name: "s",
 				fields: ["c"],
-				fulltext: { bm25: { k1: 1.2, b: 0.75 } },
+				fulltext: { analyzer: "english", bm25: { k1: 1.2, b: 0.75 } },
 			}),
 		).toContain("BM25(1.2,0.75)");
 	});
@@ -322,12 +329,16 @@ describe("DEFINE INDEX", () => {
 			defineIndex("post", {
 				name: "s",
 				fields: ["title", "body"],
-				fulltext: true,
+				fulltext: { analyzer: "english" },
 			}),
 		).toThrow(/exactly one column/i);
 
 		expect(() =>
-			defineIndex("post", { name: "s", fields: ["body"], fulltext: true }),
+			defineIndex("post", {
+				name: "s",
+				fields: ["body"],
+				fulltext: { analyzer: "english" },
+			}),
 		).not.toThrow();
 	});
 

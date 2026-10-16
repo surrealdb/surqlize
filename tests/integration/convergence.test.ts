@@ -110,6 +110,8 @@ describe("Convergence", () => {
 	});
 
 	test("every index kind", async () => {
+		// A full-text index has to name an analyzer: SurrealDB has none of its own.
+		const simple = analyzer("simple", { tokenizers: ["blank"] });
 		const probe = table("probe", {
 			email: t.string(),
 			body: t.string(),
@@ -118,14 +120,17 @@ describe("Convergence", () => {
 			.index("plain", { fields: ["email"] })
 			.index("unique", { fields: ["email"], unique: true })
 			.index("composite", { fields: ["email", "body"] })
-			.index("text", { fields: ["body"], fulltext: { highlights: true } })
+			.index("text", {
+				fields: ["body"],
+				fulltext: { analyzer: "simple", highlights: true },
+			})
 			.index("vec", {
 				fields: ["vector"],
 				hnsw: { dimension: 4, dist: "COSINE" },
 			})
 			.index("rows", { count: true });
 
-		expect(await applyTwice([probe])).toEqual([]);
+		expect(await applyTwice([simple, probe])).toEqual([]);
 	});
 
 	test("a full-text index with an analyzer and tuned BM25", async () => {

@@ -41,7 +41,7 @@ The cost, concretely. Surqlize carries:
   stored form comparable
 - **six generators** in `src/schema/ddl/` that emit clauses nobody asked for, purely
   because SurrealDB is going to add them and the two must match: HNSW's five tuning
-  parameters, a full-text index's analyzer and BM25 clause, an analyzer's casing, a
+  parameters, a full-text index's BM25 clause, an analyzer's casing, a
   sequence's batch and start, a bearer access's three durations, and the choice of quote
   character on a string default
 - two more that deliberately *omit* definitions SurrealDB creates on its own — the
@@ -172,7 +172,7 @@ was written. Everything below is *in addition* to those.
 | a `{ }` block written over four lines | collapsed to one | rule 11 — whitespace inside a block body is not preserved |
 | `CHANGEFEED 7d` | `CHANGEFEED 1w` | durations are decomposed: `30d`→`4w2d`, `90m`→`1h30m`, `400d`→`1y5w` |
 | `FIELDS a CONCURRENTLY` | `FIELDS a` | rule 6 — accepted, then forgotten |
-| `FULLTEXT` | `FULLTEXT ANALYZER like BM25(1.2,0.75)` | the generator emits both defaults pre-emptively |
+| `FULLTEXT` | `FULLTEXT ANALYZER like BM25(1.2,0.75)` | the generator emits the BM25 default pre-emptively, but refuses a missing analyzer: `like` does not exist, so every write to the table would fail |
 | `HNSW DIMENSION 3 DIST COSINE` | `… TYPE F32 EFC 150 M 12 M0 24 LM 0.40242960438184466f` | five defaults emitted pre-emptively; `LM` is dropped, being a derived float whose printed precision cannot be matched |
 | `TOKENIZERS blank, class` | `TOKENIZERS BLANK,CLASS` | uppercased including arguments — `snowball(english)` → `SNOWBALL(ENGLISH)`. Note also `TOKENIZERS` comes back unspaced while `FILTERS` is spaced |
 | `DEFINE SEQUENCE s` | `… BATCH 1000 START 0` | emitted pre-emptively |
