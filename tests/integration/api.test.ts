@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { UnsuccessfulApiError } from "surrealdb";
 import { api, TypeParseError, t } from "../../src";
+import { atLeast, serverVersion } from "../helpers/db";
 import { withTestDb } from "./setup";
+
+// A handler that THROWs answers 500 on 3.2.3; earlier servers are unchecked.
+const throwAnswers500 = atLeast(await serverVersion(), 3, 2);
 
 /**
  * These tests require SurrealDB v3.0.0+ started with experimental API support:
@@ -255,4 +260,87 @@ describe("DEFINE API integration tests", () => {
 			expect(err).toBeInstanceOf(TypeParseError);
 		}
 	});
+
+	test("a 404 is an error carrying its status and body, not parsed as the success type", async () => {
+		const { db, surreal } = getTestDb();
+
+		if (!(await defineApiAvailable(surreal))) {
+			console.log("  ⏭ Skipping: DEFINE API not available");
+			return;
+		}
+
+		await surreal.query(`
+			DEFINE API "/missing" FOR get THEN {
+				{ status: 404, body: "no such thing" };
+			};
+			DEFINE API "/missing_shaped" FOR get THEN {
+				{ status: 404, body: { message: "gone" } };
+			};
+		`);
+
+		const client = db.api(
+			api("/missing", {
+				get: { response: t.object({ message: t.string() }) },
+			}),
+			api("/missing_shaped", {
+				get: { response: t.object({ message: t.string() }) },
+			}),
+		);
+
+		// A body that is not the success type is not parsed against it.
+		try {
+			await client.get("/missing");
+			expect.unreachable();
+		} catch (err) {
+			expect(err).toBeInstanceOf(UnsuccessfulApiError);
+			const { response } = err as UnsuccessfulApiError;
+			expect(response.status).toBe(404);
+			expect(response.body).toBe("no such thing");
+		}
+
+		// A body that happens to fit it is still a failure.
+		try {
+			await client.get("/missing_shaped");
+			expect.unreachable();
+		} catch (err) {
+			expect(err).toBeInstanceOf(UnsuccessfulApiError);
+			const { response } = err as UnsuccessfulApiError;
+			expect(response.status).toBe(404);
+			expect(response.body).toEqual({ message: "gone" });
+		}
+	});
+
+	test.skipIf(!throwAnswers500)(
+		"a handler that throws is an error carrying its status",
+		async () => {
+			const { db, surreal } = getTestDb();
+
+			if (!(await defineApiAvailable(surreal))) {
+				console.log("  ⏭ Skipping: DEFINE API not available");
+				return;
+			}
+
+			await surreal.query(`
+				DEFINE API "/boom" FOR get THEN {
+					THROW "boom";
+				};
+			`);
+
+			const client = db.api(
+				api("/boom", {
+					get: { response: t.object({ message: t.string() }) },
+				}),
+			);
+
+			try {
+				await client.get("/boom");
+				expect.unreachable();
+			} catch (err) {
+				expect(err).toBeInstanceOf(UnsuccessfulApiError);
+				const { response } = err as UnsuccessfulApiError;
+				expect(response.status).toBe(500);
+				expect(String(response.body)).toContain("boom");
+			}
+		},
+	);
 });

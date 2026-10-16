@@ -1,3 +1,4 @@
+import { UnsuccessfulApiError } from "surrealdb";
 import type {
 	ApiEndpointSchema,
 	ApiMethodDef,
@@ -68,6 +69,11 @@ export interface ApiResponse<T> {
 	status?: number;
 }
 
+/** Whether an HTTP status is a success: 2xx, as the SDK's `.value()` has it. */
+function isSuccess(status: number): boolean {
+	return status >= 200 && status < 300;
+}
+
 // ---------------------------------------------------------------------------
 // ApiClient
 // ---------------------------------------------------------------------------
@@ -78,6 +84,10 @@ export interface ApiResponse<T> {
  * ORM is {@link Orm.validated | validated}.
  *
  * Created via `db.api()` on an {@link Orm} instance.
+ *
+ * A call whose status is outside 2xx rejects with the SDK's
+ * `UnsuccessfulApiError`: its `response` holds the status, headers and the raw
+ * body, which is not parsed against the declared response type.
  *
  * @typeParam E - Tuple of {@link ApiEndpointSchema} types.
  */
@@ -132,6 +142,11 @@ export class ApiClient<E extends ApiEndpointSchema[] = ApiEndpointSchema[]> {
 			method,
 			body,
 		})) as ApiResponse<unknown>;
+		// The declared response is the success type, so a failure body is left
+		// raw, in the error, instead of being parsed against it.
+		if (response.status !== undefined && !isSuccess(response.status)) {
+			throw new UnsuccessfulApiError(path, method, response);
+		}
 		response.body = this.parseBody(response.body, path, method);
 		return response as ApiResponse<T>;
 	}

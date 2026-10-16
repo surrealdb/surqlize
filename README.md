@@ -1037,6 +1037,8 @@ const res = await db.api(echo).post("/echo", { text: "hi" });
 res.body?.text; // string | undefined
 ```
 
+An API call whose status is outside 2xx rejects with the SDK's `UnsuccessfulApiError` (from `surrealdb`), whose `response` holds the status, the headers and the raw body. A failure body is never parsed against the declared `response` type, which describes the success.
+
 A function is also callable inside a query: `db.select("user").return((u) => ({ hi: greet(u, u.name) }))`.
 
 On a [validated](#runtime-validation) ORM (`db.validated()`), `db.run()` checks its arguments against the parameter types, and API calls check the request body against the declared `request` type, before anything is sent. Every failing argument or field is reported in a single `ValidationError`. Arguments passed to a function inside a query are expressions evaluated by the database, so they are not checked.
