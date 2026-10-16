@@ -168,15 +168,21 @@ export class Outbox {
 			const waiter = { resolve, reject };
 			const target = this.#mergeTarget(op);
 			const previous = target?.op;
+			const next: OutboxOp = target
+				? { ...target.op, data: { ...target.op.data, ...op.data } }
+				: { ...op };
+			// Encoded before anything is queued: a write the codec cannot store throws
+			// here, which rejects it with nothing shown and nothing left to be sent.
+			const payload = encode(next);
 			let entry: Entry;
 			if (target) {
-				target.op = { ...target.op, data: { ...target.op.data, ...op.data } };
+				target.op = next;
 				target.waiters.push(waiter);
 				entry = target;
 			} else {
 				entry = {
 					seq: ++this.#counter,
-					op: { ...op },
+					op: next,
 					inFlight: false,
 					waiters: [waiter],
 				};
@@ -184,7 +190,7 @@ export class Outbox {
 			}
 			// The write is visible straight away; it is stored before it is sent.
 			this.#changed();
-			this.deps.storage.put(entry.seq, encode(entry.op)).then(
+			this.deps.storage.put(entry.seq, payload).then(
 				() => {
 					void this.flush();
 				},
