@@ -44,6 +44,22 @@ export type StoreOptions = {
 	storage?: OutboxStorage;
 	/** The first and the longest wait before sending a write again. Default 500 and 30000. */
 	retry?: { minMs?: number; maxMs?: number };
+	/**
+	 * Holds the store off the database until it resolves, for a connection that
+	 * has to be signed in first. Until then the store registers no live query,
+	 * reads nothing and sends no write; a write made meanwhile is queued and shown
+	 * at once, and one kept in `storage` from an earlier session waits too.
+	 *
+	 * It is called the first time something needs the connection: the first
+	 * subscriber of a query, a write, or `refetch()`. Never when the store is made,
+	 * never again once it has resolved, and never twice at once. A write kept in
+	 * `storage` does not call it by itself; it waits for one of those. If it
+	 * rejects, queries report the error, writes stay queued and are not rejected,
+	 * and the next write, `refetch()`, or subscriber of a query that is not running
+	 * calls it again; a query that failed to start is started over by `refetch()`
+	 * or a new subscriber. It is not called again after a reconnect.
+	 */
+	gate?: () => Promise<void>;
 };
 
 /** What a write call returns: the record it is about, and when the database has settled it. */
@@ -168,6 +184,9 @@ export class Store<O extends Orm> {
 	readonly #debounceMs: number;
 	readonly #connection: ConnectionEvents | undefined;
 	readonly #outbox: Outbox;
+	readonly #gate: (() => Promise<void>) | undefined;
+	#gateOpen: boolean;
+	#opening: Promise<void> | undefined;
 
 	/**
 	 * Writes that have not been accepted by the database yet, oldest first. The
@@ -189,6 +208,8 @@ export class Store<O extends Orm> {
 		this.#debounceMs = options.debounceMs ?? 20;
 		const candidate = options.connection ?? db.surreal;
 		this.#connection = isConnectionEvents(candidate) ? candidate : undefined;
+		this.#gate = options.gate;
+		this.#gateOpen = options.gate === undefined;
 		this.#outbox = new Outbox({
 			storage: options.storage ?? memoryStorage(),
 			send: (op) => this.#send(op),
@@ -199,7 +220,11 @@ export class Store<O extends Orm> {
 			isPermanent: (error) =>
 				!isRetryableConflict(error) &&
 				(error instanceof ServerError || error instanceof OrmError),
-			isOnline: () => this.#connection === undefined || this.#online,
+			isOnline: () =>
+				(this.#connection === undefined || this.#online) && this.#gateOpen,
+			onWrite: () => {
+				if (!this.#gateOpen) void this.#open().catch(() => {});
+			},
 			retry: {
 				minMs: options.retry?.minMs ?? 500,
 				maxMs: options.retry?.maxMs ?? 30_000,
@@ -246,6 +271,35 @@ export class Store<O extends Orm> {
 		this.#unwatch = [];
 		this.#outbox.dispose();
 		for (const { stop } of [...this.#stores.values()]) stop();
+	}
+
+	/**
+	 * Open the gate, if there is one and it is not open yet. Only one call to it
+	 * is made at a time, and a failed one is forgotten, so the next need tries
+	 * again. Writes that were held are sent once it has opened.
+	 */
+	#open(): Promise<void> {
+		this.#opening ??= (async () => this.#gate?.())().then(
+			() => {
+				this.#opening = undefined;
+				this.#gateOpen = true;
+				void this.#outbox.flush();
+			},
+			(error) => {
+				this.#opening = undefined;
+				throw error;
+			},
+		);
+		return this.#opening;
+	}
+
+	/** `run`, after the gate has opened. Not wrapped at all when there is no gate. */
+	#gated<T>(run: () => Promise<T>): () => Promise<T> {
+		if (!this.#gate) return run;
+		return async () => {
+			if (!this.#gateOpen) await this.#open();
+			return run();
+		};
 	}
 
 	async #send(op: OutboxOp): Promise<unknown> {
@@ -372,19 +426,21 @@ export class Store<O extends Orm> {
 			},
 			membership: filter ? (row) => matchesWhere(filter.where, row) : undefined,
 			insertable: filter ? !filter.ordered : false,
-			fetch: async () => {
+			fetch: this.#gated(async () => {
 				const result = await query.execute();
 				if (Array.isArray(result)) return result;
 				return result == null ? [] : [result];
-			},
+			}),
 			live: (handler) =>
-				(
-					db.live as (tb: string) => {
-						subscribe(
-							h: (m: LiveMessage<unknown>) => void,
-						): Promise<() => void>;
-					}
-				)(tb).subscribe(handler),
+				this.#gated(() =>
+					(
+						db.live as (tb: string) => {
+							subscribe(
+								h: (m: LiveMessage<unknown>) => void,
+							): Promise<() => void>;
+						}
+					)(tb).subscribe(handler),
+				)(),
 			keyOf: (row) => String((row as { id: RecordId }).id),
 			keyOfId: (id) => String(id),
 			sort: options.sort as ((a: unknown, b: unknown) => number) | undefined,

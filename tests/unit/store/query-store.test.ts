@@ -168,6 +168,35 @@ describe("QueryStore", () => {
 		expect(data(store)).toEqual([{ id: "a", n: 1 }]);
 	});
 
+	test("a live query that could not be registered is registered by refetch, and then delivers", async () => {
+		let attempts = 0;
+		let handler: ((m: LiveMessage<Row>) => void) | undefined;
+		const { store, state } = fake({
+			live: async (h) => {
+				if (++attempts === 1) throw new Error("no session");
+				handler = h;
+				return () => {
+					state.stops++;
+				};
+			},
+		});
+		state.rows = [{ id: "a", n: 1 }];
+		store.subscribe(() => {});
+		await tick();
+		expect(store.getSnapshot().status).toBe("error");
+		expect(state.fetches).toBe(0);
+
+		await store.refetch();
+		expect(attempts).toBe(2);
+		expect(data(store)).toEqual([{ id: "a", n: 1 }]);
+		handler?.({
+			action: "CREATE",
+			recordId: "b",
+			value: { id: "b", n: 2 },
+		} as never);
+		expect(data(store).map((r) => r.id)).toEqual(["a", "b"]);
+	});
+
 	describe("connection", () => {
 		test("is stale while disconnected and reads again on return", async () => {
 			const { store, state, send } = fake();

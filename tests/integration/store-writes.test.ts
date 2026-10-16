@@ -409,3 +409,70 @@ describe("Store writes that conflict (integration)", () => {
 		},
 	);
 });
+
+describe("Store gate (integration)", () => {
+	const note = table("note", { title: t.string() });
+	const getTestDb = withTestDb({
+		perTest: true,
+		setup: async ({ surreal }) => {
+			// No permissions are given to a guest: it cannot write until it signs in.
+			await surreal.query("DEFINE TABLE note SCHEMALESS");
+		},
+	});
+
+	test("a write kept from an earlier session waits for the sign-in instead of being sent anonymously", async () => {
+		const { surreal: admin } = getTestDb();
+		const guest = new Surreal();
+		const storage = memoryStorage();
+		await storage.put(
+			1,
+			encode({
+				table: "note",
+				id: "left",
+				kind: "create",
+				data: { title: "Left" },
+			}),
+		);
+		const rows = async () =>
+			(await admin.query<[{ title: string }[]]>("SELECT * FROM note"))[0] ?? [];
+
+		let signedIn = false;
+		let writtenBeforeSignIn = -1;
+		const store = createStore(orm(guest, note), {
+			storage,
+			retry: { minMs: 10, maxMs: 50 },
+			gate: async () => {
+				writtenBeforeSignIn = (await rows()).length;
+				await guest.signin({ username: "root", password: "root" });
+				signedIn = true;
+			},
+		});
+		try {
+			await guest.connect(process.env.SURREAL_URL || "ws://localhost:8000");
+			await guest.use({
+				namespace: admin.namespace,
+				database: admin.database,
+			});
+			await store.ready;
+			await new Promise((r) => setTimeout(r, 200));
+			// Not sent, so not refused and dropped: it is still waiting.
+			expect(signedIn).toBe(false);
+			expect(store.pending.getSnapshot()).toHaveLength(1);
+
+			// The first write of this session needs the connection, so it asks for it.
+			await store.table("note").create({ title: "New" }, { id: "new" })
+				.committed;
+			await waitFor(() => store.pending.getSnapshot().length === 0);
+			expect(signedIn).toBe(true);
+			expect(writtenBeforeSignIn).toBe(0);
+			expect((await rows()).map((r) => r.title).sort()).toEqual([
+				"Left",
+				"New",
+			]);
+			expect(await storage.load()).toHaveLength(0);
+		} finally {
+			store.dispose();
+			await guest.close();
+		}
+	});
+});

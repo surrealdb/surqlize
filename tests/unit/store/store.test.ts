@@ -8,8 +8,16 @@ import {
 	Surreal,
 	Uuid,
 } from "surrealdb";
-import { createStore, orm, t, table } from "../../../src";
+import {
+	createStore,
+	memoryStorage,
+	orm,
+	type StoreOptions,
+	t,
+	table,
+} from "../../../src";
 import type { ConnectionEvents } from "../../../src/store";
+import { encode } from "../../../src/store/codec";
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
@@ -133,7 +141,7 @@ function fakeDb(
 	failure: (attempt: number) => Error | undefined = () =>
 		new Error("socket closed"),
 ) {
-	const state = { liveOpened: 0, liveClosed: 0, writes: 0 };
+	const state = { liveOpened: 0, liveClosed: 0, reads: 0, writes: 0 };
 	const write = () => {
 		const chain = {
 			content: () => chain,
@@ -149,7 +157,10 @@ function fakeDb(
 	const db = {
 		select: (tb: string) => ({
 			prepare: () => ({ query: `SELECT * FROM ${tb}`, bindings: {} }),
-			execute: async () => [],
+			execute: async () => {
+				state.reads++;
+				return [];
+			},
 		}),
 		live: () => ({
 			subscribe: async () => {
@@ -283,5 +294,293 @@ describe("Store write failures", () => {
 			await expect(write(db).committed).rejects.toBe(error);
 			expect(state.writes).toBe(1);
 		}
+	});
+});
+
+/** A gate that the test opens, or fails, when it chooses, and that counts its calls. */
+function controlledGate() {
+	const gate = {
+		calls: 0,
+		open: () => {},
+		fail: (_error: Error) => {},
+		fn: () => {
+			gate.calls++;
+			return new Promise<void>((resolve, reject) => {
+				gate.open = resolve;
+				gate.fail = reject;
+			});
+		},
+	};
+	return gate;
+}
+
+/** Counts how a promise ends. */
+function settle() {
+	const state = {
+		calls: 0,
+		resolve: () => {
+			state.calls++;
+		},
+		reject: () => {
+			state.calls++;
+		},
+	};
+	return state;
+}
+
+/** A store over the fake ORM, typed loosely: the tests do not care about rows. */
+type LooseStore = {
+	query(tb: string): {
+		subscribe(listener: () => void): () => void;
+		getSnapshot(): {
+			status: string;
+			error?: unknown;
+			data?: readonly unknown[];
+		};
+		refetch(): Promise<void>;
+	};
+	table(tb: string): {
+		create(data: object): { committed: Promise<unknown> };
+	};
+	pending: { getSnapshot(): readonly unknown[] };
+	ready: Promise<void>;
+	dispose(): void;
+};
+const loose = (db: never, options: StoreOptions = {}) =>
+	createStore(db, options) as unknown as LooseStore;
+
+describe("Store gate", () => {
+	const subscribe = (store: LooseStore, tb = "doc") =>
+		store.query(tb).subscribe(() => {});
+	const create = (store: LooseStore, tb = "doc") =>
+		store.table(tb).create({}).committed;
+
+	test("is not called by making a store, asking for a query or a writer", async () => {
+		const { db } = fakeDb();
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn });
+		store.query("doc");
+		store.table("doc");
+		await store.ready;
+		await tick();
+		expect(gate.calls).toBe(0);
+	});
+
+	test("holds live registration and the first read until it resolves", async () => {
+		const { db, state } = fakeDb();
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn, idleMs: 1000 });
+		const all = store.query("doc");
+		all.subscribe(() => {});
+		await tick();
+		expect(gate.calls).toBe(1);
+		expect(state.liveOpened).toBe(0);
+		expect(state.reads).toBe(0);
+		expect(all.getSnapshot().status).toBe("loading");
+
+		gate.open();
+		await tick();
+		expect(state.liveOpened).toBe(1);
+		expect(state.reads).toBe(1);
+		expect(all.getSnapshot().status).toBe("success");
+	});
+
+	test("one call serves every query, and an open gate is not called again", async () => {
+		const { db } = fakeDb(() => undefined);
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn, idleMs: 1000 });
+		subscribe(store, "a");
+		subscribe(store, "b");
+		await tick();
+		expect(gate.calls).toBe(1);
+		gate.open();
+		await tick();
+		subscribe(store, "c");
+		await create(store, "a");
+		expect(gate.calls).toBe(1);
+	});
+
+	test("holds a write, shows it, and sends it once it resolves", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn });
+		const committed = create(store);
+		await tick();
+		expect(gate.calls).toBe(1);
+		expect(store.pending.getSnapshot()).toHaveLength(1);
+		expect(state.writes).toBe(0);
+
+		gate.open();
+		await expect(committed).resolves.toEqual({ id: "x" });
+		expect(state.writes).toBe(1);
+		expect(store.pending.getSnapshot()).toHaveLength(0);
+	});
+
+	test("holds a write loaded from storage, which is sent once it resolves", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		const storage = memoryStorage();
+		await storage.put(
+			1,
+			encode({ table: "doc", id: "left", kind: "create", data: {} }),
+		);
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn, storage, idleMs: 1000 });
+		await store.ready;
+		await tick();
+		expect(state.writes).toBe(0);
+		expect(store.pending.getSnapshot()).toHaveLength(1);
+
+		// The next thing that needs the connection asks for it.
+		subscribe(store);
+		await tick();
+		gate.open();
+		await tick();
+		expect(state.writes).toBe(1);
+		expect(store.pending.getSnapshot()).toHaveLength(0);
+		expect(await storage.load()).toHaveLength(0);
+	});
+
+	test("a store disposed while it waits sends nothing when it resolves, and keeps the write for the next store", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		const storage = memoryStorage();
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn, storage });
+		void create(store);
+		await tick();
+		expect(gate.calls).toBe(1);
+
+		store.dispose();
+		gate.open();
+		await tick();
+		expect(state.writes).toBe(0);
+		expect(await storage.load()).toHaveLength(1);
+	});
+
+	test("a rejected gate fails a query but never a write, and is called again by the next need", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn, idleMs: 1000 });
+		const all = store.query("doc");
+		all.subscribe(() => {});
+		const ended = settle();
+		create(store).then(ended.resolve, ended.reject);
+		await tick();
+		expect(gate.calls).toBe(1);
+
+		gate.fail(new Error("no session"));
+		await tick();
+		expect(all.getSnapshot()).toMatchObject({
+			status: "error",
+			error: new Error("no session"),
+		});
+		// The write is neither sent nor dropped, and not rejected for it.
+		expect(state.writes).toBe(0);
+		expect(ended.calls).toBe(0);
+		expect(store.pending.getSnapshot()).toHaveLength(1);
+		// And the store does not call the gate again on its own.
+		await tick(30);
+		expect(gate.calls).toBe(1);
+
+		// A read asks again.
+		const read = all.refetch();
+		await tick();
+		expect(gate.calls).toBe(2);
+		gate.open();
+		await read;
+		await tick();
+		expect(all.getSnapshot().status).toBe("success");
+		expect(state.writes).toBe(1);
+		expect(ended.calls).toBe(1);
+		expect(store.pending.getSnapshot()).toHaveLength(0);
+	});
+
+	/** A subscribed query that the gate has refused to start. */
+	async function refused() {
+		const { db, state } = fakeDb(() => undefined);
+		const gate = controlledGate();
+		const store = loose(db, { gate: gate.fn, idleMs: 1000 });
+		const all = store.query("doc");
+		all.subscribe(() => {});
+		await tick();
+		gate.fail(new Error("no session"));
+		await tick();
+		expect(all.getSnapshot().status).toBe("error");
+		expect(state.liveOpened).toBe(0);
+		return { store, all, gate, state };
+	}
+
+	test("a query the gate refused to start is started over by refetch(): live, and showing local writes", async () => {
+		const { store, all, gate, state } = await refused();
+
+		const read = all.refetch();
+		await tick();
+		gate.open();
+		await read;
+		expect(all.getSnapshot().status).toBe("success");
+		expect(state.liveOpened).toBe(1);
+
+		// It listens to the pending writes again: this one shows before it is sent.
+		void create(store);
+		expect(all.getSnapshot().data).toHaveLength(1);
+		await tick();
+		expect(all.getSnapshot().data).toHaveLength(1);
+		expect(state.writes).toBe(1);
+		expect(state.liveOpened).toBe(1);
+	});
+
+	test("a query the gate refused to start is started over by a new subscriber", async () => {
+		const { all, gate, state } = await refused();
+
+		all.subscribe(() => {});
+		await tick();
+		expect(gate.calls).toBe(2);
+		gate.open();
+		await tick();
+		expect(all.getSnapshot().status).toBe("success");
+		expect(state.liveOpened).toBe(1);
+	});
+
+	test("refetch() does not start a query again that was disposed", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		const store = loose(db, { idleMs: 1000 });
+		const all = store.query("doc");
+		all.subscribe(() => {});
+		await tick();
+		expect(state.liveOpened).toBe(1);
+
+		store.dispose();
+		await all.refetch();
+		await tick();
+		expect(state.liveOpened).toBe(1);
+		expect(state.liveClosed).toBe(1);
+	});
+
+	test("a gate that throws, rather than rejects, is called again by the next need", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		let calls = 0;
+		const store = loose(db, {
+			gate: () => {
+				if (++calls === 1) throw new Error("no session");
+				return Promise.resolve();
+			},
+		});
+		const all = store.query("doc");
+		all.subscribe(() => {});
+		await tick();
+		expect(all.getSnapshot().status).toBe("error");
+
+		await create(store);
+		expect(calls).toBe(2);
+		expect(state.writes).toBe(1);
+	});
+
+	test("without a gate nothing waits", async () => {
+		const { db, state } = fakeDb(() => undefined);
+		const store = loose(db, { idleMs: 1000 });
+		subscribe(store);
+		await tick(0);
+		expect(state.liveOpened).toBe(1);
+		await create(store);
+		expect(state.writes).toBe(1);
 	});
 });

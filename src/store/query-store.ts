@@ -106,6 +106,8 @@ export class QueryStore<T> {
 	readonly #rows = new Map<string, T>();
 
 	#running = false;
+	/** The live query could not be registered, so the store is not running. */
+	#failedToStart = false;
 	#stopLive: (() => void) | undefined;
 	#stopConnection: (() => void) | undefined;
 	#stopOverlay: (() => void) | undefined;
@@ -146,8 +148,13 @@ export class QueryStore<T> {
 	/** The current snapshot. The same object is returned until something changes. */
 	getSnapshot = (): StoreSnapshot<T> => this.#snapshot;
 
-	/** Run the query again now and replace the result with what it returns. */
+	/**
+	 * Run the query again now and replace the result with what it returns. A
+	 * query that failed to start has no live subscription yet, so it is started
+	 * again instead.
+	 */
 	refetch(): Promise<void> {
+		if (this.#failedToStart) return this.#start();
 		return this.#load();
 	}
 
@@ -203,6 +210,7 @@ export class QueryStore<T> {
 
 	async #start(): Promise<void> {
 		this.#running = true;
+		this.#failedToStart = false;
 		const epoch = ++this.#epoch;
 		// Notifications that arrive before the first result are kept and applied on
 		// top of it, so a change made while the query runs is not lost.
@@ -222,8 +230,14 @@ export class QueryStore<T> {
 			});
 			await this.#load();
 		} catch (error) {
-			if (epoch === this.#epoch)
+			if (epoch === this.#epoch) {
+				// Nothing was registered, so the store is not running: the next
+				// subscriber, or refetch(), starts it over.
+				this.#running = false;
+				this.#failedToStart = true;
+				this.#buffer = undefined;
 				this.#publish(Object.freeze({ status: "error", error }));
+			}
 		}
 	}
 
@@ -339,6 +353,7 @@ export class QueryStore<T> {
 		clearTimeout(this.#idle);
 		this.#idle = undefined;
 		this.#running = false;
+		this.#failedToStart = false;
 		this.#epoch++;
 		clearTimeout(this.#debounce);
 		this.#debounce = undefined;

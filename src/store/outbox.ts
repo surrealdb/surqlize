@@ -104,6 +104,8 @@ export type OutboxDeps = {
 	isPermanent(error: unknown): boolean;
 	/** Whether the connection is up. Without a signal, assumed to be. */
 	isOnline(): boolean;
+	/** Called once a write has been queued and stored, before it is sent. */
+	onWrite?(): void;
 	/** The first and the longest wait before sending again after a failed attempt. */
 	retry: { minMs: number; maxMs: number };
 };
@@ -193,6 +195,7 @@ export class Outbox {
 			this.#changed();
 			this.deps.storage.put(entry.seq, payload).then(
 				() => {
+					this.deps.onWrite?.();
 					void this.flush();
 				},
 				(error) => {
