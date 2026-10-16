@@ -1218,6 +1218,8 @@ const posts = await db.live("post").fetch("author");
 
 > **Note:** Filtering or projecting a live query relies on query parameters, which require **SurrealDB ≥ 3.0** (`FETCH` requires ≥ 2.2.0). On older servers a parameterized live query is accepted but never delivers notifications.
 
+> **Note:** A live `.where()` cannot hold a full-text match (`.search()`) or a KNN predicate (`.knn()`) anywhere in it: alone, inside `and()`, `or()` and `not()`, or inside a subquery. SurrealDB accepts one, but at the top of the filter it never causes a notification: alone or under `and()` or `not()` nothing is delivered, and under `or()` only the other conditions deliver. Inside a subquery it did deliver on 3.2.3, but that is untested on other versions, so it is refused too. Building one throws an `OrmError`. Subscribe without that predicate, or refetch a `select()` when the table changes.
+
 ### Diffs
 
 Use `.diff()` to receive [JSON Patch](https://jsonpatch.com) arrays instead of full records (`LIVE SELECT DIFF`):

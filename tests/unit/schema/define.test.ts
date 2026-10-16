@@ -267,6 +267,47 @@ describe("DEFINE INDEX", () => {
 		expect(sql).toContain("TYPE F32");
 	});
 
+	test("an HNSW index with M below 2 or EFC below 1 is refused", () => {
+		// SurrealDB accepts M 1 and then grows its memory without limit, so M 1 is
+		// the verified cause. EFC 0 was not seen to cause it with a normal M, and
+		// is refused as a precaution.
+		const hnsw = (options: { m?: number; efc?: number }) =>
+			defineIndex("post", {
+				name: "v",
+				fields: ["embedding"],
+				hnsw: { dimension: 3, ...options },
+			});
+		const messageOf = (options: { m?: number; efc?: number }) => {
+			try {
+				hnsw(options);
+			} catch (error) {
+				return (error as Error).message;
+			}
+			return "";
+		};
+
+		expect(() => hnsw({ m: 1 })).toThrow(/'v'.*M must be at least 2, got 1/);
+		// Each message says what is known about its own parameter, no more.
+		expect(messageOf({ m: 1 })).toMatch(/M 1 and then grows its memory/);
+		expect(messageOf({ m: 1 })).not.toContain("precaution");
+		expect(messageOf({ efc: 0 })).toMatch(/EFC 0 was not seen .*precaution/);
+		expect(messageOf({ efc: 0 })).not.toContain("grows its memory");
+		expect(() => hnsw({ m: 0 })).toThrow(/M must be at least 2/);
+		expect(() => hnsw({ efc: 0 })).toThrow(/'v'.*EFC must be at least 1/);
+		expect(() => hnsw({ efc: -5 })).toThrow(/EFC must be at least 1/);
+		// The pair that sent the server into memory growth names both.
+		const both = () => hnsw({ efc: 0, m: 1 });
+		expect(both).toThrow(/M must be at least 2/);
+		expect(both).toThrow(/EFC must be at least 1/);
+		// A comparison alone would let NaN through.
+		expect(() => hnsw({ m: Number.NaN })).toThrow(/M must be at least 2/);
+		expect(() => hnsw({ efc: Number.NaN })).toThrow(/EFC must be at least 1/);
+
+		// The floors themselves, and the defaults, are fine.
+		expect(hnsw({ m: 2, efc: 1 })).toContain("EFC 1 M 2 M0 4");
+		expect(() => hnsw({})).not.toThrow();
+	});
+
 	test("a COUNT index covers the table, so takes no columns", () => {
 		const sql = defineIndex("post", { name: "c", count: true });
 
