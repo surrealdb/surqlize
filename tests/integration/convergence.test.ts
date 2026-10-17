@@ -11,7 +11,12 @@ import {
 	sequence,
 	storedFunction,
 } from "../../src/schema/ddl/entities";
+import { atLeast, serverVersion } from "../helpers/db";
 import { withTestDb } from "./setup";
+
+// What a key-set access reads back (only the session duration, `NONE` unless
+// one was given) was observed on 3.2.3, so these run from there.
+const keySetReadBack = atLeast(await serverVersion(), 3, 2);
 
 /**
  * Applying a schema twice must do nothing the second time.
@@ -224,6 +229,90 @@ describe("Convergence", () => {
 				type: "BEARER",
 				for: "USER",
 				duration: { grant: "30d", session: "1h" },
+			}),
+		];
+
+		expect(await applyTwice(definitions)).toEqual([]);
+	});
+
+	test.skipIf(!keySetReadBack)(
+		"a JWT access backed by a key set, which hides nothing and so must converge",
+		async () => {
+			// Only the session duration is reported back for one: a token lives as
+			// long as the issuer says, so a token duration is dropped on the way in.
+			const url = "https://issuer.example/.well-known/jwks.json";
+			const definitions = [
+				access("jwks_plain", { type: "JWT", url }),
+				access("jwks_session", {
+					type: "JWT",
+					url,
+					duration: { session: "2h" },
+				}),
+				access("jwks_tuned", {
+					type: "JWT",
+					url,
+					duration: { token: "15m", session: "30d" },
+				}),
+			];
+
+			expect(await applyTwice(definitions)).toEqual([]);
+		},
+	);
+
+	test.skipIf(!keySetReadBack)(
+		"a changed session duration on a key set is applied once",
+		async () => {
+			const url = "https://issuer.example/.well-known/jwks.json";
+			await applyTwice([access("jwks", { type: "JWT", url })]);
+
+			const changed = [
+				access("jwks", { type: "JWT", url, duration: { session: "2h" } }),
+			];
+			const pending = diff(changed, await introspect(db().surreal));
+			expect(pending.up).toHaveLength(1);
+			expect(pending.up[0]).toContain("DEFINE ACCESS OVERWRITE jwks");
+
+			expect(await applyTwice(changed)).toEqual([]);
+		},
+	);
+
+	test.skipIf(!keySetReadBack)(
+		"a key set defined before the duration was stated stops showing as modified",
+		async () => {
+			// Written as the generator used to write them: with no session duration,
+			// and with a token duration the server drops. What the database holds is
+			// what it made of those, so these are databases from before the change.
+			await db().surreal.query(`
+			DEFINE ACCESS old_plain ON DATABASE TYPE JWT URL 'https://issuer.example/jwks';
+			DEFINE ACCESS old_token ON DATABASE TYPE JWT URL 'https://issuer.example/jwks' DURATION FOR TOKEN 15m;
+			DEFINE ACCESS old_both ON DATABASE TYPE JWT URL 'https://issuer.example/jwks' DURATION FOR TOKEN 15m, FOR SESSION 2h;
+		`);
+
+			const url = "https://issuer.example/jwks";
+			const declared = [
+				access("old_plain", { type: "JWT", url }),
+				access("old_token", { type: "JWT", url, duration: { token: "15m" } }),
+				access("old_both", {
+					type: "JWT",
+					url,
+					duration: { token: "15m", session: "2h" },
+				}),
+			];
+
+			expect(diff(declared, await introspect(db().surreal)).up).toEqual([]);
+		},
+	);
+
+	test("a JWT access with a key is created once and then left alone", async () => {
+		// The key is reported back as '[REDACTED]', so it is never compared
+		const definitions = [
+			access("hmac", { type: "JWT", algorithm: "HS256", key: "secret" }),
+			access("signing", {
+				type: "JWT",
+				algorithm: "HS512",
+				key: "secret",
+				issuerKey: "secret",
+				duration: { token: "15m", session: "12h" },
 			}),
 		];
 

@@ -70,17 +70,29 @@ type RowActionable<
 // biome-ignore lint/suspicious/noExplicitAny: a link to any table
 type LooseRecord = RecordType<any> & { readonly infer: any };
 
+/**
+ * What a session knows about itself (`$session`), as SurrealDB reports it.
+ *
+ * `id` is always a uuid. The rest are absent where the session has no such thing:
+ * `ac` and `rd` for a system user, `exp` where no session duration is set, and
+ * `tk` for a session that signed in with no token. It is declared once, as a
+ * value, so that the type a rule is written against is the type it is rendered
+ * with.
+ */
+const SESSION = t.object({
+	ac: t.option(t.string()),
+	db: t.option(t.string()),
+	ns: t.option(t.string()),
+	id: t.uuid(),
+	ip: t.option(t.string()),
+	or: t.option(t.string()),
+	rd: t.option(t.record()),
+	tk: t.option(t.object({})),
+	exp: t.option(t.int()),
+});
+
 /** What a session knows about itself (`$session`). */
-export type SessionType = ObjectType<{
-	ac: OptionType<StringType>;
-	db: OptionType<StringType>;
-	ns: OptionType<StringType>;
-	id: OptionType<StringType>;
-	ip: OptionType<StringType>;
-	or: OptionType<StringType>;
-	rd: OptionType<RecordType<undefined>>;
-	exp: OptionType<AnyType>;
-}>;
+export type SessionType = typeof SESSION;
 
 /** The claims of the token the session was opened with (`$token`): any property. */
 export type TokenType = LooseRow;
@@ -295,17 +307,6 @@ function unavailable(scope: Scope, name: string): never {
 		`$${name} is not available in the permissions of a ${scope}: use it in a field's permissions`,
 	);
 }
-
-const SESSION = t.object({
-	ac: t.option(t.string()),
-	db: t.option(t.string()),
-	ns: t.option(t.string()),
-	id: t.option(t.string()),
-	ip: t.option(t.string()),
-	or: t.option(t.string()),
-	rd: t.option(t.record()),
-	exp: t.option(t.any()),
-});
 
 /**
  * A value written into a rule, the way SurrealDB stores it, so that a definition

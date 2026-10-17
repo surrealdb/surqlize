@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RecordId, Surreal } from "surrealdb";
+import { RecordId, Surreal, Uuid } from "surrealdb";
 import {
 	and,
 	authenticatedAs,
@@ -18,6 +18,7 @@ import {
 	defineTable,
 } from "../../../src/schema/ddl/define";
 import { flattenFields } from "../../../src/schema/ddl/flatten";
+import type { SessionType } from "../../../src/schema/ddl/permissions";
 
 /** Render one field of a table, by name. */
 function field(schema: Parameters<typeof defineSchema>[0], name: string) {
@@ -393,6 +394,62 @@ describe("types", () => {
 		// @ts-expect-error a number is not a rule
 		table("post", {}).permissions({ select: 1 });
 		expect(true).toBe(true);
+	});
+});
+
+describe("the session variable", () => {
+	// What `$session` holds in a real session. The values are checked against a
+	// live server in tests/integration/session.test.ts.
+	test("SessionType is what a real session holds", () => {
+		assertType<
+			Equal<
+				SessionType["infer"],
+				{
+					ac: string | undefined;
+					db: string | undefined;
+					ns: string | undefined;
+					id: Uuid;
+					ip: string | undefined;
+					or: string | undefined;
+					rd: RecordId<string> | undefined;
+					// biome-ignore lint/complexity/noBannedTypes: the claims are an object type with no known properties, which infers as `{}`
+					tk: {} | undefined;
+					exp: number | undefined;
+				}
+			>
+		>();
+		expect(true).toBe(true);
+	});
+
+	test("the session id is a uuid, so it compares with one and not with a string", () => {
+		const id = new Uuid("018f3c3e-7d7a-7a3b-9c5e-0b8b7d6e5f40");
+		const post = table("post", {
+			n: t.int().permissions({
+				select: where((_row, { session }) => session.id.eq(id)),
+				// @ts-expect-error a session id is a uuid, not a string
+				update: where((_row, { session }) => session.id.eq("not-a-uuid")),
+			}),
+		});
+
+		expect(field(post, "n")).toContain(
+			'FOR select WHERE $session.id = u"018f3c3e-7d7a-7a3b-9c5e-0b8b7d6e5f40"',
+		);
+	});
+
+	test("the expiry is an integer, and the claims are there to ask about", () => {
+		const post = table("post", {
+			n: t.int().permissions({
+				select: where((_row, { session }) =>
+					and(session.exp.gt(0), session.tk.ne(undefined)),
+				),
+				// @ts-expect-error an expiry is a number, not a string
+				update: where((_row, { session }) => session.exp.eq("soon")),
+			}),
+		});
+
+		expect(field(post, "n")).toContain(
+			"FOR select WHERE $session.exp > 0 AND $session.tk != NONE",
+		);
 	});
 });
 
