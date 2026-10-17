@@ -3,7 +3,9 @@ import { OrmError } from "../error";
 import type { LiveMessage } from "../query/live";
 import type { CreateInput } from "../query/modification-methods";
 import type { SelectQuery } from "../query/select";
-import type { Orm } from "../schema/orm";
+import { bindModelContexts, hydrateModelRow } from "../schema/model";
+import { ModelType } from "../schema/model-type";
+import type { AnyTable, Orm } from "../schema/orm";
 import type { WorkableContext } from "../utils";
 import { matchesWhere } from "./match";
 import {
@@ -12,12 +14,24 @@ import {
 	type OutboxOp,
 	type OutboxStorage,
 } from "./outbox";
-import { applyOverlay } from "./overlay";
+import {
+	applyOverlayWithMaterializer,
+	type OverlayMaterializer,
+} from "./overlay";
 import {
 	type ConnectionSignal,
 	QueryStore,
 	type StoreSnapshot,
 } from "./query-store";
+
+export type StoreOrm = Pick<Orm, "surreal"> & {
+	readonly tables: Record<string, AnyTable>;
+	readonly select: (...args: never[]) => unknown;
+	readonly live: (...args: never[]) => unknown;
+};
+type StoreTables<O extends StoreOrm> = O["tables"][keyof O["tables"] &
+	string][];
+type StoreQueryOrm<O extends StoreOrm> = Orm<StoreTables<O>>;
 
 export type StoreOptions = {
 	/**
@@ -101,7 +115,7 @@ function keyOf(text: string, bindings: unknown): string {
  * const stop = open.subscribe(() => render(open.getSnapshot()));
  * ```
  */
-export class Store<O extends Orm> {
+export class Store<O extends StoreOrm> {
 	readonly #stores = new Map<string, QueryStore<unknown>>();
 	readonly #idleMs: number;
 	readonly #debounceMs: number;
@@ -234,7 +248,9 @@ export class Store<O extends Orm> {
 	 */
 	query<Tb extends keyof O["tables"] & string, Q extends PromiseLike<unknown>>(
 		tb: Tb,
-		build: (q: SelectQuery<O, WorkableContext<O>, Tb>) => Q,
+		build: (
+			q: SelectQuery<StoreQueryOrm<O>, WorkableContext<StoreQueryOrm<O>>, Tb>,
+		) => Q,
 	): QueryStore<Row<Q>>;
 
 	query(
@@ -243,12 +259,49 @@ export class Store<O extends Orm> {
 		options: QueryOptions<never> = {},
 		// biome-ignore lint/suspicious/noExplicitAny: the overloads give the row type
 	): QueryStore<any> {
-		const db = this.db as Orm;
+		const db = this.db as unknown as Orm;
 		const select = (db.select as (tb: string) => unknown)(tb);
 		const query = (build ? build(select as never) : select) as {
 			execute(): Promise<unknown>;
 			prepare(): { query: string; bindings: unknown };
+			entry?: unknown;
 		};
+		const resultSchema = query.entry;
+		const materializer: OverlayMaterializer<unknown> | undefined =
+			resultSchema instanceof ModelType
+				? {
+						create: (row) => {
+							const model = hydrateModelRow(
+								resultSchema.model,
+								resultSchema.tb,
+								resultSchema.usesModelBase,
+								row,
+							);
+							bindModelContexts(model, resultSchema, db);
+							return model;
+						},
+						update: (row, data) => {
+							if (!(row instanceof resultSchema.model)) return undefined;
+							const record = Object.fromEntries(
+								Object.entries(row).filter(
+									([, value]) => typeof value !== "function",
+								),
+							);
+							const model = hydrateModelRow(
+								resultSchema.model,
+								resultSchema.tb,
+								resultSchema.usesModelBase,
+								{
+									...record,
+									...data,
+									id: (row as { id: unknown }).id,
+								},
+							);
+							bindModelContexts(model, resultSchema, db);
+							return model;
+						},
+					}
+				: undefined;
 		// A query that is a plain filter can be checked against records on the
 		// client, which lets a local write enter or leave the result at once.
 		const filter = build
@@ -269,9 +322,25 @@ export class Store<O extends Orm> {
 				apply: (rows, direct) => {
 					const rowKey = (row: unknown) => String((row as { id: RecordId }).id);
 					const ops = this.#outbox.forTable(tb);
-					if (direct) return applyOverlay(rows, ops, rowKey, true);
-					if (!filter) return applyOverlay(rows, ops, rowKey, false);
-					return applyOverlay(
+					if (direct)
+						return applyOverlayWithMaterializer(
+							rows,
+							ops,
+							rowKey,
+							true,
+							undefined,
+							materializer,
+						);
+					if (!filter)
+						return applyOverlayWithMaterializer(
+							rows,
+							ops,
+							rowKey,
+							false,
+							undefined,
+							materializer,
+						);
+					return applyOverlayWithMaterializer(
 						rows,
 						ops,
 						rowKey,
@@ -279,6 +348,7 @@ export class Store<O extends Orm> {
 							!filter.ordered &&
 							matchesWhere(filter.where, row, { partial: true }) === true,
 						(row) => matchesWhere(filter.where, row) !== false,
+						materializer,
 					);
 				},
 				subscribe: this.#outbox.subscribe,
@@ -327,10 +397,10 @@ export class Store<O extends Orm> {
 }
 
 type Schema<
-	O extends Orm,
+	O extends StoreOrm,
 	Tb extends keyof O["tables"] & string,
 > = O["tables"][Tb]["schema"];
-type RowOf<O extends Orm, Tb extends keyof O["tables"] & string> = Schema<
+type RowOf<O extends StoreOrm, Tb extends keyof O["tables"] & string> = Schema<
 	O,
 	Tb
 >["infer"];
@@ -341,7 +411,10 @@ const idValue = (id: RecordIdValue | RecordId): unknown =>
 const newId = (): string => globalThis.crypto.randomUUID().replaceAll("-", "");
 
 /** Writes to one table, made through {@link Store.table}. */
-export class TableWriter<O extends Orm, Tb extends keyof O["tables"] & string> {
+export class TableWriter<
+	O extends StoreOrm,
+	Tb extends keyof O["tables"] & string,
+> {
 	constructor(
 		private readonly tb: Tb,
 		private readonly outbox: Outbox,
@@ -390,7 +463,7 @@ export class TableWriter<O extends Orm, Tb extends keyof O["tables"] & string> {
 }
 
 /** Create a {@link Store} over an ORM. */
-export function createStore<O extends Orm>(
+export function createStore<O extends StoreOrm>(
 	db: O,
 	options?: StoreOptions,
 ): Store<O> {

@@ -50,6 +50,12 @@ import type { ApiEndpointSchema } from "./api";
 import { EdgeSchema } from "./edge";
 import type { FunctionCallable, InferParams } from "./function";
 import { type CreateSchemaLookup, createLookupFromSchemas } from "./lookup";
+import {
+	type AnyModelConstructor,
+	type BoundModelConstructor,
+	bindModelClass,
+	createModelTransactionLifecycle,
+} from "./model";
 import { TableSchema } from "./table";
 
 /** Union type representing any table or edge schema. */
@@ -57,10 +63,65 @@ export type AnyTable<Tb extends string = string> =
 	| TableSchema<Tb>
 	| EdgeSchema<string, Tb>;
 
+// biome-ignore lint/suspicious/noExplicitAny: TableSchema is invariant in its schema and instance generics.
+type AttachedModel<S> =
+	S extends TableSchema<any, any, any, infer M>
+		? Extract<M, AnyModelConstructor>
+		: never;
+
+type ModelTableNames<Tables> = {
+	[K in keyof Tables & string]: [AttachedModel<Tables[K]>] extends [never]
+		? never
+		: K;
+}[keyof Tables & string];
+
+type ModelSchemaFor<Tables, T extends keyof Tables> =
+	Tables[T] extends TableSchema<infer Tb, infer Fd, infer I, infer M>
+		? TableSchema<Tb, Fd, I, M>
+		: never;
+
+const modelCaches = new WeakMap<object, Map<string, AnyModelConstructor>>();
+
 /** Maps an array of table/edge schemas to a record keyed by table name. */
 export type MappedTables<T extends AnyTable[]> = {
 	[K in T[number]["tb"]]: Extract<T[number], AnyTable<K>>;
 } & {};
+
+/** Type-safe model lookup exposed by the public ORM factory. */
+export type ModelRegistry<T extends AnyTable[]> = {
+	model<
+		Tb extends ModelTableNames<MappedTables<T>> &
+			(keyof MappedTables<T> & string),
+	>(
+		tb: Tb,
+	): BoundModelConstructor<
+		AttachedModel<MappedTables<T>[Tb]>,
+		ModelSchemaFor<MappedTables<T>, Tb>,
+		Orm<T>
+	>;
+};
+
+export type ModelTransaction<T extends AnyTable[]> = Omit<
+	Transaction<T>,
+	"model" | "validated" | "withSignal"
+> &
+	ModelRegistry<T> & {
+		validated(enabled?: boolean): ModelTransaction<T>;
+		withSignal(signal: AbortSignal | undefined): ModelTransaction<T>;
+	};
+
+export type ModelOrm<T extends AnyTable[]> = Omit<
+	Orm<T>,
+	"model" | "validated" | "withSignal" | "transaction"
+> &
+	ModelRegistry<T> & {
+		validated(enabled?: boolean): ModelOrm<T>;
+		withSignal(signal: AbortSignal | undefined): ModelOrm<T>;
+		transaction(): Promise<ModelTransaction<T>>;
+		transaction(): Promise<Transaction<T>>;
+		transaction<R>(cb: (tx: ModelTransaction<T>) => Promise<R>): Promise<R>;
+		transaction<R>(cb: (tx: Transaction<T>) => Promise<R>): Promise<R>;
+	};
 
 /**
  * A plain object grouping table/edge schemas under arbitrary keys, e.g. the
@@ -203,6 +264,36 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		options: OrmOptions = {},
 	) {
 		this.validation = options.validate ?? false;
+	}
+
+	/**
+	 * Return the model constructor bound to this ORM handle. Each handle caches
+	 * its own subclass, so static queries never share a connection implicitly.
+	 */
+	model(tb: never): unknown {
+		const key = tb as unknown as string;
+		let cache = modelCaches.get(this);
+		if (!cache) {
+			cache = new Map();
+			modelCaches.set(this, cache);
+		}
+		const cached = cache.get(key);
+		if (cached) return cached;
+
+		const schema = (this.tables as Record<string, AnyTable>)[key];
+		if (!(schema instanceof TableSchema) || !schema.attachedModel) {
+			throw new OrmError(
+				`Cannot get a model for table "${key}": the ORM has no model class attached`,
+			);
+		}
+
+		const model = bindModelClass(
+			schema.attachedModel as AnyModelConstructor,
+			this as unknown as Orm<AnyTable[]>,
+			key as never,
+		);
+		cache.set(key, model);
+		return model;
 	}
 
 	/**
@@ -691,10 +782,17 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 		// Dynamic import to avoid circular dependency
 		// (Transaction extends Orm)
 		const { Transaction: Tx } = await import("../query/transaction");
+		const modelLifecycle = createModelTransactionLifecycle(this);
 		const surrealTx = await this.surreal.beginTransaction();
-		const tx = new Tx<T>(surrealTx, this.tables, this.lookup, {
-			validate: this.validation,
-		});
+		const tx = new Tx<T>(
+			surrealTx,
+			this.tables,
+			this.lookup,
+			{
+				validate: this.validation,
+			},
+			modelLifecycle,
+		);
 
 		if (!cb) return tx;
 
@@ -703,7 +801,11 @@ export class Orm<T extends AnyTable[] = AnyTable[]> {
 			await tx.commit();
 			return result;
 		} catch (e) {
-			await tx.cancel();
+			try {
+				await tx.cancel();
+			} catch {
+				// Keep the callback or commit failure as the transaction result.
+			}
 			throw e;
 		}
 	}
@@ -757,11 +859,11 @@ function isSchemaMap(value: unknown): value is SchemaMap {
 export function orm<T extends AnyTable[]>(
 	surreal: SurrealConnection,
 	...tables: T
-): Orm<T>;
+): ModelOrm<T>;
 export function orm<S extends SchemaMap>(
 	surreal: SurrealConnection,
 	schema: S,
-): Orm<SchemaMapTables<S>>;
+): ModelOrm<SchemaMapTables<S>>;
 export function orm(
 	surreal: SurrealConnection,
 	...args: AnyTable[] | [SchemaMap]

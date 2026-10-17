@@ -1,6 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { Duration, RecordId, ServerError, Uuid } from "surrealdb";
-import { applyOverlay, memoryStorage, type OutboxOp } from "../../../src";
+import {
+	Duration,
+	RecordId,
+	ServerError,
+	type SurrealSession,
+	Uuid,
+} from "surrealdb";
+import {
+	applyOverlay,
+	createStore,
+	type HydrationInput,
+	memoryStorage,
+	type OutboxOp,
+	orm,
+	t,
+	table,
+} from "../../../src";
 import { decode, encode } from "../../../src/store/codec";
 import { Outbox } from "../../../src/store/outbox";
 
@@ -143,6 +158,151 @@ describe("applyOverlay", () => {
 	test("returns the same array when nothing is pending", () => {
 		const rows = [row("a", "A")];
 		expect(applyOverlay(rows, [], key, true)).toBe(rows);
+	});
+});
+
+describe("Store model overlays", () => {
+	test("hydrates optimistic model creates and updates as fresh bound instances", async () => {
+		const profileTable = table("optimistic_profile", { name: t.string() });
+		class OptimisticProfile extends profileTable.model() {
+			static hydrate(record: HydrationInput<typeof profileTable.schema>) {
+				return Object.assign(new OptimisticProfile(), record);
+			}
+
+			rename(name: string) {
+				return this.update().set({ name });
+			}
+		}
+		const modelTable = table("optimistic_task", {
+			name: t.string(),
+			serverKey: t.string().default("generated"),
+			metadata: t.object({ theme: t.string() }),
+			profile: t.record("optimistic_profile"),
+		});
+		class OptimisticTask extends modelTable.model() {
+			#prefix = "Task: ";
+			readonly upperName = () => this.name.toUpperCase();
+
+			static hydrate(record: HydrationInput<typeof modelTable.schema>) {
+				return Object.assign(new OptimisticTask(), record);
+			}
+
+			get label() {
+				return `${this.#prefix}${this.name}`;
+			}
+
+			rename(name: string) {
+				return this.update().set({ name });
+			}
+		}
+		const linked = modelTable.attach(OptimisticTask);
+		const linkedProfile = profileTable.attach(OptimisticProfile);
+		const rawProfile = {
+			id: new RecordId("optimistic_profile", "p1"),
+			name: "Countess",
+		};
+		const rawTask = {
+			id: new RecordId("optimistic_task", "ada"),
+			name: "Ada",
+			serverKey: "stored",
+			metadata: { theme: "dark" },
+			profile: new RecordId("optimistic_profile", "p1"),
+		};
+		const session = {
+			query: async (query: string) => [
+				[
+					query.includes("FETCH profile")
+						? { ...rawTask, profile: rawProfile }
+						: rawTask,
+				],
+			],
+		} as unknown as SurrealSession;
+		const db = orm(session, linked, linkedProfile);
+		Object.defineProperty(db, "live", {
+			value: () => ({ subscribe: async () => () => {} }),
+		});
+		const listeners = new Map<string, Set<() => void>>();
+		const connection = {
+			subscribe(event: string, listener: () => void) {
+				const group = listeners.get(event) ?? new Set();
+				group.add(listener);
+				listeners.set(event, group);
+				return () => group.delete(listener);
+			},
+		};
+		const store = createStore(db, { connection, idleMs: 0 });
+		const query = store.query("optimistic_task");
+		const fetchedQuery = store.query("optimistic_task", (q) =>
+			q.fetch("profile"),
+		);
+		const unsubscribe = query.subscribe(() => {});
+		const unsubscribeFetched = fetchedQuery.subscribe(() => {});
+		await tick();
+		const rows = () => {
+			const snapshot = query.getSnapshot();
+			if (snapshot.status !== "success") {
+				throw new Error(`store status is ${snapshot.status}`);
+			}
+			return snapshot.data;
+		};
+		const fetchedRows = () => {
+			const snapshot = fetchedQuery.getSnapshot();
+			if (snapshot.status !== "success") {
+				throw new Error(`fetched store status is ${snapshot.status}`);
+			}
+			return snapshot.data;
+		};
+		const original = rows()[0]!;
+		expect(original).toBeInstanceOf(OptimisticTask);
+		const fetchedOriginal = fetchedRows()[0]!;
+		const nestedProfile = fetchedOriginal.profile;
+		expect(nestedProfile).toBeInstanceOf(OptimisticProfile);
+		expect(nestedProfile.$orm).toBe(db);
+		for (const listener of listeners.get("disconnected") ?? []) listener();
+
+		const metadata = { theme: "dark" };
+		const createdWrite = store.table("optimistic_task").create(
+			{
+				id: new RecordId("optimistic_task", "wrong"),
+				name: "Bea",
+				metadata,
+				profile: new RecordId("optimistic_profile", "p1"),
+			} as never,
+			{ id: "bea" },
+		);
+		await tick();
+		const created = rows().find(
+			(row) => String(row.id) === "optimistic_task:bea",
+		)!;
+		expect(created).toBeInstanceOf(OptimisticTask);
+		expect(created.id).toEqual(new RecordId("optimistic_task", "bea"));
+		expect(created.serverKey).toBeUndefined();
+		expect(created.label).toBe("Task: Bea");
+		expect(created.upperName()).toBe("BEA");
+		expect(created.$orm).toBe(db);
+
+		store.table("optimistic_task").update("ada", { name: "Augusta" });
+		await tick();
+		const changed = rows().find(
+			(row) => String(row.id) === String(original.id),
+		)!;
+		expect(changed).not.toBe(original);
+		expect(changed).toBeInstanceOf(OptimisticTask);
+		expect(changed.label).toBe("Task: Augusta");
+		expect(changed.upperName()).toBe("AUGUSTA");
+		expect(changed.$orm).toBe(db);
+		expect(changed.metadata).toBe(original.metadata);
+		expect(changed.rename("Augusta Byron")).toBeDefined();
+		expect(original.name).toBe("Ada");
+		const fetchedChanged = fetchedRows()[0]!;
+		expect(fetchedChanged).not.toBe(fetchedOriginal);
+		expect(fetchedChanged.profile).toBe(nestedProfile);
+		expect(fetchedChanged.profile.$orm).toBe(db);
+		expect(fetchedChanged.profile.rename("Augusta")).toBeDefined();
+		unsubscribe();
+		unsubscribeFetched();
+		await tick();
+		void createdWrite.committed.catch(() => {});
 	});
 });
 

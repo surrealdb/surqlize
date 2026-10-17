@@ -7,12 +7,12 @@ import {
 	onCleanup,
 	useContext,
 } from "solid-js";
-import type { Orm } from "../schema/orm";
 // Types only: this entry must not pull a second copy of the store into a bundle.
 import type {
 	OutboxOp,
 	QueryStore,
 	Store,
+	StoreOrm,
 	StoreSnapshot,
 } from "../store/index";
 
@@ -101,9 +101,9 @@ export function createQuery<T>(
  * Use it to show that changes are unsaved, for example while offline.
  */
 export function createPending(
-	store: Source<Pick<Store<Orm>, "pending">>,
+	store: Source<Pick<Store<StoreOrm>, "pending">>,
 ): Accessor<readonly OutboxOp[]> {
-	return follow<Pick<Store<Orm>, "pending">, readonly OutboxOp[]>(
+	return follow<Pick<Store<StoreOrm>, "pending">, readonly OutboxOp[]>(
 		store,
 		NO_OPS,
 		NO_OPS,
@@ -145,7 +145,7 @@ export function StoreProvider(props: {
  *
  * @throws If there is no provider above the component.
  */
-export function useStore<O extends Orm = Orm>(): Store<O> {
+export function useStore<O extends StoreOrm = StoreOrm>(): Store<O> {
 	const store = useContext(StoreContext);
 	if (!store) {
 		throw new Error("useStore() needs a <StoreProvider> above this component");

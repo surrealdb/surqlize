@@ -7,11 +7,11 @@ import {
 	useSyncExternalStore,
 } from "react";
 // Types only: this entry must not pull a second copy of the store into a bundle.
-import type { Orm } from "../schema/orm";
 import type {
 	OutboxOp,
 	QueryStore,
 	Store,
+	StoreOrm,
 	StoreSnapshot,
 } from "../store/index";
 
@@ -74,7 +74,7 @@ export function useQuery<T>(
  * ```
  */
 export function usePending(
-	store: Pick<Store<Orm>, "pending"> | null | undefined,
+	store: Pick<Store<StoreOrm>, "pending"> | null | undefined,
 ): readonly OutboxOp[] {
 	return useSyncExternalStore(
 		store ? store.pending.subscribe : subscribeNothing,
@@ -113,7 +113,7 @@ export function StoreProvider(props: {
  *
  * @throws If there is no provider above the component.
  */
-export function useStore<O extends Orm = Orm>(): Store<O> {
+export function useStore<O extends StoreOrm = StoreOrm>(): Store<O> {
 	const store = useContext(StoreContext);
 	if (!store) {
 		throw new Error("useStore() needs a <StoreProvider> above this component");

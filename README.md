@@ -281,9 +281,110 @@ fields declared in the table plus the instance type of the class. Notes:
   their own enumerable properties; getters and methods are not stored.
 - Hydration also applies to rows resolved by `.fetch()`, each with its own class.
   Queries with a `.return()` projection return plain objects.
-- Helpers that issue queries themselves (such as `this.update()` or static
-  `findByEmail()` methods) are not provided: write them against your `db`
-  instance, e.g. `db.select("user").where(...)`.
+
+### ORM-bound model helpers
+
+Use `table.model()` when model instances need to issue their own queries or
+initialize constructor state during hydration. Attach the class before passing
+the schema to `orm()`:
+
+```typescript
+import { orm, table, t, type HydrationInput } from "surqlize";
+
+const user = table("user", {
+  name: t.string(),
+  email: t.string(),
+});
+
+class User extends user.model() {
+  #prefix = "User: ";
+
+  static hydrate(record: HydrationInput<typeof user.schema>) {
+    return Object.assign(new User(), record);
+  }
+
+  get label() {
+    return `${this.#prefix}${this.name}`;
+  }
+
+  rename(name: string) {
+    return this.$orm.update(this.id).set({ name });
+  }
+
+  static findByEmail(email: string) {
+    return this.$orm.select("user")
+      .where({ email })
+      .then.val();
+  }
+}
+
+const db = orm(surreal, user.attach(User));
+const UserModel = db.model("user");
+const ada = await UserModel.findByEmail("ada@example.com");
+await ada?.rename("Ada Lovelace");
+```
+
+`db.model()` returns a cached constructor bound to that ORM handle. Its static
+`select`, `create`, `insert`, `update`, `upsert` and `delete` methods use the
+existing query builders. The facade's `$orm` property is also available inside
+custom static methods, while a hydrated instance exposes the same bound handle
+to its instance methods. Use this facade for static queries:
+
+```typescript illustrative
+const UserModel = db.model("user");
+const ada = await UserModel.findByEmail("ada@example.com");
+```
+
+Parsed rows are instances of the attached `User` class and expose `$orm`,
+`select()`, `update()` and `delete()`. An instance method can use `$orm` to
+query any registered table, or use a helper such as `update()` to target that
+record's ID:
+
+```typescript illustrative
+await ada?.rename("Ada Lovelace");
+```
+
+Both static and instance methods use the handle bound to the facade or row.
+Call custom static methods through `db.model()` (or `tx.model()` inside a
+transaction), so their `$orm` points to that handle. The original `User` class
+and `ada?.constructor` are unbound. For example, the same methods work through a
+transaction-bound model:
+
+```typescript illustrative
+await db.transaction(async (tx) => {
+  const UserModel = tx.model("user");
+  const ada = await UserModel.findByEmail("ada@example.com");
+  await ada?.rename("Ada Lovelace");
+});
+```
+
+A custom `hydrate()` may return `new User()`, while an inherited hydrator called
+through `UserModel.hydrate()` may construct the bound subclass.
+Consequently, depend on `row instanceof User` and its instance helpers, not on
+`row.constructor === UserModel` or on exact constructor equality across
+construction paths.
+
+Nested models loaded with `.fetch()` receive the same ORM context, while plain
+`.return()` projections stay plain objects unless a projected field contains a
+model schema.
+
+The optional synchronous `static hydrate()` receives schema-parsed row data
+when a query returns a record. The store also uses it for optimistic writes:
+those rows may be partial, such as a create that is still waiting for a
+database default, and the store may hydrate them again when it republishes a
+pending view. Keep hydrators tolerant of missing database-generated fields and
+free of external side effects. Use a hydrator to run constructors and initialize
+private fields or arrow properties. Without a custom hydrator, class-linked
+tables keep the existing constructor-bypassing behavior. ORM context is held
+outside the record and model methods are omitted when a model instance is
+serialized as write data.
+Models read inside a transaction use that transaction until it commits; after
+commit their helpers use the parent ORM, and models from a cancelled
+transaction reject helper access.
+
+Adding `.model()` as a method required moving the former `TableSchema.model`
+constructor metadata property. Read it as `schema.attachedModel` instead.
+`table(name, fields, Class)` remains supported for existing class-linked tables.
 
 ### Edges and graph relations
 

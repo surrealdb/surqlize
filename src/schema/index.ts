@@ -2,6 +2,7 @@ export * from "./api";
 export * from "./ddl";
 export * from "./edge";
 export * from "./function";
+export type { HydrationInput } from "./model";
 export * from "./orm";
 export * from "./table";
 // ./traversal is re-exported explicitly: the `createGraphSegment` /

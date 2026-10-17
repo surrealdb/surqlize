@@ -10,12 +10,12 @@ import {
 	toValue,
 	watch,
 } from "vue";
-import type { Orm } from "../schema/orm";
 // Types only: this entry must not pull a second copy of the store into a bundle.
 import type {
 	OutboxOp,
 	QueryStore,
 	Store,
+	StoreOrm,
 	StoreSnapshot,
 } from "../store/index";
 
@@ -110,9 +110,9 @@ export function useQuery<T>(
  * Use it to show that changes are unsaved, for example while offline.
  */
 export function usePending(
-	store: MaybeRefOrGetter<Pick<Store<Orm>, "pending"> | null | undefined>,
+	store: MaybeRefOrGetter<Pick<Store<StoreOrm>, "pending"> | null | undefined>,
 ): Readonly<ShallowRef<readonly OutboxOp[]>> {
-	return follow<Pick<Store<Orm>, "pending">, readonly OutboxOp[]>(
+	return follow<Pick<Store<StoreOrm>, "pending">, readonly OutboxOp[]>(
 		() => toValue(store),
 		NO_OPS,
 		NO_OPS,
@@ -141,7 +141,7 @@ export function provideStore(store: Store<any>): void {
  *
  * @throws If no component above this one provided a store.
  */
-export function useStore<O extends Orm = Orm>(): Store<O> {
+export function useStore<O extends StoreOrm = StoreOrm>(): Store<O> {
 	const store = inject(STORE_KEY, undefined);
 	if (!store) {
 		throw new Error("useStore() needs provideStore() in a component above it");

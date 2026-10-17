@@ -30,6 +30,12 @@ import {
 	type TableDdl,
 	type TablePermissions,
 } from "./ddl/table-ddl";
+import {
+	createModelClass,
+	type ModelBaseConstructor,
+	type ModelConstructor,
+	usesModelBase,
+} from "./model";
 import { ModelType } from "./model-type";
 import type { Orm } from "./orm";
 
@@ -119,16 +125,22 @@ export class TableSchema<
 	Fd extends TableFields = any,
 	// biome-ignore lint/suspicious/noExplicitAny: ditto
 	I = any,
+	M extends ModelClass | undefined = ModelClass | undefined,
 > {
 	constructor(
 		public readonly tb: Tb,
 		public readonly _fields: Fd,
-		public readonly model?: ModelClass,
+		public readonly _modelClass?: M,
 		private readonly _computed: Readonly<
 			Record<string, ComputedDefinition>
 		> = {},
 	) {
-		if (model) registerModelClass(model);
+		if (_modelClass) registerModelClass(_modelClass);
+	}
+
+	/** The class attached with `table(..., Class)` or `attach(Class)`, if any. */
+	get attachedModel(): M {
+		return this._modelClass as M;
 	}
 
 	/** Schema metadata used to generate `DEFINE TABLE`. */
@@ -165,10 +177,22 @@ export class TableSchema<
 	 * ```
 	 */
 	computed<const N extends string, T extends AbstractType>(
-		name: N extends "id" | keyof Fd ? never : N,
+		name: N extends "id" | keyof Fd | ReservedModelFields<M> ? never : N,
 		type: T,
 		expression: ComputedExpression<Tb, Fd, T>,
-	): TableSchema<Tb, Fd & { [K in N]: Computed<T> }, I> {
+	): TableSchema<Tb, Fd & { [K in N]: Computed<T> }, I, M> {
+		if (
+			this._modelClass &&
+			usesModelBase(this._modelClass) &&
+			(name === "$orm" ||
+				name === "select" ||
+				name === "update" ||
+				name === "delete")
+		) {
+			throw new OrmError(
+				`Field "${name}" is reserved for model helpers on table "${this.tb}"`,
+			);
+		}
 		if (name === "id" || name in this._fields || name in this._computed) {
 			throw new OrmError(
 				`Field "${name}" is already defined on table "${this.tb}"`,
@@ -180,7 +204,7 @@ export class TableSchema<
 			{ ...this._fields, [name]: type } as unknown as Fd & {
 				[K in N]: Computed<T>;
 			},
-			this.model,
+			this._modelClass,
 			{
 				...this._computed,
 				[name]: { type, expression } as ComputedDefinition,
@@ -244,11 +268,59 @@ export class TableSchema<
 
 	get schema(): GetSchemaType<Tb, Fd, I> {
 		if (!this._schemaCache) {
-			this._schemaCache = (this.model
-				? new ModelType(this.fields, this.model)
+			this._schemaCache = (this._modelClass
+				? new ModelType(
+						this.fields,
+						this._modelClass,
+						this.tb,
+						usesModelBase(this._modelClass),
+					)
 				: t.object(this.fields)) as unknown as GetSchemaType<Tb, Fd, I>;
 		}
 		return this._schemaCache;
+	}
+
+	/**
+	 * Create a typed base class for a model linked to this table. Define a
+	 * subclass and pass it to {@link attach} to enable ORM-bound helpers.
+	 */
+	model(): ModelBaseConstructor<
+		TableSchema<Tb, Fd, GetInferType<Tb, Fd, unknown>, undefined>
+	> {
+		return createModelClass<
+			TableSchema<Tb, Fd, GetInferType<Tb, Fd, unknown>, undefined>
+		>();
+	}
+
+	/** Return a new schema with a model class attached, preserving table metadata. */
+	attach<
+		C extends ModelConstructor<
+			TableSchema<Tb, Fd, GetInferType<Tb, Fd, unknown>, undefined>
+		>,
+	>(
+		model: C & ([ReservedDataKeys<Fd>] extends [never] ? unknown : never),
+	): TableSchema<Tb, Fd, InstanceType<C>, C> {
+		for (const field of ["select", "update", "delete", "$orm"] as const) {
+			if (field in this._fields || field in this._computed) {
+				throw new OrmError(
+					`Cannot attach a model to table "${this.tb}": field "${field}" is reserved for model helpers`,
+				);
+			}
+		}
+		if (!usesModelBase(model)) {
+			throw new OrmError(
+				"attach() requires a class extending the base returned by table.model()",
+			);
+		}
+
+		const attached = new TableSchema<Tb, Fd, InstanceType<C>, C>(
+			this.tb,
+			this._fields,
+			model,
+			this._computed,
+		);
+		(attached as { ddl: TableDdl }).ddl = this.ddl;
+		return attached;
 	}
 
 	/** Type-guard that checks whether a value matches this table's schema. */
@@ -293,13 +365,10 @@ export class TableSchema<
 			["id"],
 			this.computedFields,
 		);
-		if (result.success && mode === "row" && this.model) {
+		if (result.success && mode === "row" && this._modelClass) {
 			return {
 				success: true,
-				data: Object.assign(
-					Object.create(this.model.prototype),
-					result.data as object,
-				),
+				data: this.schema.parse(result.data),
 			};
 		}
 		return result;
@@ -429,8 +498,8 @@ export class TableSchema<
  * @param fields - A record of field names to type definitions.
  * @param model - Optionally, a class to link to the table. Rows read from the
  *   table are then instances of the class (so its methods and getters are
- *   available), and instances of it are accepted as record content. The class
- *   constructor is not run when hydrating a row.
+ *   available), and instances of it are accepted as record content. Without a
+ *   static `hydrate` method, its constructor is not run when hydrating a row.
  * @returns A {@link TableSchema} instance.
  *
  * @example
@@ -445,15 +514,39 @@ export class TableSchema<
 export function table<
 	Tb extends string,
 	Fd extends Record<Exclude<string, "id">, AbstractType>,
-	M extends ModelClass = never,
 >(
 	tb: Tb extends string ? Tb : never,
 	fields: Fd,
-	model?: M,
-): TableSchema<Tb, Fd, [M] extends [never] ? unknown : InstanceType<M>> {
-	return new TableSchema<
-		Tb,
-		Fd,
-		[M] extends [never] ? unknown : InstanceType<M>
-	>(tb, fields, model);
+): TableSchema<Tb, Fd, unknown, undefined>;
+export function table<
+	Tb extends string,
+	Fd extends Record<Exclude<string, "id">, AbstractType>,
+	M extends ModelClass,
+>(
+	tb: Tb extends string ? Tb : never,
+	fields: Fd,
+	model: M,
+): TableSchema<Tb, Fd, InstanceType<M>, M>;
+export function table(
+	tb: string,
+	fields: TableFields,
+	model?: ModelClass,
+): TableSchema<string, TableFields, unknown, ModelClass | undefined> {
+	return new TableSchema(tb, fields, model) as TableSchema<
+		string,
+		TableFields,
+		unknown,
+		ModelClass | undefined
+	>;
 }
+
+type ReservedModelFields<M> = M extends ModelClass
+	? import("./model").IsModelBaseInstance<InstanceType<M>> extends true
+		? "$orm" | "select" | "update" | "delete"
+		: never
+	: never;
+
+type ReservedDataKeys<Fd> = Extract<
+	keyof Fd,
+	"$orm" | "select" | "update" | "delete"
+>;

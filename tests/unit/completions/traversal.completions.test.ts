@@ -1,5 +1,8 @@
-import { beforeAll, describe, test } from "bun:test";
+import { beforeAll, describe, setDefaultTimeout, test } from "bun:test";
 import { expectCompletions, warmCompletions } from "./harness";
+
+// The TypeScript language service can exceed Bun's 5-second default on CI.
+setDefaultTimeout(10_000);
 
 const SCHEMA = `
 import { ANY, edge, orm, t, table } from "./src";

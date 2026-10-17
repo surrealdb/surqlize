@@ -14,6 +14,11 @@ import {
 	table,
 } from "../../../src";
 
+type Equal<A, B> =
+	(<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2
+		? true
+		: false;
+
 describe("SELECT queries", () => {
 	const user = table("user", {
 		name: t.object({
@@ -124,6 +129,56 @@ describe("SELECT queries", () => {
 
 		expect(result).toContain("SELECT VALUE");
 		expect(result).toContain("WHERE");
+	});
+
+	test("WHERE keeps the source schema after a return projection", () => {
+		const whereFirst = db
+			.select("user")
+			.where((user) => user.age.gt(18))
+			.return((user) => ({ displayName: user.name.first }));
+		const returnFirst = db
+			.select("user")
+			.return((user) => ({ displayName: user.name.first }))
+			.where((user) => user.age.gt(18));
+
+		const ctx = displayContext();
+		const whereFirstSql = whereFirst[__display](ctx);
+		const returnFirstSql = returnFirst[__display](displayContext());
+		expect(returnFirstSql).toBe(whereFirstSql);
+		expect(returnFirstSql).toContain("SELECT VALUE");
+		expect(returnFirstSql).toContain("WHERE $this.age > ");
+		expect(returnFirst.entry.validate({ displayName: "Ada" })).toBe(true);
+		expect(
+			returnFirst.entry.validate({
+				name: { first: "Ada", last: "Lovelace" },
+				age: 36,
+				email: "ada@example.test",
+				tags: [],
+			}),
+		).toBe(false);
+
+		type BeforeResult = t.infer<typeof whereFirst>;
+		type AfterResult = t.infer<typeof returnFirst>;
+		const sameResult: Equal<BeforeResult, AfterResult> = true;
+		expect(sameResult).toBe(true);
+	});
+
+	test("WHERE after FETCH and a RecordId projection still sees source fields", () => {
+		const fetched = db
+			.select("post")
+			.fetch("author")
+			.return((post) => ({ authorName: post.author.name.first }))
+			.where((post) => post.title.contains("SurQL"));
+		const fetchedSql = fetched[__display](displayContext());
+		expect(fetchedSql).toContain("SELECT VALUE");
+		expect(fetchedSql).toContain("string::contains($this.title");
+		expect(fetchedSql).toContain("FETCH author");
+
+		const record = db
+			.select(new RecordId("user", "alice"))
+			.return((user) => ({ label: user.name.first }))
+			.where((user) => user.age.gt(18));
+		expect(record[__display](displayContext())).toContain("WHERE $this.age > ");
 	});
 
 	test("generates SELECT with array return projection", () => {

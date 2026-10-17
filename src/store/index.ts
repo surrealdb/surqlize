@@ -12,6 +12,7 @@ export type {
 	ConnectionEvents,
 	QueryOptions,
 	StoreOptions,
+	StoreOrm,
 	Write,
 } from "./store";
 export { createStore, Store, TableWriter } from "./store";

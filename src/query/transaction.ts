@@ -2,6 +2,14 @@ import type { SurrealSession, SurrealTransaction } from "surrealdb";
 import { OrmError } from "../error.ts";
 import type { CreateSchemaLookup } from "../schema/lookup.ts";
 import {
+	commitModelTransactionLifecycle,
+	createModelTransactionLifecycle,
+	invalidateModelTransactionLifecycle,
+	type ModelRuntimeContext,
+	type ModelTransactionLifecycle,
+	registerModelContext,
+} from "../schema/model";
+import {
 	type AnyTable,
 	type MappedTables,
 	Orm,
@@ -18,18 +26,32 @@ import type { Query } from "./abstract.ts";
  */
 export class Transaction<T extends AnyTable[] = AnyTable[]> extends Orm<T> {
 	private _transaction: SurrealTransaction;
+	private readonly _modelLifecycle: ModelTransactionLifecycle;
 
 	constructor(
 		transaction: SurrealTransaction,
 		tables: MappedTables<T>,
 		lookup: CreateSchemaLookup<T>,
 		options: OrmOptions = {},
+		modelLifecycle?: ModelTransactionLifecycle,
 	) {
 		// Cast SurrealTransaction as SurrealSession — safe because the only method
 		// Query.execute() calls on it is .query(), which both SurrealSession and
 		// SurrealTransaction inherit from SurrealQueryable.
 		super(transaction as unknown as SurrealSession, tables, lookup, options);
 		this._transaction = transaction;
+		this._modelLifecycle =
+			modelLifecycle ?? createModelTransactionLifecycle(this);
+	}
+
+	[registerModelContext](context: ModelRuntimeContext): void {
+		if (this._modelLifecycle.state !== "active") {
+			throw new OrmError(
+				"Cannot bind a model to a completed or cancelled transaction",
+			);
+		}
+		context.lifecycle = this._modelLifecycle;
+		this._modelLifecycle.contexts.add(context);
 	}
 
 	/**
@@ -46,14 +68,21 @@ export class Transaction<T extends AnyTable[] = AnyTable[]> extends Orm<T> {
 			this.tables,
 			this.lookup,
 			{ validate: this.validation },
+			this._modelLifecycle,
 		);
 	}
 
 	/** A handle on this same transaction with input validation switched on or off. */
 	override validated(enabled = true): Transaction<T> {
-		return new Transaction<T>(this._transaction, this.tables, this.lookup, {
-			validate: enabled,
-		});
+		return new Transaction<T>(
+			this._transaction,
+			this.tables,
+			this.lookup,
+			{
+				validate: enabled,
+			},
+			this._modelLifecycle,
+		);
 	}
 
 	/**
@@ -72,13 +101,31 @@ export class Transaction<T extends AnyTable[] = AnyTable[]> extends Orm<T> {
 	 * Commit this transaction to the datastore, applying all changes.
 	 */
 	async commit(): Promise<void> {
-		await this._transaction.commit();
+		if (this._modelLifecycle.state !== "active") {
+			throw new OrmError("This transaction has already completed");
+		}
+		try {
+			await this._transaction.commit();
+			commitModelTransactionLifecycle(this._modelLifecycle);
+		} catch (error) {
+			invalidateModelTransactionLifecycle(this._modelLifecycle);
+			throw error;
+		}
 	}
 
 	/**
 	 * Cancel this transaction, discarding all changes.
 	 */
 	async cancel(): Promise<void> {
-		await this._transaction.cancel();
+		if (this._modelLifecycle.state === "committed") {
+			throw new OrmError("This transaction has already completed");
+		}
+		if (this._modelLifecycle.cancelAttempted) return;
+		this._modelLifecycle.cancelAttempted = true;
+		try {
+			await this._transaction.cancel();
+		} finally {
+			invalidateModelTransactionLifecycle(this._modelLifecycle);
+		}
 	}
 }

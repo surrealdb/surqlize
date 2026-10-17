@@ -1,9 +1,9 @@
-import type { Orm } from "../schema/orm";
 // Types only: this entry must not pull a second copy of the store into a bundle.
 import type {
 	OutboxOp,
 	QueryStore,
 	Store,
+	StoreOrm,
 	StoreSnapshot,
 } from "../store/index";
 
@@ -68,7 +68,7 @@ export function queryStore<T>(
  * Use it to show that changes are unsaved, for example while offline.
  */
 export function pendingStore(
-	store: Pick<Store<Orm>, "pending"> | null | undefined,
+	store: Pick<Store<StoreOrm>, "pending"> | null | undefined,
 ): Readable<readonly OutboxOp[]> {
 	return {
 		subscribe(run) {

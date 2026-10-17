@@ -75,6 +75,21 @@ describe("object-based where / orderBy", () => {
 		expect(sql).toContain("$this.org.title = ");
 	});
 
+	test("object WHERE keeps source fields after projection", () => {
+		const projected = db
+			.select("user")
+			.return((user) => ({ contact: user.email }));
+		const filtered = projected.where({ org: { title: "Acme" } });
+		const { sql } = render(filtered);
+
+		expect(sql).toContain("SELECT VALUE");
+		expect(sql).toContain("WHERE $this.org.title = ");
+		expect(filtered.entry.validate({ contact: "ada@example.test" })).toBe(true);
+		expect(() =>
+			render(projected.where({ contact: "ada@example.test" } as never)),
+		).toThrow(OrmError);
+	});
+
 	test("and / or / not combinators", () => {
 		const { sql } = render(
 			db.select("user").where({
@@ -196,6 +211,17 @@ describe("object-based where / orderBy", () => {
 			db.select("user").where({ org: { size: "big" } });
 			// @ts-expect-error unknown field inside a combinator
 			db.select("user").where({ or: [{ nope: 1 }] });
+			const projected = db
+				.select("user")
+				.return((user) => ({ contact: user.email }));
+			projected.where((user) => user.age.gt(18));
+			projected.where({ org: { size: { gt: 10 } } });
+			projected.where((user) => {
+				// @ts-expect-error projected aliases are not source row fields
+				return user.contact.eq("ada@example.test");
+			});
+			// @ts-expect-error projected aliases are not source row fields
+			projected.where({ contact: "ada@example.test" });
 			// @ts-expect-error direction must be asc/desc
 			db.select("user").orderBy({ age: "sideways" });
 			// @ts-expect-error nested sort keys are checked

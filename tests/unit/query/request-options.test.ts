@@ -243,7 +243,9 @@ describe("Orm.withSignal()", () => {
 		expect(scoped).toBeInstanceOf(Transaction);
 		expect(scoped).not.toBe(tx);
 		await scoped.commit();
-		await scoped.cancel();
+
+		const second = await db.transaction();
+		await second.withSignal(new AbortController().signal).cancel();
 		expect(events).toEqual(["commit:tx+signal", "cancel:tx+signal"]);
 	});
 });

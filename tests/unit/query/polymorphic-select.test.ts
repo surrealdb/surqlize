@@ -99,6 +99,24 @@ describe("polymorphic / multi-table SELECT", () => {
 		const _check: Equal<R, { name: string; age: number }[]> = true;
 		expect(_check).toBe(true);
 	});
+
+	test("WHERE after projection uses the merged source row schema", () => {
+		const q = db
+			.select(["user", "company"])
+			.return((row) => ({ label: row.name }))
+			.where((row) => row.name.eq("Ada"));
+
+		const sql = render(q);
+		expect(sql).toContain("SELECT VALUE");
+		expect(sql).toContain("WHERE $this.name = ");
+		expect(q.entry.validate({ label: "Ada" })).toBe(true);
+
+		const _typeCheck = () => {
+			// @ts-expect-error projected aliases are not source row fields
+			q.where((row) => row.label.eq("Ada"));
+		};
+		expect(_typeCheck).toBeDefined();
+	});
 });
 
 describe("resolveSubjectSchema — runtime schema merge", () => {
