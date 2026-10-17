@@ -182,6 +182,10 @@ export class QueryStore<T> {
 	 * The database accepted a write: record its result in the base, so that the
 	 * view does not change when the write leaves the pending ones. The caller
 	 * removes the write next, which publishes.
+	 *
+	 * The result is a whole table row. A `refetch` query that is not a plain
+	 * filter may select or compute other columns, so a row it holds keeps its
+	 * keys: the result updates the keys the row has and adds none.
 	 */
 	acknowledge(change: { key: string; row?: unknown }): void {
 		if (change.row === undefined) {
@@ -201,11 +205,27 @@ export class QueryStore<T> {
 			this.#base = this.#base.filter((r) => this.deps.keyOf(r) !== change.key);
 		} else if (present) {
 			this.#base = this.#base.map((r) =>
-				this.deps.keyOf(r) === change.key ? row : r,
+				this.deps.keyOf(r) === change.key ? this.#accepted(r, row) : r,
 			);
 		} else if (member === true && this.deps.insertable) {
 			this.#base = [...this.#base, row];
 		}
+	}
+
+	/** The row `held` becomes when the database accepts a write that returned `row`. */
+	#accepted(held: T, row: T): T {
+		// The rows of a plain filter are whole table rows, so the result replaces them.
+		if (this.deps.membership) return row;
+		const kept = Object.assign(
+			Object.create(Object.getPrototypeOf(held)),
+			held,
+		);
+		for (const key of Object.keys(row as object)) {
+			if (Object.hasOwn(held as object, key)) {
+				kept[key] = (row as Record<string, unknown>)[key];
+			}
+		}
+		return kept;
 	}
 
 	async #start(): Promise<void> {

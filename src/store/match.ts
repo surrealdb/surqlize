@@ -89,10 +89,29 @@ const sign = (
 const isNumber = (value: unknown): value is number | bigint =>
 	typeof value === "number" || typeof value === "bigint";
 
+/**
+ * Order two strings by code point, as the database does. `<` compares UTF-16
+ * code units instead, which puts a character outside the Basic Multilingual
+ * Plane (a surrogate pair, D800 to DFFF) before U+E000 to U+FFFF.
+ */
+function compareStrings(a: string, b: string): number {
+	let i = 0;
+	let j = 0;
+	while (i < a.length && j < b.length) {
+		const x = a.codePointAt(i)!;
+		const y = b.codePointAt(j)!;
+		if (x !== y) return x < y ? -1 : 1;
+		i += x > 0xffff ? 2 : 1;
+		j += y > 0xffff ? 2 : 1;
+	}
+	return sign(a.length - i, b.length - j);
+}
+
 /** Order two values of the same kind, or `undefined` for kinds not compared here. */
 function compare(a: unknown, b: unknown): number | undefined {
 	if (isNumber(a) && isNumber(b)) return sign(a, b);
-	if (typeof a === "string" && typeof b === "string") return sign(a, b);
+	if (typeof a === "string" && typeof b === "string")
+		return compareStrings(a, b);
 	if (a instanceof Date && b instanceof Date)
 		return sign(a.getTime(), b.getTime());
 	return undefined;

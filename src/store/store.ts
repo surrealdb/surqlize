@@ -163,6 +163,15 @@ const hex = (buffer: ArrayBufferLike, offset = 0, length?: number): string =>
 	).join("");
 
 /**
+ * The key of a row, or `undefined` for one that is not a record: a projection
+ * need not select `id`, or return an object at all.
+ */
+function recordKey(row: unknown): string | undefined {
+	const id = (row as { id?: unknown } | null | undefined)?.id;
+	return id === undefined || id === null ? undefined : String(id);
+}
+
+/**
  * Live views of queries. Ask for a query with {@link Store.query} and
  * subscribe to the {@link QueryStore} it returns; asking for the same query
  * again returns the same store, so every component that shows it shares one
@@ -408,14 +417,13 @@ export class Store<O extends Orm> {
 			mode: build ? "refetch" : "direct",
 			overlay: {
 				apply: (rows, direct) => {
-					const rowKey = (row: unknown) => String((row as { id: RecordId }).id);
 					const ops = this.#outbox.forTable(tb);
-					if (direct) return applyOverlay(rows, ops, rowKey, true);
-					if (!filter) return applyOverlay(rows, ops, rowKey, false);
+					if (direct) return applyOverlay(rows, ops, recordKey, true);
+					if (!filter) return applyOverlay(rows, ops, recordKey, false);
 					return applyOverlay(
 						rows,
 						ops,
-						rowKey,
+						recordKey,
 						(row) =>
 							!filter.ordered &&
 							matchesWhere(filter.where, row, { partial: true }) === true,
@@ -441,7 +449,8 @@ export class Store<O extends Orm> {
 						}
 					)(tb).subscribe(handler),
 				)(),
-			keyOf: (row) => String((row as { id: RecordId }).id),
+			// A row with no key is the record of no write.
+			keyOf: (row) => recordKey(row) ?? "",
 			keyOfId: (id) => String(id),
 			sort: options.sort as ((a: unknown, b: unknown) => number) | undefined,
 			onConnection: this.#connection && ((listener) => this.#listen(listener)),
