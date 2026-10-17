@@ -8,6 +8,7 @@ import {
 	Table,
 	type Uuid,
 } from "surrealdb";
+import { OrmError } from "../error.ts";
 import type { Orm } from "../schema/orm.ts";
 import { type AbstractType, ObjectType, type RecordType } from "../types";
 import { type Actionable, actionable } from "../utils/actionable.ts";
@@ -36,6 +37,39 @@ import {
 } from "./select.ts";
 import { resolveSubjectSchema } from "./subject.ts";
 import { andWhere, escapeIdiomPath } from "./utils.ts";
+
+/**
+ * A full-text match (`@@`, `@N@`, `@N,AND@`) or a KNN operator (`<|`) in a
+ * rendered condition.
+ */
+const SEARCH_OPERATOR = /@\d*(?:,?(?:AND|OR))?@|<\|/;
+
+/** A quoted run: a field name written as `$this["…"]`, or an escaped one. */
+const QUOTED = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`|⟨[^⟩]*⟩/g;
+
+/**
+ * Refuse a live filter that holds a match or KNN predicate anywhere in it,
+ * inside a subquery included.
+ *
+ * SurrealDB accepts such a `LIVE SELECT`, but a predicate at the top of the
+ * filter never causes a notification. On its own, or under `and()` or `not()`,
+ * nothing is delivered, and under `or()` only the other branches deliver. One
+ * inside a subquery did deliver on 3.2.3, but that is the only version it was
+ * seen on, so it is refused with the rest rather than relied on.
+ *
+ * The condition is rendered and the text checked, because a condition is only a
+ * closure and `and()`, `or()`, `not()` and a subquery hide what is inside it.
+ * Values are bound, so the only text that could pass for an operator is inside a
+ * quoted field name, which is removed first.
+ */
+function refuseSearchPredicate(condition: Workable, contextId: symbol): void {
+	const sql = condition[__display](displayContext({ contextId }));
+	if (!SEARCH_OPERATOR.test(sql.replace(QUOTED, ""))) return;
+
+	throw new OrmError(
+		"A live query cannot filter by a full-text match or a KNN predicate, anywhere in the filter. SurrealDB accepts one, but at the top of the filter, alone or inside and(), or() and not(), it never causes a notification. Inside a subquery it did deliver on 3.2.3, but that is untested on other versions, so it is refused there too. Filter by a plain condition, or use select() and refetch when the table changes.",
+	);
+}
 
 /**
  * A single live-query notification.
@@ -295,6 +329,7 @@ export class LiveQuery<
 		// nothing, so the filter already on the query stays.
 		if (!condition) return this;
 
+		refuseSearchPredicate(condition as Workable<C>, this[__ctx].id);
 		const filter = sanitizeWorkable(condition as Workable<C>);
 		return this.derive((next) => {
 			next._filter = andWhere(next._filter, filter);

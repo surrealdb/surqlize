@@ -227,16 +227,23 @@ describe("DEFINE INDEX", () => {
 		expect(sql).toContain("HIGHLIGHTS");
 	});
 
-	test("full-text names the built-in analyzer when given none", () => {
-		// SurrealDB fills in `like` and reports it, so an index that stayed silent
-		// would look modified on every run
-		const sql = defineIndex("post", {
-			name: "s",
-			fields: ["c"],
-			fulltext: true,
-		});
+	test("a full-text index with no analyzer is refused", () => {
+		// SurrealDB would fill in an analyzer called `like`, which it does not have,
+		// so the index is stored and then every write to the table fails.
+		const fulltext = (options: Parameters<typeof defineIndex>[1]["fulltext"]) =>
+			defineIndex("post", { name: "s", fields: ["c"], fulltext: options });
 
-		expect(sql).toContain("FULLTEXT ANALYZER like");
+		expect(() => fulltext(true)).toThrow(/'s'.*no analyzer/);
+		expect(() => fulltext({})).toThrow(/no analyzer/);
+		expect(() => fulltext({ highlights: true })).toThrow(/no analyzer/);
+		expect(() => fulltext({ bm25: { k1: 1.2, b: 0.75 } })).toThrow(
+			/no analyzer/,
+		);
+		expect(() => fulltext({ analyzer: "" })).toThrow(/no analyzer/);
+
+		expect(fulltext({ analyzer: "english" })).toContain(
+			"FULLTEXT ANALYZER english",
+		);
 	});
 
 	test("BM25 is emitted tuned or at its defaults", () => {
@@ -244,7 +251,7 @@ describe("DEFINE INDEX", () => {
 			defineIndex("post", {
 				name: "s",
 				fields: ["c"],
-				fulltext: { bm25: { k1: 1.2, b: 0.75 } },
+				fulltext: { analyzer: "english", bm25: { k1: 1.2, b: 0.75 } },
 			}),
 		).toContain("BM25(1.2,0.75)");
 	});
@@ -267,6 +274,47 @@ describe("DEFINE INDEX", () => {
 		expect(sql).toContain("TYPE F32");
 	});
 
+	test("an HNSW index with M below 2 or EFC below 1 is refused", () => {
+		// SurrealDB accepts M 1 and then grows its memory without limit, so M 1 is
+		// the verified cause. EFC 0 was not seen to cause it with a normal M, and
+		// is refused as a precaution.
+		const hnsw = (options: { m?: number; efc?: number }) =>
+			defineIndex("post", {
+				name: "v",
+				fields: ["embedding"],
+				hnsw: { dimension: 3, ...options },
+			});
+		const messageOf = (options: { m?: number; efc?: number }) => {
+			try {
+				hnsw(options);
+			} catch (error) {
+				return (error as Error).message;
+			}
+			return "";
+		};
+
+		expect(() => hnsw({ m: 1 })).toThrow(/'v'.*M must be at least 2, got 1/);
+		// Each message says what is known about its own parameter, no more.
+		expect(messageOf({ m: 1 })).toMatch(/M 1 and then grows its memory/);
+		expect(messageOf({ m: 1 })).not.toContain("precaution");
+		expect(messageOf({ efc: 0 })).toMatch(/EFC 0 was not seen .*precaution/);
+		expect(messageOf({ efc: 0 })).not.toContain("grows its memory");
+		expect(() => hnsw({ m: 0 })).toThrow(/M must be at least 2/);
+		expect(() => hnsw({ efc: 0 })).toThrow(/'v'.*EFC must be at least 1/);
+		expect(() => hnsw({ efc: -5 })).toThrow(/EFC must be at least 1/);
+		// The pair that sent the server into memory growth names both.
+		const both = () => hnsw({ efc: 0, m: 1 });
+		expect(both).toThrow(/M must be at least 2/);
+		expect(both).toThrow(/EFC must be at least 1/);
+		// A comparison alone would let NaN through.
+		expect(() => hnsw({ m: Number.NaN })).toThrow(/M must be at least 2/);
+		expect(() => hnsw({ efc: Number.NaN })).toThrow(/EFC must be at least 1/);
+
+		// The floors themselves, and the defaults, are fine.
+		expect(hnsw({ m: 2, efc: 1 })).toContain("EFC 1 M 2 M0 4");
+		expect(() => hnsw({})).not.toThrow();
+	});
+
 	test("a COUNT index covers the table, so takes no columns", () => {
 		const sql = defineIndex("post", { name: "c", count: true });
 
@@ -281,12 +329,16 @@ describe("DEFINE INDEX", () => {
 			defineIndex("post", {
 				name: "s",
 				fields: ["title", "body"],
-				fulltext: true,
+				fulltext: { analyzer: "english" },
 			}),
 		).toThrow(/exactly one column/i);
 
 		expect(() =>
-			defineIndex("post", { name: "s", fields: ["body"], fulltext: true }),
+			defineIndex("post", {
+				name: "s",
+				fields: ["body"],
+				fulltext: { analyzer: "english" },
+			}),
 		).not.toThrow();
 	});
 

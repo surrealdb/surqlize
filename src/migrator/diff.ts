@@ -94,7 +94,8 @@ export function diff(
 		tables: Object.fromEntries(schemas.map((s) => [s.tb, s])),
 	};
 
-	drafts.push(...diffEntities(entities, current, options));
+	const entityChanges = diffEntities(entities, current, options);
+	drafts.push(...entityChanges.first);
 
 	for (const schema of schemas) {
 		const table = current.tables[schema.tb];
@@ -118,6 +119,10 @@ export function diff(
 			});
 		}
 	}
+
+	// What the server refuses to remove while a table refers to it goes last,
+	// once every index has been redefined or dropped.
+	drafts.push(...entityChanges.last);
 
 	// Worked out here, once, so that no kind of change can leave a key in the
 	// text that is printed and recorded.
@@ -444,6 +449,18 @@ function isDatabaseEntity(
 }
 
 /**
+ * Database-level changes, split by when they can run.
+ *
+ * `first` runs before any table is touched, so what a table refers to exists by
+ * the time it does. `last` runs after every table change, for removals that
+ * the server refuses while a table still refers to the thing.
+ */
+interface EntityChanges {
+	first: Draft[];
+	last: Draft[];
+}
+
+/**
  * Compare database-level definitions — analyzers, params, functions, sequences
  * and access methods.
  */
@@ -451,8 +468,8 @@ function diffEntities(
 	entities: DatabaseEntity[],
 	current: CurrentSchema,
 	options: DiffOptions,
-): Draft[] {
-	const changes: Draft[] = [];
+): EntityChanges {
+	const result: EntityChanges = { first: [], last: [] };
 	const seen = new Map<string, Set<string>>();
 
 	for (const entity of entities) {
@@ -465,32 +482,74 @@ function diffEntities(
 		if (!change) continue;
 
 		if (change.renamedFrom) claimed.add(change.renamedFrom);
-		changes.push(change.change);
+		result.first.push(change.change);
+		if (change.last) result.last.push(change.last);
 	}
 
 	if (options.removeMissing) {
-		changes.push(...removeUndeclaredEntities(entities, current, seen));
+		const removals = removeUndeclaredEntities(entities, current, seen);
+		result.first.push(...removals.first);
+		result.last.push(...removals.last);
 	}
 
-	return changes;
+	return result;
 }
 
-/** Compare one database-level definition against what the database has. */
+/**
+ * Whether the server refuses to remove this kind of definition while a table
+ * still refers to it.
+ *
+ * An analyzer is one: removing it fails for as long as an index names it, so
+ * its removal has to come after the index has been redefined or dropped.
+ */
+function removedAfterTables(entity: DatabaseEntity): boolean {
+	return entity.kind === "analyzer";
+}
+
+/**
+ * Compare one database-level definition against what the database has.
+ *
+ * `last` is the part of the change that has to wait until the tables have been
+ * dealt with, when there is one.
+ */
 function diffEntity(
 	entity: DatabaseEntity,
 	stored: Record<string, string>,
-): { change: Draft; renamedFrom?: string } | null {
+): { change: Draft; last?: Draft; renamedFrom?: string } | null {
 	const existing = stored[entity.key];
 
 	if (!existing) {
 		const oldName = entity.previousNames?.find((previous) => stored[previous]);
 
 		if (oldName) {
+			const target = `${entity.kind} ${oldName} -> ${entity.name}`;
+
+			// The new name is defined first, so an index can move to it, and the
+			// old one is removed last, once nothing uses it. Each half undoes
+			// itself, so a rollback runs in the opposite order for free.
+			if (removedAfterTables(entity)) {
+				return {
+					renamedFrom: oldName,
+					change: {
+						kind: "entity.modify",
+						target,
+						up: [entity.define()],
+						down: [entity.remove()],
+					},
+					last: {
+						kind: "entity.modify",
+						target,
+						up: [removeNamed(entity, oldName)],
+						down: [`${stored[oldName]};`],
+					},
+				};
+			}
+
 			return {
 				renamedFrom: oldName,
 				change: {
 					kind: "entity.modify",
-					target: `${entity.kind} ${oldName} -> ${entity.name}`,
+					target,
 					up: [entity.define(), removeNamed(entity, oldName)],
 					down: [restoreStatement(stored[oldName] ?? ""), entity.remove()],
 				},
@@ -530,8 +589,8 @@ function removeUndeclaredEntities(
 	entities: DatabaseEntity[],
 	current: CurrentSchema,
 	seen: Map<string, Set<string>>,
-): Draft[] {
-	const changes: Draft[] = [];
+): EntityChanges {
+	const result: EntityChanges = { first: [], last: [] };
 
 	for (const [kind, stored] of Object.entries(current.entities)) {
 		// Only kinds the schema uses at all are managed; a database may hold
@@ -539,10 +598,12 @@ function removeUndeclaredEntities(
 		const entity = entities.find((candidate) => candidate.kind === kind);
 		if (!entity) continue;
 
+		const when = removedAfterTables(entity) ? result.last : result.first;
+
 		for (const [name, existing] of Object.entries(stored)) {
 			if (seen.get(kind)?.has(name)) continue;
 
-			changes.push({
+			when.push({
 				kind: "entity.remove",
 				target: `${kind} ${name}`,
 				up: [removeNamed(entity, name)],
@@ -551,7 +612,7 @@ function removeUndeclaredEntities(
 		}
 	}
 
-	return changes;
+	return result;
 }
 
 /** The `REMOVE` statement for a different name of the same kind. */

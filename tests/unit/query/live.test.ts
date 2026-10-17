@@ -10,8 +10,11 @@ import {
 } from "surrealdb";
 import {
 	__display,
+	and,
 	displayContext,
 	LiveSubscription,
+	OrmError,
+	or,
 	orm,
 	t,
 	table,
@@ -125,6 +128,129 @@ describe("LIVE SELECT queries", () => {
 		expect(result).not.toContain("START");
 		expect(result).not.toContain("ORDER BY");
 		expect(result).not.toContain("GROUP");
+	});
+});
+
+describe("LIVE SELECT with a match or KNN predicate", () => {
+	// SurrealDB accepts a match or KNN predicate in a LIVE SELECT filter, but at
+	// the top of the filter it never causes a notification, alone or inside
+	// and(), or() and not(). One inside a subquery did deliver on 3.2.3, the
+	// only version it was seen on, so every position is refused rather than
+	// relied on.
+	const doc = table("doc", {
+		title: t.string(),
+		body: t.string(),
+		embedding: t.array(t.number()),
+		"a@@b": t.string(),
+	});
+
+	const db = orm(new Surreal(), doc);
+
+	test("a full-text match in the callback form is refused", () => {
+		expect(() => db.live("doc").where((d) => d.body.search("rust"))).toThrow(
+			OrmError,
+		);
+		expect(() => db.live("doc").where((d) => d.body.search("rust"))).toThrow(
+			/live/i,
+		);
+	});
+
+	test("a numbered full-text match is refused", () => {
+		expect(() => db.live("doc").where((d) => d.body.search("rust", 1))).toThrow(
+			OrmError,
+		);
+	});
+
+	test("a full-text match in the object form is refused", () => {
+		expect(() => db.live("doc").where({ body: { search: "rust" } })).toThrow(
+			OrmError,
+		);
+	});
+
+	test("a KNN predicate is refused, whichever form it takes", () => {
+		expect(() =>
+			db
+				.live("doc")
+				.where((d) => d.embedding.knn([1, 0, 0], 2, { metric: "COSINE" })),
+		).toThrow(OrmError);
+		expect(() =>
+			db.live("doc").where((d) => d.embedding.knn([1, 0, 0], 2, { ef: 40 })),
+		).toThrow(OrmError);
+	});
+
+	test("a predicate nested in and(), or() and not() is refused", () => {
+		expect(() =>
+			db.live("doc").where((d) => and(d.title.eq("x"), d.body.search("rust"))),
+		).toThrow(OrmError);
+		expect(() =>
+			db.live("doc").where((d) => or(d.title.eq("x"), d.body.search("rust"))),
+		).toThrow(OrmError);
+		expect(() =>
+			db.live("doc").where((d) => d.body.search("rust").not()),
+		).toThrow(OrmError);
+		expect(() =>
+			db.live("doc").where({ not: { body: { search: "rust" } } }),
+		).toThrow(OrmError);
+	});
+
+	test("a predicate inside a subquery is refused too", () => {
+		expect(() =>
+			db.live("doc").where((d) =>
+				d.id.inside(
+					db
+						.select("doc")
+						.where((o) => o.body.search("rust"))
+						.return((o) => o.id),
+				),
+			),
+		).toThrow(OrmError);
+		expect(() =>
+			db.live("doc").where((d) =>
+				d.id.inside(
+					db
+						.select("doc")
+						.where((o) => o.embedding.knn([1, 0, 0], 1, { ef: 40 }))
+						.return((o) => o.id),
+				),
+			),
+		).toThrow(OrmError);
+	});
+
+	test("the error says what is known about each position", () => {
+		const refused = () => db.live("doc").where((d) => d.body.search("rust"));
+
+		// At the top of the filter a predicate never causes a notification, alone
+		// or inside and(), or() and not(). One inside a subquery did deliver on
+		// 3.2.3, so the text may not claim that it never does.
+		expect(refused).toThrow(
+			/top of the filter, alone or inside and\(\), or\(\) and not\(\), it never causes a notification/,
+		);
+		expect(refused).toThrow(/subquery it did deliver on 3\.2\.3.*refused/);
+	});
+
+	test("a predicate added by a later where() is refused", () => {
+		const base = db.live("doc").where((d) => d.title.eq("x"));
+
+		expect(() => base.where((d) => d.body.search("rust"))).toThrow(OrmError);
+	});
+
+	test("a plain condition is still accepted", () => {
+		expect(() => db.live("doc").where((d) => d.title.eq("x"))).not.toThrow();
+		expect(() => db.live("doc").where({ title: "x" })).not.toThrow();
+	});
+
+	test("an operator's text inside a bound value or an escaped name is not a predicate", () => {
+		expect(() =>
+			db.live("doc").where((d) => d.body.eq("rust @@ typescript <|2,3|>")),
+		).not.toThrow();
+		expect(() => db.live("doc").where((d) => d["a@@b"].eq("x"))).not.toThrow();
+	});
+
+	test("a refused where() leaves the query it was called on unchanged", () => {
+		const base = db.live("doc");
+
+		expect(() => base.where((d) => d.body.search("rust"))).toThrow();
+		expect(base[__display](displayContext())).not.toContain("WHERE");
 	});
 });
 

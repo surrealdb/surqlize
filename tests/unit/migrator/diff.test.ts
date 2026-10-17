@@ -5,7 +5,11 @@ import type {
 	CurrentSchema,
 	CurrentTable,
 } from "../../../src/migrator/introspect";
-import { access, storedFunction } from "../../../src/schema/ddl/entities";
+import {
+	access,
+	analyzer,
+	storedFunction,
+} from "../../../src/schema/ddl/entities";
 
 /**
  * Comparing a schema against a database.
@@ -465,6 +469,170 @@ describe("Access methods and their signing keys", () => {
 		const result = diff([bearer], current, { removeMissing: true });
 
 		expect(result.down).toContain(`${storedBearer};`);
+	});
+});
+
+describe("An analyzer that an index uses", () => {
+	// The server will not remove an analyzer while an index names it, so the
+	// index has to be redefined or dropped before the analyzer goes.
+	const tokenizers = ["blank"];
+	const posts = (using: string) =>
+		table("post", { body: t.string() }).index("body_ft", {
+			fields: ["body"],
+			fulltext: { analyzer: using },
+		});
+
+	/** A database whose `post` index uses analyzer `old`, with `keep` beside it. */
+	const current: CurrentSchema = {
+		...database({
+			name: "post",
+			fields: {
+				body: "DEFINE FIELD body ON post TYPE string PERMISSIONS FULL",
+			},
+			indexes: {
+				body_ft:
+					"DEFINE INDEX body_ft ON post FIELDS body FULLTEXT ANALYZER old BM25(1.2,0.75)",
+			},
+		}),
+		entities: {
+			...empty.entities,
+			analyzer: {
+				old: "DEFINE ANALYZER old TOKENIZERS BLANK",
+				keep: "DEFINE ANALYZER keep TOKENIZERS BLANK",
+			},
+		},
+	};
+
+	const defineOld = "DEFINE ANALYZER old TOKENIZERS BLANK;";
+	const oldIndex =
+		"DEFINE INDEX body_ft ON post FIELDS body FULLTEXT ANALYZER old BM25(1.2,0.75);";
+
+	test("is renamed after the index has moved to the new name", () => {
+		const result = diff(
+			[
+				analyzer("fresh", { tokenizers, previousNames: ["old"] }),
+				analyzer("keep", { tokenizers }),
+				posts("fresh"),
+			],
+			current,
+		);
+
+		expect(result.up).toEqual([
+			"DEFINE ANALYZER fresh TOKENIZERS BLANK;",
+			"DEFINE INDEX OVERWRITE body_ft ON TABLE post FIELDS body FULLTEXT ANALYZER fresh BM25(1.2,0.75);",
+			"REMOVE ANALYZER old;",
+		]);
+	});
+
+	test("is renamed in two steps that roll back in the opposite order", () => {
+		const result = diff(
+			[
+				analyzer("fresh", { tokenizers, previousNames: ["old"] }),
+				analyzer("keep", { tokenizers }),
+				posts("fresh"),
+			],
+			current,
+		);
+
+		// The old analyzer is back before the index returns to it, and the new
+		// one goes only once the index has left it
+		expect(result.down).toEqual([
+			defineOld,
+			oldIndex,
+			"REMOVE ANALYZER fresh;",
+		]);
+	});
+
+	test("a rename is never reported as a removal", () => {
+		// The CLI asks before applying anything whose kind ends in `remove`, and a
+		// rename never did
+		const result = diff(
+			[
+				analyzer("fresh", { tokenizers, previousNames: ["old"] }),
+				analyzer("keep", { tokenizers }),
+				posts("fresh"),
+			],
+			current,
+			{ removeMissing: true },
+		);
+
+		expect(result.changes.map((c) => c.kind)).toEqual([
+			"entity.modify",
+			"index.modify",
+			"entity.modify",
+		]);
+	});
+
+	test("is removed after the index has moved to another", () => {
+		const result = diff(
+			[analyzer("keep", { tokenizers }), posts("keep")],
+			current,
+			{ removeMissing: true },
+		);
+
+		expect(result.up).toEqual([
+			"DEFINE INDEX OVERWRITE body_ft ON TABLE post FIELDS body FULLTEXT ANALYZER keep BM25(1.2,0.75);",
+			"REMOVE ANALYZER old;",
+		]);
+		expect(result.down).toEqual([defineOld, oldIndex]);
+	});
+
+	test("is removed after the index that used it is dropped", () => {
+		const result = diff(
+			[analyzer("keep", { tokenizers }), table("post", { body: t.string() })],
+			current,
+			{ removeMissing: true },
+		);
+
+		expect(result.up).toEqual([
+			"REMOVE INDEX body_ft ON TABLE post;",
+			"REMOVE ANALYZER old;",
+		]);
+		expect(result.down).toEqual([defineOld, oldIndex]);
+	});
+
+	test("is removed after the table that held the index is dropped", () => {
+		const result = diff([analyzer("keep", { tokenizers })], current, {
+			removeMissing: true,
+		});
+
+		expect(result.up).toEqual(["REMOVE TABLE post;", "REMOVE ANALYZER old;"]);
+	});
+
+	test("a new analyzer is still defined before the index that names it", () => {
+		const result = diff(
+			[
+				analyzer("old", { tokenizers }),
+				analyzer("keep", { tokenizers }),
+				analyzer("fresh", { tokenizers }),
+				posts("fresh"),
+			],
+			current,
+		);
+
+		expect(result.up).toEqual([
+			"DEFINE ANALYZER fresh TOKENIZERS BLANK;",
+			"DEFINE INDEX OVERWRITE body_ft ON TABLE post FIELDS body FULLTEXT ANALYZER fresh BM25(1.2,0.75);",
+		]);
+	});
+
+	test("a changed analyzer is still redefined before the index", () => {
+		const result = diff(
+			[
+				analyzer("old", { tokenizers, filters: ["lowercase"] }),
+				analyzer("keep", { tokenizers }),
+				table("post", { body: t.string() }).index("body_ft", {
+					fields: ["body"],
+					fulltext: { analyzer: "old", highlights: true },
+				}),
+			],
+			current,
+		);
+
+		expect(result.changes.map((c) => c.kind)).toEqual([
+			"entity.modify",
+			"index.modify",
+		]);
 	});
 });
 

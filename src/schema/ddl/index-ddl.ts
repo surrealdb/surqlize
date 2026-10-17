@@ -13,7 +13,10 @@ export type VectorType = "F64" | "F32" | "I64" | "I32" | "I16";
 
 /** Full-text search options. */
 export interface FulltextOptions {
-	/** The analyzer that tokenises the column. Omitted means the built-in `like`. */
+	/**
+	 * The analyzer that tokenises the column. Required: SurrealDB has no analyzer
+	 * of its own to fall back to, so an index that names none is refused.
+	 */
 	analyzer?: string;
 	/** BM25 relevance scoring, optionally tuned. */
 	bm25?: boolean | { k1: number; b: number };
@@ -32,9 +35,9 @@ export interface HnswOptions {
 	dimension: number;
 	dist?: DistanceMetric;
 	type?: VectorType;
-	/** Size of the candidate list used while building. */
+	/** Size of the candidate list used while building. At least 1. */
 	efc?: number;
-	/** Connections per node. */
+	/** Connections per node. At least 2. */
 	m?: number;
 	/** Connections per node in the base layer. Defaults to twice `m`. */
 	m0?: number;
@@ -78,6 +81,9 @@ const HNSW_DEFAULTS = {
 	m: 12,
 } as const;
 
+/** The smallest HNSW `M` and `EFC` allowed (see {@link requireHnswFloors}). */
+const HNSW_FLOORS = { m: 2, efc: 1 } as const;
+
 /**
  * Render a `DEFINE INDEX` statement.
  *
@@ -92,6 +98,7 @@ export function defineIndex(
 	options: { overwrite?: boolean } = {},
 ): string {
 	requireSingleColumn(index);
+	requireHnswFloors(index);
 
 	const parts = ["DEFINE INDEX"];
 	if (options.overwrite) parts.push("OVERWRITE");
@@ -104,8 +111,9 @@ export function defineIndex(
 
 	if (index.count) parts.push("COUNT");
 	else if (index.hnsw) parts.push(...hnswClause(index.hnsw));
-	else if (index.fulltext) parts.push(...fulltextClause(index.fulltext));
-	else if (index.unique) parts.push("UNIQUE");
+	else if (index.fulltext) {
+		parts.push(...fulltextClause(index.name, index.fulltext));
+	} else if (index.unique) parts.push("UNIQUE");
 
 	if (index.concurrently) parts.push("CONCURRENTLY");
 	if (index.comment) parts.push("COMMENT", quote(index.comment));
@@ -133,14 +141,63 @@ function requireSingleColumn(index: IndexDefinition): void {
 	);
 }
 
-/** The `FULLTEXT …` portion of an index definition. */
-function fulltextClause(fulltext: true | FulltextOptions): string[] {
-	const options = fulltext === true ? {} : fulltext;
-	const parts = ["FULLTEXT"];
+/**
+ * Reject an HNSW `M` or `EFC` below its floor.
+ *
+ * SurrealDB stores M 1 without complaint, and the server's memory then grows
+ * without limit. In probes on 3.2.3 (a fresh server each, a 1.2 GB resident
+ * memory cap), `EFC 0 M 1` and `EFC 150 M 1 M0 2` both ran past the cap while
+ * `EFC 0 M 12 M0 24` stayed bounded, so M 1 is the verified cause. EFC 0 was not
+ * seen to cause it with a normal M, and is refused only as a precaution. Only a
+ * value the caller gave is checked: the defaults are well above the floors.
+ */
+function requireHnswFloors(index: IndexDefinition): void {
+	const { hnsw } = index;
+	if (!hnsw) return;
 
-	// Omitting ANALYZER is valid, but SurrealDB fills in the built-in `like` and
-	// reports it, so the declared index has to name it too or it never converges.
-	parts.push("ANALYZER", options.analyzer ?? "like");
+	const problems: string[] = [];
+	const reasons: string[] = [];
+	// Written as a negated comparison so that NaN is refused too.
+	if (hnsw.m !== undefined && !(hnsw.m >= HNSW_FLOORS.m)) {
+		problems.push(`M must be at least ${HNSW_FLOORS.m}, got ${hnsw.m}`);
+		reasons.push(
+			"SurrealDB accepts M 1 and then grows its memory without limit.",
+		);
+	}
+	if (hnsw.efc !== undefined && !(hnsw.efc >= HNSW_FLOORS.efc)) {
+		problems.push(`EFC must be at least ${HNSW_FLOORS.efc}, got ${hnsw.efc}`);
+		reasons.push(
+			"EFC 0 was not seen to do that with a normal M, but it is refused as a precaution.",
+		);
+	}
+	if (problems.length === 0) return;
+
+	throw new Error(
+		`Index '${index.name}' is HNSW, but ${problems.join(" and ")}. ${reasons.join(" ")}`,
+	);
+}
+
+/**
+ * The `FULLTEXT …` portion of an index definition.
+ *
+ * Omitting ANALYZER is accepted, and SurrealDB stores `ANALYZER like`. There is
+ * no analyzer of that name, so every write to the table then fails with `The
+ * analyzer 'like' does not exist`. Failing here names the index instead.
+ */
+function fulltextClause(
+	name: string,
+	fulltext: true | FulltextOptions,
+): string[] {
+	const options = fulltext === true ? {} : fulltext;
+	if (!options.analyzer) {
+		throw new Error(
+			`Index '${name}' is full-text but names no analyzer. ` +
+				"SurrealDB would fall back to one called 'like', which does not exist, so every write to the table would fail. " +
+				'Name one with `fulltext: { analyzer: "…" }` and define it with analyzer().',
+		);
+	}
+
+	const parts = ["FULLTEXT", "ANALYZER", options.analyzer];
 
 	// SurrealDB reports BM25 on every full-text index, tuned or not, so it is
 	// always emitted with the parameters it would fill in.

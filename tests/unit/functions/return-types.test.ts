@@ -42,6 +42,24 @@ describe("standalone function return types", () => {
 		const normalized = vector.normalize(vec);
 		assertType<Equal<InferOf<typeof sum>, number[]>>();
 		assertType<Equal<InferOf<typeof normalized>, number[]>>();
+
+		const difference = vector.subtract(vec, vec);
+		const product = vector.multiply(vec, vec);
+		const quotient = vector.divide(vec, vec);
+		const crossed = vector.cross(vec, vec);
+		const projected = vector.project(vec, vec);
+		assertType<Equal<InferOf<typeof difference>, number[]>>();
+		assertType<Equal<InferOf<typeof product>, number[]>>();
+		assertType<Equal<InferOf<typeof quotient>, number[]>>();
+		assertType<Equal<InferOf<typeof crossed>, number[]>>();
+		assertType<Equal<InferOf<typeof projected>, number[]>>();
+	});
+
+	test("vector operations that return a scalar are typed as numbers", () => {
+		const angle = vector.angle(vec, vec);
+		const dot = vector.dot(vec, vec);
+		assertType<Equal<InferOf<typeof angle>, number>>();
+		assertType<Equal<InferOf<typeof dot>, number>>();
 	});
 });
 
