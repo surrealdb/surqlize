@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SurrealSession } from "surrealdb";
+import { type SurrealSession, UnsuccessfulApiError } from "surrealdb";
 import { ApiClient, api, TypeParseError, t } from "../../../src";
 
 /**
@@ -111,6 +111,128 @@ describe("ApiClient", () => {
 
 			expect(response.status).toBe(200);
 			expect(response.body).toEqual({ patched: true });
+		});
+	});
+
+	describe("non-success status", () => {
+		const typed = api("/typed", {
+			get: { response: t.object({ message: t.string() }) },
+		});
+
+		/** The error a call rejected with, so a test can read what it carries. */
+		async function rejection(promise: Promise<unknown>): Promise<unknown> {
+			try {
+				await promise;
+			} catch (err) {
+				return err;
+			}
+			throw new Error("expected the call to reject");
+		}
+
+		test("a 404 whose body is not the success type is not parsed against it", async () => {
+			const surreal = mockSurreal({ status: 404, body: "no such thing" });
+			const client = new ApiClient(surreal, [typed]);
+
+			const err = await rejection(client.get("/typed"));
+
+			expect(err).not.toBeInstanceOf(TypeParseError);
+			expect(err).toBeInstanceOf(UnsuccessfulApiError);
+		});
+
+		test("the error carries the status and the raw body", async () => {
+			const surreal = mockSurreal({
+				status: 500,
+				body: "An error occurred: boom",
+				headers: { "x-a": "b" },
+			});
+			const client = new ApiClient(surreal, [typed]);
+
+			const err = (await rejection(
+				client.get("/typed"),
+			)) as UnsuccessfulApiError;
+
+			expect(err.response.status).toBe(500);
+			expect(err.response.body).toBe("An error occurred: boom");
+			expect(err.response.headers).toEqual({ "x-a": "b" });
+			expect(err.path).toBe("/typed");
+			expect(err.method).toBe("get");
+			expect(err.message).toContain("500");
+		});
+
+		test("a failure body that fits the success type is still a failure", async () => {
+			const surreal = mockSurreal({ status: 404, body: { message: "gone" } });
+			const client = new ApiClient(surreal, [typed]);
+
+			const err = (await rejection(
+				client.get("/typed"),
+			)) as UnsuccessfulApiError;
+
+			expect(err).toBeInstanceOf(UnsuccessfulApiError);
+			expect(err.response.body).toEqual({ message: "gone" });
+		});
+
+		test("a failure with no body is a failure", async () => {
+			const surreal = mockSurreal({ status: 404 });
+			const client = new ApiClient(surreal, [typed]);
+
+			const err = await rejection(client.get("/typed"));
+
+			expect(err).toBeInstanceOf(UnsuccessfulApiError);
+		});
+
+		test("an endpoint with no response schema fails the same way", async () => {
+			const surreal = mockSurreal({ status: 404, body: "no such thing" });
+			const client = new ApiClient(surreal, [api("/untyped", { get: {} })]);
+
+			const err = await rejection(client.get("/untyped"));
+
+			expect(err).toBeInstanceOf(UnsuccessfulApiError);
+		});
+
+		test("every method reports a failure", async () => {
+			const surreal = mockSurreal({ status: 400, body: "bad" });
+			const endpoint = api("/item", {
+				post: { response: t.object({ message: t.string() }) },
+				put: { response: t.object({ message: t.string() }) },
+				delete: { response: t.object({ message: t.string() }) },
+				patch: { response: t.object({ message: t.string() }) },
+				trace: { response: t.object({ message: t.string() }) },
+			});
+			const client = new ApiClient(surreal, [endpoint]);
+
+			for (const call of [
+				() => client.post("/item"),
+				() => client.put("/item"),
+				() => client.delete("/item"),
+				() => client.patch("/item"),
+				() => client.trace("/item"),
+			]) {
+				expect(await rejection(call())).toBeInstanceOf(UnsuccessfulApiError);
+			}
+		});
+
+		test("every 2xx status is a success, and anything outside 2xx is not", async () => {
+			const body = { message: "hi" };
+			for (const status of [200, 201, 204, 299]) {
+				const client = new ApiClient(mockSurreal({ status, body }), [typed]);
+				expect((await client.get("/typed")).status).toBe(status);
+			}
+			for (const status of [199, 300, 302, 400, 503]) {
+				const client = new ApiClient(mockSurreal({ status, body }), [typed]);
+				expect(await rejection(client.get("/typed"))).toBeInstanceOf(
+					UnsuccessfulApiError,
+				);
+			}
+		});
+
+		test("a response without a status is left as it was", async () => {
+			const surreal = mockSurreal({ body: { message: "hi" } });
+			const client = new ApiClient(surreal, [typed]);
+
+			const response = await client.get("/typed");
+
+			expect(response.status).toBeUndefined();
+			expect(response.body).toEqual({ message: "hi" });
 		});
 	});
 

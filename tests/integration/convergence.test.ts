@@ -303,6 +303,41 @@ describe("Defaults converge and mean what they say", () => {
 		expect(await applyTwice([probe])).toEqual([]);
 	});
 
+	test("a set default is applied by the database", async () => {
+		// A `Set` has no JSON form: it used to be printed as `DEFAULT {}`, which
+		// the server accepts and then refuses on every create that relies on it.
+		const probe = table("probe", {
+			some: t.set(t.string()).default(new Set(["a", "b"])),
+			empty: t.set(t.string()).default(new Set<string>()),
+			maybe: t.option(t.set(t.int())).default(new Set<number>()),
+			always: t.set(t.int()).defaultAlways(new Set([1])),
+		});
+
+		expect(await applyTwice([probe])).toEqual([]);
+
+		const [created] =
+			await db().surreal.query<[Record<string, unknown>[]]>(
+				"CREATE probe:one;",
+			);
+		const row = created?.[0];
+
+		expect(row?.some).toBeInstanceOf(Set);
+		expect([...(row?.some as Set<string>)].sort()).toEqual(["a", "b"]);
+		expect(row?.empty).toEqual(new Set());
+		expect(row?.maybe).toEqual(new Set());
+		expect(row?.always).toEqual(new Set([1]));
+	});
+
+	test("a default written as expr('<set>[]') converges", async () => {
+		// It reads back as `DEFAULT <set> []`, with a space the schema never wrote
+		const probe = table("probe", {
+			written: t.set(t.string()).default(expr("<set>[]")),
+			always: t.set(t.string()).defaultAlways(expr("<set>[]")),
+		});
+
+		expect(await applyTwice([probe])).toEqual([]);
+	});
+
 	test("an expression default is called, not stored as text", async () => {
 		const probe = table("probe", { at: t.date().default(expr("time::now()")) });
 

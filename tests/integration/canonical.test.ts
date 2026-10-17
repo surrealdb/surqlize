@@ -126,6 +126,18 @@ describe("Generated and stored definitions canonicalise alike", () => {
 		);
 	});
 
+	test("set defaults, which are stored with a space after the cast", async () => {
+		await expectConvergence(
+			table("setdefaults", {
+				members: t.set(t.string()).default(new Set(["b", "a"])),
+				empty: t.set(t.string()).default(new Set<string>()),
+				maybe: t.option(t.set(t.int())).default(new Set<number>()),
+				always: t.set(t.int()).defaultAlways(new Set([1, 2])),
+				written: t.set(t.string()).default(expr("<set>[]")),
+			}),
+		);
+	});
+
 	test("nested objects at every level", async () => {
 		await expectConvergence(
 			table("nested", {
