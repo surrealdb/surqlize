@@ -5,7 +5,7 @@ import type {
 	CurrentSchema,
 	CurrentTable,
 } from "../../../src/migrator/introspect";
-import { storedFunction } from "../../../src/schema/ddl/entities";
+import { access, storedFunction } from "../../../src/schema/ddl/entities";
 
 /**
  * Comparing a schema against a database.
@@ -358,6 +358,113 @@ describe("Database-level entities", () => {
 		const fn = storedFunction("old_name", { body: "RETURN 1;" });
 
 		expect(diff([fn], withOldFn).changes).toEqual([]);
+	});
+});
+
+describe("Access methods and their signing keys", () => {
+	const KEY = "hunter2-signing-key";
+
+	/** What SurrealDB reports for a keyed access: the keys are hidden. */
+	const stored =
+		"DEFINE ACCESS jw ON DATABASE TYPE JWT ALGORITHM HS512 KEY '[REDACTED]' WITH ISSUER KEY '[REDACTED]' DURATION FOR TOKEN 1h, FOR SESSION NONE";
+
+	const withStored = {
+		tables: {},
+		entities: { ...empty.entities, access: { jw: stored } },
+	};
+
+	const keyed = access("jw", {
+		type: "JWT",
+		algorithm: "HS512",
+		key: KEY,
+		issuerKey: KEY,
+	});
+
+	/** A declared access that hides nothing, so the diff manages the kind. */
+	const bearer = access("grants", { type: "BEARER", for: "USER" });
+
+	test("a new access runs with its key and displays without it", () => {
+		const result = diff([keyed], empty);
+
+		expect(result.up.join("\n")).toContain(KEY);
+		expect(result.display.join("\n")).not.toContain(KEY);
+		expect(result.changes[0]?.display.join("\n")).not.toContain(KEY);
+	});
+
+	test("every change has a display form, the same as up where nothing is hidden", () => {
+		const result = diff([table("a", { x: t.string() }), keyed], empty);
+
+		for (const change of result.changes) {
+			expect(change.display).toHaveLength(change.up.length);
+		}
+
+		const created = result.changes.find((c) => c.kind === "table.create");
+		expect(created?.display).toEqual([...(created?.up ?? [])]);
+		expect(result.display).toEqual(result.changes.flatMap((c) => c.display));
+	});
+
+	test("a rename runs with the key and displays without it", () => {
+		const renamed = access("jw2", {
+			type: "JWT",
+			key: KEY,
+			previousNames: ["jw"],
+		});
+
+		const result = diff([renamed], withStored);
+
+		expect(result.up.join("\n")).toContain(KEY);
+		expect(result.display.join("\n")).not.toContain(KEY);
+		expect(result.display.at(-1)).toBe("REMOVE ACCESS jw ON DATABASE;");
+	});
+
+	test("removing an undeclared access does not write a down that restores its hidden key", () => {
+		const result = diff([bearer], withStored, { removeMissing: true });
+
+		expect(result.down.join("\n")).not.toContain("[REDACTED]'");
+		expect(result.down.some((s) => s.startsWith("DEFINE ACCESS jw"))).toBe(
+			false,
+		);
+		// The reason is left in the history, so a rollback can say why it stops
+		expect(result.down.join("\n")).toContain("jw");
+	});
+
+	test("renaming one does not write a down that restores the old one", () => {
+		const renamed = access("jw2", {
+			type: "JWT",
+			key: KEY,
+			previousNames: ["jw"],
+		});
+
+		const result = diff([renamed], withStored);
+
+		expect(result.down.join("\n")).not.toContain("[REDACTED]'");
+		expect(result.down.some((s) => s.startsWith("DEFINE ACCESS jw"))).toBe(
+			false,
+		);
+	});
+
+	test("replacing one does not write a down that restores its hidden key", () => {
+		// A published key set is compared, so a keyed access under the same name
+		// is modified, and its stored form is the down
+		const replaced = access("jw", { type: "JWT", url: "https://issuer/jwks" });
+
+		const result = diff([replaced], withStored);
+
+		expect(result.changes[0]?.kind).toBe("entity.modify");
+		expect(result.down.join("\n")).not.toContain("[REDACTED]'");
+	});
+
+	test("an access that hides nothing still restores from its stored form", () => {
+		const storedBearer =
+			"DEFINE ACCESS gone ON DATABASE TYPE BEARER FOR USER DURATION FOR GRANT 4w2d, FOR TOKEN 1h, FOR SESSION NONE";
+		const current = {
+			tables: {},
+			entities: { ...empty.entities, access: { gone: storedBearer } },
+		};
+
+		const result = diff([bearer], current, { removeMissing: true });
+
+		expect(result.down).toContain(`${storedBearer};`);
 	});
 });
 

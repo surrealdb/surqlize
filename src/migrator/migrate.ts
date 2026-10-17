@@ -3,17 +3,21 @@ import type { DefinableSchema } from "../schema/ddl/define";
 import type { DatabaseEntity } from "../schema/ddl/entities";
 import { type Diff, type DiffOptions, diff } from "./diff";
 import { introspect, MIGRATIONS_TABLE } from "./introspect";
+import { unrestorableAccess } from "./secrets";
 
 /** A migration that has been applied, as recorded in the database. */
 export interface AppliedMigration {
 	/** When it ran, and what makes it unique. */
 	id: string;
 	appliedAt: string;
-	/** The statements that were run. */
+	/**
+	 * The statements that were run, in the form `plan()` reports as `display`: a
+	 * signing key is replaced by a placeholder, never recorded.
+	 */
 	up: string[];
 	/** The statements that undo them. */
 	down: string[];
-	/** A digest of `up`, so a tampered history can be detected. */
+	/** A digest of `up` as recorded, so a tampered history can be detected. */
 	checksum: string;
 }
 
@@ -70,6 +74,10 @@ export async function migrate(
 /**
  * Undo the most recent migration.
  *
+ * Refuses when undoing it would restore an access method whose key the database
+ * hid: the key cannot be recovered, and restoring the text the database reports
+ * would set it to a value anyone can sign a token with.
+ *
  * @param surreal - A session pointed at the target namespace and database
  * @returns The migration that was undone, or null when there is no history
  */
@@ -80,7 +88,7 @@ export async function rollback(
 	const last = history.at(-1);
 	if (!last) return null;
 
-	verifyChecksum(last);
+	assertRollbackable(last);
 
 	if (last.down.length) await surreal.query(last.down.join("\n"));
 	await surreal.query(`DELETE ${MIGRATIONS_TABLE} WHERE id = $id;`, {
@@ -142,9 +150,11 @@ async function record(
 ): Promise<AppliedMigration> {
 	const migration: Omit<AppliedMigration, "id"> = {
 		appliedAt: new Date().toISOString(),
-		up: pending.up,
+		// What is recorded is what can be shown, so the history never holds a key,
+		// and the checksum is over that text, which a rollback can recompute.
+		up: pending.display,
 		down: pending.down,
-		checksum: checksum(pending.up),
+		checksum: checksum(pending.display),
 	};
 
 	const [created] = await surreal.query<[AppliedMigration[]]>(
@@ -153,6 +163,28 @@ async function record(
 	);
 
 	return created?.[0] as AppliedMigration;
+}
+
+/**
+ * Throw if a recorded migration cannot be rolled back as it stands.
+ *
+ * Exported for the CLI, which checks before it shows what a rollback would run.
+ */
+export function assertRollbackable(migration: AppliedMigration): void {
+	verifyChecksum(migration);
+
+	// Read from `down` whatever the migration's age: one written before keys were
+	// hidden holds the text the database reports, one written since holds a note.
+	const hidden = unrestorableAccess(migration.down);
+	if (hidden === undefined) return;
+
+	throw new Error(
+		`Migration ${migration.id} cannot be rolled back: it would restore the ` +
+			`access method ${hidden}, and its keys cannot be read from the database. ` +
+			"Restoring it from what the database reports would set its key to the " +
+			"text [REDACTED], which anyone can sign a token with. Recreate it by " +
+			`hand with a key of your own, then delete this migration from ${MIGRATIONS_TABLE}.`,
+	);
 }
 
 /** Throw if a recorded migration no longer matches its checksum. */

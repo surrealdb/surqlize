@@ -1398,6 +1398,8 @@ bunx surqlize rollback   # undo the most recent migration
 
 A schema is a module that exports the tables and edges to manage. Running `plan` again after `migrate` reports nothing to do, so a change that fails part-way is recovered by planning again. A field renamed with `.was("old")` is migrated by copying its values, not by dropping it. Database settings come from `surqlize.config.ts`, then `SURREAL_*` environment variables, then flags, and `-e <name>` selects a named environment.
 
+A signing key in an access method is applied but never printed by `plan` or kept in the migration history; from `surqlize/migrate`, `plan()` returns the text that is safe to show as `display`. SurrealDB does not reveal a key once it is stored, so `rollback` refuses a migration that would restore an access method with a hidden key, and names it. Recreate that access by hand, then delete the migration from `_migrations`.
+
 ## Reactive store
 
 A store turns a query into a live value. It loads the result, keeps it current from live notifications, and exposes `subscribe` and `getSnapshot`, the shape that `useSyncExternalStore`, Svelte stores and similar bindings expect. It works with any framework and adds no dependency.

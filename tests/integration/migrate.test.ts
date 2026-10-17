@@ -7,6 +7,7 @@ import {
 	plan,
 	rollback,
 } from "../../src/migrator/migrate";
+import { access } from "../../src/schema/ddl/entities";
 import { withTestDb } from "./setup";
 
 describe("Applying and reversing migrations", () => {
@@ -125,6 +126,113 @@ describe("Applying and reversing migrations", () => {
 			"SELECT username FROM account;",
 		);
 		expect(restored[0]?.username).toBe("alice");
+	});
+});
+
+describe("Access keys", () => {
+	const db = withTestDb({ perTest: true });
+
+	const KEY = "integration-signing-key-4471";
+	const keyed = access("jw", { type: "JWT", key: KEY, issuerKey: KEY });
+	// Declared so that the migrator manages accesses at all
+	const bearer = access("grants", { type: "BEARER", for: "USER" });
+
+	test("a key reaches the database and never the plan output or the history", async () => {
+		const pending = await plan(db().surreal, [keyed]);
+		expect(pending.up.join("\n")).toContain(KEY);
+		expect(pending.display.join("\n")).not.toContain(KEY);
+
+		const result = await migrate(db().surreal, [keyed]);
+		expect(JSON.stringify(result)).not.toContain(KEY);
+
+		// The key is in force, and the server does not give it back. It reports
+		// '[REDACTED]' in its place, and the refusal to roll back a removal below
+		// rests on that text, so it is asserted here on every server in the
+		// matrix: a server that said something else would fail here, by name.
+		const [info] =
+			await db().surreal.query<[{ accesses: Record<string, string> }]>(
+				"INFO FOR DB;",
+			);
+		expect(info.accesses.jw).toContain("DEFINE ACCESS jw");
+		expect(info.accesses.jw).not.toContain(KEY);
+		expect(info.accesses.jw).toContain("[REDACTED]");
+
+		const [rows] = await db().surreal.query<[unknown[]]>(
+			"SELECT * FROM _migrations;",
+		);
+		expect(JSON.stringify(rows)).not.toContain(KEY);
+
+		// And a record of it that carries no key still rolls back
+		await rollback(db().surreal);
+		const [after] =
+			await db().surreal.query<[{ accesses: Record<string, string> }]>(
+				"INFO FOR DB;",
+			);
+		expect(after.accesses).toEqual({});
+	});
+
+	test("a rollback that would restore a removed access is refused, and changes nothing", async () => {
+		await migrate(db().surreal, [keyed, bearer]);
+
+		// Two migrations recorded in the same millisecond have no order in the
+		// history, and the rollback below has to find the removal last
+		await Bun.sleep(5);
+
+		// What `--remove-missing` does to an access the schema stopped declaring
+		await migrate(db().surreal, [bearer], { removeMissing: true });
+		const [removed] =
+			await db().surreal.query<[{ accesses: Record<string, string> }]>(
+				"INFO FOR DB;",
+			);
+		expect(Object.keys(removed.accesses)).toEqual(["grants"]);
+
+		const before = await applied(db().surreal);
+
+		// The refusal itself, not a server error that happens to name the access
+		await expect(rollback(db().surreal)).rejects.toThrow(
+			/cannot be rolled back.*\bjw\b/,
+		);
+
+		// Nothing was replayed: the access is still gone, so no token can be
+		// signed with the text the server shows in its place
+		const [after] =
+			await db().surreal.query<[{ accesses: Record<string, string> }]>(
+				"INFO FOR DB;",
+			);
+		expect(Object.keys(after.accesses)).toEqual(["grants"]);
+		expect(await applied(db().surreal)).toEqual(before);
+	});
+
+	test("a removal recorded before the keys were hidden is refused too", async () => {
+		await migrate(db().surreal, [keyed, bearer]);
+
+		// Rewrite the history as the older code wrote it for a removal: the stored
+		// text, hidden keys and all, as the way back
+		const [info] =
+			await db().surreal.query<[{ accesses: Record<string, string> }]>(
+				"INFO FOR DB;",
+			);
+		const up = ["REMOVE ACCESS jw ON DATABASE;"];
+		await db().surreal.query("DELETE _migrations;");
+		await db().surreal.query("CREATE _migrations CONTENT $row;", {
+			row: {
+				appliedAt: new Date().toISOString(),
+				up,
+				down: [`${info.accesses.jw};`],
+				checksum: checksum(up),
+			},
+		});
+		await db().surreal.query(up.join("\n"));
+
+		await expect(rollback(db().surreal)).rejects.toThrow(
+			/cannot be rolled back.*\bjw\b/,
+		);
+
+		const [after] =
+			await db().surreal.query<[{ accesses: Record<string, string> }]>(
+				"INFO FOR DB;",
+			);
+		expect(Object.keys(after.accesses)).toEqual(["grants"]);
 	});
 });
 

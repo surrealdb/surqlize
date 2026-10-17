@@ -9,6 +9,7 @@ import {
 	plan,
 	rollback,
 } from "../../../src/migrator/migrate";
+import { access } from "../../../src/schema/ddl/entities";
 
 /**
  * Applying, recording and reversing a migration.
@@ -212,6 +213,134 @@ describe("rollback", () => {
 		await rollback(surreal);
 
 		expect(calls.some((c) => c.sql.startsWith("DELETE"))).toBe(true);
+	});
+});
+
+describe("Access methods and their signing keys", () => {
+	const KEY = "hunter2-signing-key";
+
+	/** What SurrealDB reports for a keyed access: the keys are hidden. */
+	const stored =
+		"DEFINE ACCESS jw ON DATABASE TYPE JWT ALGORITHM HS512 KEY '[REDACTED]' WITH ISSUER KEY '[REDACTED]' DURATION FOR TOKEN 1h, FOR SESSION NONE";
+
+	const keyed = access("jw", { type: "JWT", key: KEY, issuerKey: KEY });
+	const bearer = access("grants", { type: "BEARER", for: "USER" });
+
+	/** A session whose database holds the keyed access `jw`. */
+	function holding() {
+		return session({ "INFO FOR DB": [{ accesses: { jw: stored } }] });
+	}
+
+	test("the key reaches the database, and never the history", async () => {
+		const { surreal, calls } = session();
+		await migrate(surreal, [keyed]);
+
+		const executed = calls.find((c) => c.sql.startsWith("DEFINE ACCESS jw"));
+		expect(executed?.sql).toContain(KEY);
+
+		const recorded = calls.find((c) => c.sql.startsWith("CREATE"));
+		expect(JSON.stringify(recorded?.bindings)).not.toContain(KEY);
+	});
+
+	test("the checksum covers what is recorded, so a rollback can recompute it", async () => {
+		const { surreal, calls } = session();
+		await migrate(surreal, [keyed]);
+
+		const recorded = calls.find((c) => c.sql.startsWith("CREATE"));
+		const written = recorded?.bindings?.migration as AppliedMigration;
+
+		expect(written.up.join("\n")).toContain("DEFINE ACCESS jw");
+		expect(written.checksum).toBe(checksum(written.up));
+
+		const { surreal: later } = withHistory([
+			{ ...written, id: "m:1" } as AppliedMigration,
+		]);
+		await expect(rollback(later)).resolves.toBeDefined();
+	});
+
+	test("plan shows the display form beside the statements that will run", async () => {
+		const { surreal } = session();
+		const pending = await plan(surreal, [keyed]);
+
+		expect(pending.up.join("\n")).toContain(KEY);
+		expect(pending.display.join("\n")).not.toContain(KEY);
+	});
+
+	test("refuses to roll back a migration that removed one, naming it", async () => {
+		const { surreal, calls } = holding();
+		await migrate(surreal, [bearer], { removeMissing: true });
+
+		const recorded = calls.find((c) => c.sql.startsWith("CREATE"));
+		const written = recorded?.bindings?.migration as AppliedMigration;
+		const { surreal: later, sql } = withHistory([
+			{ ...written, id: "m:1" } as AppliedMigration,
+		]);
+
+		await expect(rollback(later)).rejects.toThrow(/jw/);
+		expect(sql().some((s) => s.startsWith("DEFINE ACCESS"))).toBe(false);
+		expect(sql().some((s) => s.startsWith("DELETE"))).toBe(false);
+	});
+
+	test("refuses a migration written before the fix, whatever its age", async () => {
+		// Written by the older code: the key in `up`, and the stored text, with
+		// its hidden keys, as the way back
+		const up = [
+			`DEFINE ACCESS jw ON DATABASE TYPE JWT ALGORITHM HS512 KEY '${KEY}';`,
+		];
+		const old = migration({
+			up,
+			down: [`${stored};`],
+			checksum: checksum(up),
+		});
+		const { surreal, sql } = withHistory([old]);
+
+		await expect(rollback(surreal)).rejects.toThrow(/jw/);
+		expect(sql().some((s) => s.startsWith("DEFINE ACCESS"))).toBe(false);
+		expect(sql().some((s) => s.startsWith("DELETE"))).toBe(false);
+	});
+
+	test("names an access whose escaped name holds a space in full", async () => {
+		const spaced = stored.replace("ACCESS jw", "ACCESS `my access`");
+		const { surreal } = withHistory([migration({ down: [`${spaced};`] })]);
+
+		await expect(rollback(surreal)).rejects.toThrow(
+			"restore the access method `my access`, and",
+		);
+	});
+
+	test("still rolls back an old migration that only created one", async () => {
+		// Its `up` holds the key, and that is for the user to rotate. Its `down`
+		// restores nothing, so there is nothing to refuse.
+		const up = [`DEFINE ACCESS jw ON DATABASE TYPE JWT KEY '${KEY}';`];
+		const old = migration({
+			up,
+			down: ["REMOVE ACCESS jw ON DATABASE;"],
+			checksum: checksum(up),
+		});
+		const { surreal, sql } = withHistory([old]);
+
+		await rollback(surreal);
+
+		expect(sql()).toContain("REMOVE ACCESS jw ON DATABASE;");
+	});
+
+	test("rolls back the removal of an access that hides nothing", async () => {
+		const storedBearer =
+			"DEFINE ACCESS gone ON DATABASE TYPE BEARER FOR USER DURATION FOR GRANT 4w2d, FOR TOKEN 1h, FOR SESSION NONE";
+		const { surreal, calls } = session({
+			"INFO FOR DB": [{ accesses: { gone: storedBearer } }],
+		});
+		await migrate(surreal, [bearer], { removeMissing: true });
+
+		const recorded = calls.find((c) => c.sql.startsWith("CREATE"));
+		const written = recorded?.bindings?.migration as AppliedMigration;
+		const { surreal: later, sql } = withHistory([
+			{ ...written, id: "m:1" } as AppliedMigration,
+		]);
+
+		await rollback(later);
+
+		expect(sql().join("\n")).toContain(`${storedBearer};`);
 	});
 });
 
