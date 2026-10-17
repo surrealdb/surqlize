@@ -104,6 +104,8 @@ export type OutboxDeps = {
 	isPermanent(error: unknown): boolean;
 	/** Whether the connection is up. Without a signal, assumed to be. */
 	isOnline(): boolean;
+	/** Called once a write has been queued and stored, before it is sent. */
+	onWrite?(): void;
 	/** The first and the longest wait before sending again after a failed attempt. */
 	retry: { minMs: number; maxMs: number };
 };
@@ -130,6 +132,7 @@ export class Outbox {
 	#snapshot: readonly OutboxOp[] = Object.freeze([]);
 	readonly #listeners = new Set<() => void>();
 	#flushing = false;
+	#disposed = false;
 	#loaded = false;
 	#timer: ReturnType<typeof setTimeout> | undefined;
 	#attempt = 0;
@@ -168,15 +171,21 @@ export class Outbox {
 			const waiter = { resolve, reject };
 			const target = this.#mergeTarget(op);
 			const previous = target?.op;
+			const next: OutboxOp = target
+				? { ...target.op, data: { ...target.op.data, ...op.data } }
+				: { ...op };
+			// Encoded before anything is queued: a write the codec cannot store throws
+			// here, which rejects it with nothing shown and nothing left to be sent.
+			const payload = encode(next);
 			let entry: Entry;
 			if (target) {
-				target.op = { ...target.op, data: { ...target.op.data, ...op.data } };
+				target.op = next;
 				target.waiters.push(waiter);
 				entry = target;
 			} else {
 				entry = {
 					seq: ++this.#counter,
-					op: { ...op },
+					op: next,
 					inFlight: false,
 					waiters: [waiter],
 				};
@@ -184,8 +193,9 @@ export class Outbox {
 			}
 			// The write is visible straight away; it is stored before it is sent.
 			this.#changed();
-			this.deps.storage.put(entry.seq, encode(entry.op)).then(
+			this.deps.storage.put(entry.seq, payload).then(
 				() => {
+					this.deps.onWrite?.();
 					void this.flush();
 				},
 				(error) => {
@@ -239,15 +249,20 @@ export class Outbox {
 
 	/**
 	 * Send the waiting writes, oldest first, until one cannot be sent for want of
-	 * a connection. Safe to call at any time; only one run happens at once.
+	 * a connection. Safe to call at any time; only one run happens at once. Does
+	 * nothing once the outbox is disposed.
 	 */
 	async flush(): Promise<void> {
-		if (this.#flushing) return;
+		if (this.#flushing || this.#disposed) return;
 		this.#flushing = true;
 		clearTimeout(this.#timer);
 		this.#timer = undefined;
 		try {
-			while (this.#entries.length > 0 && this.deps.isOnline()) {
+			while (
+				!this.#disposed &&
+				this.#entries.length > 0 &&
+				this.deps.isOnline()
+			) {
 				if (!(await this.#sendFirst())) return;
 			}
 		} finally {
@@ -287,6 +302,7 @@ export class Outbox {
 	}
 
 	#scheduleRetry(): void {
+		if (this.#disposed) return;
 		const { minMs, maxMs } = this.deps.retry;
 		const wait = Math.min(maxMs, minMs * 2 ** this.#attempt++);
 		this.#timer = setTimeout(() => {
@@ -295,8 +311,13 @@ export class Outbox {
 		}, wait);
 	}
 
-	/** Stop retrying. Writes stay in storage and are sent when a store starts again. */
+	/**
+	 * Stop sending, for good. A write that is on its way still ends as the
+	 * database answers, but nothing is sent after it, and a failed one is not
+	 * tried again. Writes stay in storage and are sent when a store starts again.
+	 */
 	dispose(): void {
+		this.#disposed = true;
 		clearTimeout(this.#timer);
 		this.#timer = undefined;
 	}

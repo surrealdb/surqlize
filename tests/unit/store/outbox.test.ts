@@ -259,6 +259,45 @@ describe("Outbox", () => {
 		expect((await storage.load()).length).toBe(0);
 	});
 
+	test("a disposed outbox sends nothing more, even when a send that was on its way fails", async () => {
+		const { outbox, sent, storage } = make({
+			send: async () => {
+				await tick(30);
+				throw new Error("socket closed");
+			},
+		});
+		void outbox.enqueue(create("a")).catch(() => {});
+		await tick(10);
+		expect(sent).toHaveLength(1);
+
+		// The send is still pending: it fails after the outbox was disposed.
+		outbox.dispose();
+		await tick(80);
+		expect(sent).toHaveLength(1);
+		expect(outbox.getSnapshot()).toHaveLength(1);
+		expect(await storage.load()).toHaveLength(1);
+	});
+
+	test("a disposed outbox finishes the send that was on its way, and no other", async () => {
+		const { outbox, sent, acked, storage } = make({
+			send: async () => {
+				await tick(30);
+				return {};
+			},
+		});
+		const first = outbox.enqueue(create("a"));
+		void outbox.enqueue(create("b"));
+		await tick(10);
+		expect(sent).toHaveLength(1);
+
+		outbox.dispose();
+		await first;
+		await tick(60);
+		expect(sent.map((o) => o.id)).toEqual(["a"]);
+		expect(acked.map((o) => o.id)).toEqual(["a"]);
+		expect((await storage.load()).length).toBe(1);
+	});
+
 	test("a write that cannot be stored is rejected and not shown", async () => {
 		const storage = memoryStorage();
 		storage.put = async () => {
@@ -268,6 +307,45 @@ describe("Outbox", () => {
 		await expect(outbox.enqueue(create("a"))).rejects.toThrow("quota");
 		expect(outbox.getSnapshot()).toHaveLength(0);
 		expect(sent).toHaveLength(0);
+	});
+
+	test("a write that cannot be encoded is rejected, left unqueued and never sent", async () => {
+		const { outbox, sent, storage } = make();
+		await outbox.ready;
+		const seen: number[] = [];
+		outbox.subscribe(() => seen.push(outbox.getSnapshot().length));
+		await expect(
+			outbox.enqueue(create("bad", { raw: new Uint8Array(2) })),
+		).rejects.toThrow("cannot be stored in the outbox");
+		// Nothing was shown, even for an instant, and nothing was kept.
+		expect(seen).toEqual([]);
+		expect(outbox.getSnapshot()).toHaveLength(0);
+		expect(await storage.load()).toHaveLength(0);
+
+		// The write after it is the only one that reaches the database.
+		await outbox.enqueue(create("good"));
+		expect(sent.map((o) => o.id)).toEqual(["good"]);
+	});
+
+	test("an update that cannot be encoded leaves the write it would have joined as it was", async () => {
+		let online = false;
+		const { outbox, sent, storage } = make({ online: () => online });
+		const first = outbox.enqueue(create("a", { title: "A" }));
+		await tick();
+		const before = outbox.getSnapshot();
+		const stored = await storage.load();
+
+		await expect(
+			outbox.enqueue(update("a", { title: "A2", raw: new ArrayBuffer(2) })),
+		).rejects.toThrow("cannot be stored in the outbox");
+		expect(outbox.getSnapshot()).toBe(before);
+		expect(outbox.getSnapshot()).toEqual([create("a", { title: "A" })]);
+		expect(await storage.load()).toEqual(stored);
+
+		online = true;
+		await outbox.flush();
+		await first;
+		expect(sent).toEqual([create("a", { title: "A" })]);
 	});
 
 	test("the snapshot is the same array until something changes", async () => {

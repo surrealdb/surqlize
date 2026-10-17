@@ -1,4 +1,10 @@
-import { RecordId, type RecordIdValue, ServerError } from "surrealdb";
+import {
+	isRetryableConflict,
+	RecordId,
+	type RecordIdValue,
+	ServerError,
+	toSurqlString,
+} from "surrealdb";
 import { OrmError } from "../error";
 import type { LiveMessage } from "../query/live";
 import type { CreateInput } from "../query/modification-methods";
@@ -38,6 +44,22 @@ export type StoreOptions = {
 	storage?: OutboxStorage;
 	/** The first and the longest wait before sending a write again. Default 500 and 30000. */
 	retry?: { minMs?: number; maxMs?: number };
+	/**
+	 * Holds the store off the database until it resolves, for a connection that
+	 * has to be signed in first. Until then the store registers no live query,
+	 * reads nothing and sends no write; a write made meanwhile is queued and shown
+	 * at once, and one kept in `storage` from an earlier session waits too.
+	 *
+	 * It is called the first time something needs the connection: the first
+	 * subscriber of a query, a write, or `refetch()`. Never when the store is made,
+	 * never again once it has resolved, and never twice at once. A write kept in
+	 * `storage` does not call it by itself; it waits for one of those. If it
+	 * rejects, queries report the error, writes stay queued and are not rejected,
+	 * and the next write, `refetch()`, or subscriber of a query that is not running
+	 * calls it again; a query that failed to start is started over by `refetch()`
+	 * or a new subscriber. It is not called again after a reconnect.
+	 */
+	gate?: () => Promise<void>;
 };
 
 /** What a write call returns: the record it is about, and when the database has settled it. */
@@ -78,15 +100,67 @@ const isConnectionEvents = (value: unknown): value is ConnectionEvents =>
 
 /** A stable key for a query: its text and what it binds. */
 function keyOf(text: string, bindings: unknown): string {
-	return `${text}\u0000${JSON.stringify(bindings, (_, value) =>
-		typeof value === "object" &&
-		value !== null &&
-		!Array.isArray(value) &&
-		Object.getPrototypeOf(value) !== Object.prototype
-			? String(value)
-			: value,
-	)}`;
+	return `${text}\u0000${keyOfValue(bindings, [])}`;
 }
+
+/**
+ * A string for a binding, different for values that differ. Each kind of
+ * container is tagged, so that a `Set` and an array of the same items do not
+ * share a key, and bytes are written out. A value of the SDK (a record id, a
+ * decimal, a datetime) is written as SurrealQL, which keeps it apart from the
+ * text and the number it prints as, and does not depend on a class name that a
+ * bundler may have changed. Any other instance of a class is told apart by its
+ * class name only, so two of one class share a key. Never throws.
+ */
+function keyOfValue(value: unknown, parents: object[]): string {
+	switch (typeof value) {
+		case "string":
+			return JSON.stringify(value);
+		case "bigint":
+			return `${value}n`;
+		case "symbol":
+			return `symbol(${value.description ?? ""})`;
+		case "function":
+			return `function(${value.name})`;
+		case "object":
+			break;
+		default:
+			return String(value);
+	}
+	if (value === null) return "null";
+	if (parents.includes(value)) return "[circular]";
+	const inner = [...parents, value];
+	const each = (items: Iterable<unknown>) =>
+		[...items].map((item) => keyOfValue(item, inner)).join(",");
+
+	if (Array.isArray(value)) return `[${each(value)}]`;
+	if (value instanceof Set) return `set[${each(value)}]`;
+	if (value instanceof Map)
+		return `map[${[...value].map(([k, v]) => `${keyOfValue(k, inner)}=>${keyOfValue(v, inner)}`).join(",")}]`;
+	if (value instanceof ArrayBuffer) return `buffer(${hex(value)})`;
+	if (ArrayBuffer.isView(value))
+		return `${value.constructor.name}(${hex(value.buffer, value.byteOffset, value.byteLength)})`;
+	if (value instanceof Date) return `date(${value.getTime()})`;
+	const proto = Object.getPrototypeOf(value);
+	if (proto === Object.prototype || proto === null) {
+		const entries = Object.entries(value).map(
+			([k, v]) => `${JSON.stringify(k)}:${keyOfValue(v, inner)}`,
+		);
+		return `{${entries.join(",")}}`;
+	}
+	try {
+		const text = toSurqlString(value);
+		if (!text.startsWith("[object ")) return text;
+	} catch {
+		// No form of its own: told apart by its class below.
+	}
+	return `class(${(value as object).constructor?.name ?? "unknown"})`;
+}
+
+const hex = (buffer: ArrayBufferLike, offset = 0, length?: number): string =>
+	Array.from(new Uint8Array(buffer, offset, length), (byte) =>
+		byte.toString(16).padStart(2, "0"),
+	).join("");
 
 /**
  * Live views of queries. Ask for a query with {@link Store.query} and
@@ -102,11 +176,17 @@ function keyOf(text: string, bindings: unknown): string {
  * ```
  */
 export class Store<O extends Orm> {
-	readonly #stores = new Map<string, QueryStore<unknown>>();
+	readonly #stores = new Map<
+		string,
+		{ query: QueryStore<unknown>; stop: () => void }
+	>();
 	readonly #idleMs: number;
 	readonly #debounceMs: number;
 	readonly #connection: ConnectionEvents | undefined;
 	readonly #outbox: Outbox;
+	readonly #gate: (() => Promise<void>) | undefined;
+	#gateOpen: boolean;
+	#opening: Promise<void> | undefined;
 
 	/**
 	 * Writes that have not been accepted by the database yet, oldest first. The
@@ -128,13 +208,23 @@ export class Store<O extends Orm> {
 		this.#debounceMs = options.debounceMs ?? 20;
 		const candidate = options.connection ?? db.surreal;
 		this.#connection = isConnectionEvents(candidate) ? candidate : undefined;
+		this.#gate = options.gate;
+		this.#gateOpen = options.gate === undefined;
 		this.#outbox = new Outbox({
 			storage: options.storage ?? memoryStorage(),
 			send: (op) => this.#send(op),
 			acknowledge: (op, row) => this.#acknowledge(op, row),
+			// A write that lost a race with another one was not applied, and sending it
+			// again cannot count it twice, so it is not a refusal. Only a server that
+			// reports the conflict in a structured way (3.1.0 or later) is recognised.
 			isPermanent: (error) =>
-				error instanceof ServerError || error instanceof OrmError,
-			isOnline: () => this.#connection === undefined || this.#online,
+				!isRetryableConflict(error) &&
+				(error instanceof ServerError || error instanceof OrmError),
+			isOnline: () =>
+				(this.#connection === undefined || this.#online) && this.#gateOpen,
+			onWrite: () => {
+				if (!this.#gateOpen) void this.#open().catch(() => {});
+			},
 			retry: {
 				minMs: options.retry?.minMs ?? 500,
 				maxMs: options.retry?.maxMs ?? 30_000,
@@ -146,20 +236,70 @@ export class Store<O extends Orm> {
 	}
 
 	#online = true;
+	#unwatch: (() => void)[] = [];
 
 	/** Keep track of the connection, and send waiting writes when it returns. */
 	#watchConnection(): void {
 		const connection = this.#connection;
 		if (!connection) return;
-		connection.subscribe("connected", () => {
-			this.#online = true;
-			void this.#outbox.flush();
-		});
+		this.#unwatch.push(
+			connection.subscribe("connected", () => {
+				this.#online = true;
+				void this.#outbox.flush();
+			}),
+		);
 		for (const event of ["reconnecting", "disconnected"] as const) {
-			connection.subscribe(event, () => {
-				this.#online = false;
-			});
+			this.#unwatch.push(
+				connection.subscribe(event, () => {
+					this.#online = false;
+				}),
+			);
 		}
+	}
+
+	/**
+	 * Stop everything the store started: its listeners on the connection, the
+	 * sending of the writes that are still waiting, and every running query, even
+	 * one that is subscribed. For a store made for a short-lived scope, such as a
+	 * request or a test, so that it does not outlive it. A write that is on its
+	 * way ends as the database answers, but none is sent or retried after it.
+	 * Writes that are waiting stay in storage, and are sent when a store starts
+	 * over it again.
+	 */
+	dispose(): void {
+		for (const off of this.#unwatch) off();
+		this.#unwatch = [];
+		this.#outbox.dispose();
+		for (const { stop } of [...this.#stores.values()]) stop();
+	}
+
+	/**
+	 * Open the gate, if there is one and it is not open yet. Only one call to it
+	 * is made at a time, and a failed one is forgotten, so the next need tries
+	 * again. Writes that were held are sent once it has opened.
+	 */
+	#open(): Promise<void> {
+		this.#opening ??= (async () => this.#gate?.())().then(
+			() => {
+				this.#opening = undefined;
+				this.#gateOpen = true;
+				void this.#outbox.flush();
+			},
+			(error) => {
+				this.#opening = undefined;
+				throw error;
+			},
+		);
+		return this.#opening;
+	}
+
+	/** `run`, after the gate has opened. Not wrapped at all when there is no gate. */
+	#gated<T>(run: () => Promise<T>): () => Promise<T> {
+		if (!this.#gate) return run;
+		return async () => {
+			if (!this.#gateOpen) await this.#open();
+			return run();
+		};
 	}
 
 	async #send(op: OutboxOp): Promise<unknown> {
@@ -196,8 +336,8 @@ export class Store<O extends Orm> {
 	/** Record the result of an accepted write in every running query of its table. */
 	#acknowledge(op: OutboxOp, row: unknown): void {
 		const key = String(new RecordId(op.table, op.id as never));
-		for (const store of this.#stores.values()) {
-			if (store.table === op.table) store.acknowledge({ key, row });
+		for (const { query } of this.#stores.values()) {
+			if (query.table === op.table) query.acknowledge({ key, row });
 		}
 	}
 
@@ -260,8 +400,9 @@ export class Store<O extends Orm> {
 		const key = `${build ? "refetch" : "direct"}\u0000${keyOf(prepared.query, prepared.bindings)}`;
 
 		const existing = this.#stores.get(key);
-		if (existing) return existing;
+		if (existing) return existing.query;
 
+		let stop = () => {};
 		const store = new QueryStore<unknown>({
 			table: tb,
 			mode: build ? "refetch" : "direct",
@@ -285,28 +426,37 @@ export class Store<O extends Orm> {
 			},
 			membership: filter ? (row) => matchesWhere(filter.where, row) : undefined,
 			insertable: filter ? !filter.ordered : false,
-			fetch: async () => {
+			fetch: this.#gated(async () => {
 				const result = await query.execute();
 				if (Array.isArray(result)) return result;
 				return result == null ? [] : [result];
-			},
+			}),
 			live: (handler) =>
-				(
-					db.live as (tb: string) => {
-						subscribe(
-							h: (m: LiveMessage<unknown>) => void,
-						): Promise<() => void>;
-					}
-				)(tb).subscribe(handler),
+				this.#gated(() =>
+					(
+						db.live as (tb: string) => {
+							subscribe(
+								h: (m: LiveMessage<unknown>) => void,
+							): Promise<() => void>;
+						}
+					)(tb).subscribe(handler),
+				)(),
 			keyOf: (row) => String((row as { id: RecordId }).id),
 			keyOfId: (id) => String(id),
 			sort: options.sort as ((a: unknown, b: unknown) => number) | undefined,
 			onConnection: this.#connection && ((listener) => this.#listen(listener)),
-			onDispose: () => this.#stores.delete(key),
+			// A query that was stopped and replaced can still stop again, when a holder
+			// of it subscribes and leaves: it must not forget the one that replaced it.
+			onDispose: () => {
+				if (this.#stores.get(key)?.query === store) this.#stores.delete(key);
+			},
+			registerStop: (stopQuery) => {
+				stop = stopQuery;
+			},
 			idleMs: this.#idleMs,
 			debounceMs: this.#debounceMs,
 		});
-		this.#stores.set(key, store);
+		this.#stores.set(key, { query: store, stop });
 		return store;
 	}
 
