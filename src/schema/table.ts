@@ -7,6 +7,7 @@ import {
 	type RecordType,
 	t,
 } from "../types";
+import { SurqlExpression } from "../types/classes";
 import {
 	__ctx,
 	__display,
@@ -72,7 +73,7 @@ export type ComputedExpression<
 
 type ComputedDefinition = {
 	readonly type: AbstractType;
-	readonly expression: (row: never, db: never) => Workable;
+	readonly expression: ((row: never, db: never) => Workable) | SurqlExpression;
 };
 
 /** A record mapping field names to their type definitions. */
@@ -167,7 +168,7 @@ export class TableSchema<
 	computed<const N extends string, T extends AbstractType>(
 		name: N extends "id" | keyof Fd ? never : N,
 		type: T,
-		expression: ComputedExpression<Tb, Fd, T>,
+		expression: ComputedExpression<Tb, Fd, T> | SurqlExpression,
 	): TableSchema<Tb, Fd & { [K in N]: Computed<T> }, I> {
 		if (name === "id" || name in this._fields || name in this._computed) {
 			throw new OrmError(
@@ -203,9 +204,24 @@ export class TableSchema<
 	 *
 	 * @param orm - The ORM the expressions are built against.
 	 */
+	/**
+	 * The computed fields written as raw SurrealQL, which need no ORM to render
+	 * and so take part in schema generation and migrations like any other field.
+	 */
+	rawComputedStatements(overwrite = false): [name: string, sql: string][] {
+		return Object.entries(this._computed)
+			.filter(([, def]) => def.expression instanceof SurqlExpression)
+			.map(([name, def]) => [
+				name,
+				`DEFINE FIELD ${overwrite ? "OVERWRITE " : ""}${escapeIdent(name)} ON TABLE ${escapeIdent(this.tb)} COMPUTED ${(def.expression as SurqlExpression).sql.trim()};`,
+			]);
+	}
 	// biome-ignore lint/suspicious/noExplicitAny: accepts an ORM over any tables
 	computedStatements(orm: Orm<any>): string[] {
 		return Object.entries(this._computed).map(([name, def]) => {
+			if (def.expression instanceof SurqlExpression) {
+				return `DEFINE FIELD OVERWRITE ${escapeIdent(name)} ON TABLE ${escapeIdent(this.tb)} COMPUTED ${def.expression.sql.trim()}`;
+			}
 			const id = Symbol();
 			const row = actionable({
 				[__ctx]: { orm, id } as WorkableContext,

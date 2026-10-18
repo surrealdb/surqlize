@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { t, table } from "../../src";
+import { expr, t, table } from "../../src";
 import {
 	applied,
 	checksum,
@@ -36,6 +36,34 @@ describe("Applying and reversing migrations", () => {
 			"INFO FOR TABLE user;",
 		);
 		expect(Object.keys(info.fields)).toContain("name");
+	});
+
+	test("a computed field written as raw SurrealQL is created, converges and is modified", async () => {
+		const member = (expression: string) =>
+			table("member", { grants: t.array(t.string()) }).computed(
+				"permissions",
+				t.array(t.string()),
+				expr(expression),
+			);
+
+		await migrate(db().surreal, [member("array::distinct($this.grants)")]);
+		const [info] = await db().surreal.query<
+			[{ fields: Record<string, string> }]
+		>("INFO FOR TABLE member;");
+		expect(info.fields.permissions).toContain(
+			"COMPUTED array::distinct($this.grants)",
+		);
+		expect(info.fields.permissions).not.toContain("TYPE");
+		expect(
+			(await plan(db().surreal, [member("array::distinct($this.grants)")])).up,
+		).toEqual([]);
+
+		const changed = await plan(db().surreal, [
+			member("array::sort($this.grants)"),
+		]);
+		expect(changed.up).toEqual([
+			"DEFINE FIELD OVERWRITE permissions ON TABLE member COMPUTED array::sort($this.grants);",
+		]);
 	});
 
 	test("migrate is a no-op once the database matches", async () => {

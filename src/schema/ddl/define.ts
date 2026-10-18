@@ -233,6 +233,12 @@ export function schemaStatements(
 		});
 	}
 
+	if ("rawComputedStatements" in schema) {
+		for (const [name, sql] of schema.rawComputedStatements(options.overwrite)) {
+			statements.push({ kind: "field", name: `${schema.tb}.${name}`, sql });
+		}
+	}
+
 	// Indexes follow the fields they cover.
 	for (const [name, index] of Object.entries(schema.ddl.indexes ?? {})) {
 		statements.push({

@@ -4,11 +4,13 @@ import {
 	__display,
 	__type,
 	displayContext,
+	expr,
 	type Orm,
 	orm,
 	t,
 	table,
 } from "../../../src";
+import { schemaStatements } from "../../../src/schema/ddl/define";
 
 // Compile-time equality assertion helper.
 type Equal<A, B> =
@@ -80,6 +82,26 @@ describe("TableSchema.computed()", () => {
 		);
 		expect(postCount).toContain("$parent.id");
 		expect(postCount).not.toMatch(/\$_v\d/);
+	});
+
+	test("a raw SurrealQL expression renders without the ORM and joins the schema statements", () => {
+		const member = table("member", { grants: t.array(t.string()) }).computed(
+			"permissions",
+			t.array(t.string()),
+			expr("array::distinct($this.grants)"),
+		);
+		expect(member.rawComputedStatements()).toEqual([
+			[
+				"permissions",
+				"DEFINE FIELD permissions ON TABLE member COMPUTED array::distinct($this.grants);",
+			],
+		]);
+		expect(member.computedStatements(db)).toEqual([
+			"DEFINE FIELD OVERWRITE permissions ON TABLE member COMPUTED array::distinct($this.grants)",
+		]);
+		expect(schemaStatements(member).map((s) => s.sql)).toContain(
+			"DEFINE FIELD permissions ON TABLE member COMPUTED array::distinct($this.grants);",
+		);
 	});
 
 	test("a table without computed fields has no statements", () => {
