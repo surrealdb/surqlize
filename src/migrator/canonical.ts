@@ -111,6 +111,11 @@ const RULES: [RegExp, string][] = [
 	// A set default reads back with a space after the cast: `DEFAULT <set>[]` is
 	// stored as `DEFAULT <set> []`. Applied before whitespace is collapsed.
 	[/<set>\s+\[/g, "<set>["],
+	// `IN` is stored as `INSIDE`, and `NOT IN` as `NOT INSIDE`
+	[/\bNOT\s+INSIDE\b/g, "NOT IN"],
+	[/\bINSIDE\b/g, "IN"],
+	// A THROW used as a value reads back parenthesised: `?? (THROW 'x')`
+	[/\(\s*(THROW\s+'[^']*')\s*\)/g, "$1"],
 	// A function body reads back without the semicolon before its closing brace
 	[/;\s*\}/g, " }"],
 	// Whitespace carries no meaning between tokens
@@ -206,8 +211,10 @@ function extractTrailingClauses(statement: string): {
 	permissions: string | null;
 } {
 	const comment = statement.match(/\sCOMMENT\s+('[^']*'|"[^"]*")/i);
+	// A clause starts with FULL, NONE, FOR or WHERE; a field named `permissions`
+	// is followed by ON and must not be taken for one.
 	const permissions = statement.match(
-		/\sPERMISSIONS\s+(.+?)(?=\sCOMMENT\s|$)/i,
+		/\sPERMISSIONS\s+(?=(?:FULL|NONE|FOR|WHERE)\b)(.+?)(?=\sCOMMENT\s|$)/i,
 	);
 
 	let body = statement;
