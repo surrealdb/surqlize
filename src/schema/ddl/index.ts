@@ -27,6 +27,7 @@ export type {
 	JwtAlgorithm,
 	ParamOptions,
 	RecordAccessOptions,
+	RecordJwtOptions,
 	SequenceOptions,
 } from "./entities";
 export {

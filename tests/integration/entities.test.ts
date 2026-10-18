@@ -245,4 +245,33 @@ describe("Database-level definitions", () => {
 
 		expect((await plan(db().surreal, defs)).up).toEqual([]);
 	});
+
+	test("a record access verifying a key set with a block AUTHENTICATE converges", async () => {
+		const defs = [
+			access("user_access", {
+				jwt: { url: "http://127.0.0.1:1/jwks" },
+				authenticate: `
+					LET $current = (SELECT userId, expiresAt FROM ONLY type::record('auth_session', $token.sid));
+					IF $current = NONE OR $current.expiresAt <= time::now() { THROW "No active session" };
+					RETURN (SELECT * FROM ONLY type::record('user', $current.userId)) ?? THROW "No active session";
+				`,
+				duration: { session: "1h" },
+			}),
+		];
+
+		const result = await migrate(db().surreal, defs);
+		expect(result?.up[0]).toContain(
+			"TYPE RECORD WITH JWT URL 'http://127.0.0.1:1/jwks' AUTHENTICATE {",
+		);
+		expect((await plan(db().surreal, defs)).up).toEqual([]);
+
+		const changed = [
+			access("user_access", {
+				jwt: { url: "http://127.0.0.1:1/jwks" },
+				authenticate: "$auth",
+				duration: { session: "1h" },
+			}),
+		];
+		expect((await plan(db().surreal, changed)).up).toHaveLength(1);
+	});
 });

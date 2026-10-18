@@ -264,6 +264,20 @@ export interface RecordAccessOptions extends AccessCommon {
 	signup?: string;
 	/** An extra check run on every authenticated request. */
 	authenticate?: string;
+	/**
+	 * Accept tokens issued elsewhere, verified against a key set `url` or an
+	 * `algorithm` and `key`, instead of (or as well as) signing users in here.
+	 * `AUTHENTICATE` then turns the token's claims into the record user.
+	 */
+	jwt?: RecordJwtOptions;
+}
+
+/** How a record access verifies a token it did not issue. */
+export interface RecordJwtOptions {
+	algorithm?: JwtAlgorithm;
+	key?: string;
+	/** A JWKS endpoint, used instead of `algorithm` and `key`. */
+	url?: string;
 }
 
 /** The algorithms SurrealDB will verify a JWT with. */
@@ -349,9 +363,12 @@ export function access(name: string, options: AccessOptions): DatabaseEntity {
 		);
 	}
 
-	// A shared secret is redacted on read-back; a published key set is not.
+	// A shared secret is redacted on read-back; a published key set is not. A
+	// record access that only verifies against a key set holds no secret either.
+	const recordJwt =
+		type === "RECORD" ? (options as RecordAccessOptions).jwt : undefined;
 	const opaque =
-		type === "RECORD" ||
+		(type === "RECORD" && !(recordJwt?.url && !recordJwt.key)) ||
 		(type === "JWT" && (options as JwtAccessOptions).url === undefined);
 
 	return {
@@ -382,20 +399,39 @@ export function access(name: string, options: AccessOptions): DatabaseEntity {
 	};
 }
 
-/** The `SIGNUP`/`SIGNIN`/`AUTHENTICATE` clauses of a record access. */
+/**
+ * The `WITH JWT`, `SIGNUP`, `SIGNIN` and `AUTHENTICATE` clauses of a record
+ * access, in the order SurrealDB stores them.
+ */
 function recordClauses(options: AccessOptions): string[] {
 	const record = options as RecordAccessOptions;
 	const parts: string[] = [];
+
+	if (record.jwt) {
+		parts.push("WITH JWT", ...jwtClauses({ type: "JWT", ...record.jwt }));
+	}
 
 	for (const [clause, query] of [
 		["SIGNUP", record.signup],
 		["SIGNIN", record.signin],
 		["AUTHENTICATE", record.authenticate],
 	] as const) {
-		if (query) parts.push(clause, `(${query})`);
+		if (query) parts.push(clause, wrapClause(query));
 	}
 
 	return parts;
+}
+
+/**
+ * A clause is one expression in parentheses, or a block in braces when it is
+ * several statements. SurrealDB rejects a `LET … ; RETURN …` sequence inside
+ * parentheses, and stores a block with braces.
+ */
+function wrapClause(query: string): string {
+	const body = query.trim().replace(/;\s*$/, "");
+	const block =
+		/;/.test(body) || /^(LET|IF|RETURN|THROW|FOR|BEGIN)\b/i.test(body);
+	return block ? `{ ${body}; }` : `(${body})`;
 }
 
 /** The verification clauses of a token access. */
@@ -430,6 +466,12 @@ function durationClauses(
 
 	if (type === "JWT" && (options as JwtAccessOptions).url) {
 		return `FOR SESSION ${duration?.session ?? "NONE"}`;
+	}
+
+	// A record access that verifies a key set reads back with both durations
+	// filled in, the token one from the server's default.
+	if (type === "RECORD" && (options as RecordAccessOptions).jwt) {
+		return `FOR TOKEN ${duration?.token ?? "1h"}, FOR SESSION ${duration?.session ?? "NONE"}`;
 	}
 
 	if (type === "BEARER") {

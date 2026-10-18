@@ -134,6 +134,59 @@ describe("DEFINE ACCESS", () => {
 	});
 });
 
+describe("DEFINE ACCESS, record access verifying a key set", () => {
+	test("puts WITH JWT before the clauses and fills in both durations", () => {
+		expect(
+			access("user_access", {
+				jwt: { url: "https://issuer/jwks" },
+				authenticate: "$auth.active",
+				duration: { session: "1h" },
+			}).define(),
+		).toBe(
+			"DEFINE ACCESS user_access ON DATABASE TYPE RECORD WITH JWT URL 'https://issuer/jwks' AUTHENTICATE ($auth.active) DURATION FOR TOKEN 1h, FOR SESSION 1h;",
+		);
+	});
+
+	test("a multi-statement clause is a braced block, as SurrealDB stores it", () => {
+		const sql = access("user_access", {
+			jwt: { url: "https://issuer/jwks" },
+			authenticate: `
+				LET $current = (SELECT * FROM ONLY type::record('auth_session', $token.sid));
+				RETURN $current.user ?? THROW 'No active session';
+			`,
+		}).define();
+
+		expect(sql).toContain(
+			"AUTHENTICATE { LET $current = (SELECT * FROM ONLY type::record('auth_session', $token.sid));",
+		);
+		expect(sql).toContain(
+			"RETURN $current.user ?? THROW 'No active session'; }",
+		);
+		expect(sql).not.toContain("AUTHENTICATE (");
+	});
+
+	test("a key set holds no secret, so the access compares like any other", () => {
+		expect(access("a", { jwt: { url: "https://issuer/jwks" } }).opaque).toBe(
+			false,
+		);
+		expect(
+			access("a", { jwt: { algorithm: "HS512", key: "shh" } }).opaque,
+		).toBe(true);
+		expect(access("a", { signin: "SELECT 1" }).opaque).toBe(true);
+	});
+
+	test("an algorithm and key render like a JWT access", () => {
+		expect(
+			access("a", {
+				jwt: { algorithm: "ES256", key: "pem" },
+				authenticate: "$auth",
+			}).define(),
+		).toContain(
+			"TYPE RECORD WITH JWT ALGORITHM ES256 KEY 'pem' AUTHENTICATE ($auth)",
+		);
+	});
+});
+
 describe("DEFINE ACCESS, other types", () => {
 	test("JWT verifies with an algorithm and a key", () => {
 		const sql = access("api", {
